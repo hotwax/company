@@ -85,9 +85,12 @@
                 <ion-item v-for="tab in SEGMENT_TABS" :key="tab.key" button :detail="true" @click="openOutstanding(tab.key)">
                   <ion-label>{{ translate(tab.key === 'create' ? 'Transfers to create' : tab.label) }}</ion-label>
                   <ion-skeleton-text v-if="!hydrated" slot="end" :animated="true" class="count-skeleton" />
+                  <ion-label v-else-if="tabFailure(tab)" slot="end" color="danger">
+                    {{ translate("Not loaded") }}
+                  </ion-label>
                   <ion-label v-else slot="end">{{ tab.key === 'create' ? creationOrderCount : tabCount(tab) }}</ion-label>
                 </ion-item>
-                <ion-item lines="none">
+                <ion-item>
                   <ion-label class="ion-text-wrap">
                     {{ translate("Syncing from") }}
                     <p v-if="launchDate">
@@ -101,6 +104,29 @@
                   <ion-button v-else slot="end" fill="outline" size="small" @click="openLaunchModal()">
                     {{ launchDate ? translate("Change start date") : translate("Set start date") }}
                   </ion-button>
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Native Inventory Transfer Sync") }}
+                    <p v-if="nativeSyncLoadFailed">
+                      {{ translate("Not loaded") }}
+                    </p>
+                    <p v-else-if="nativeSyncEnabled">
+                      {{ translate("Transfer orders sync to Shopify as inventory transfers.") }}
+                    </p>
+                    <p v-else>
+                      {{ translate("Transfer orders do not sync as Shopify transfers. Their inventory changes sync as inventory updates.") }}
+                    </p>
+                  </ion-label>
+                  <ion-skeleton-text v-if="nativeSyncLoading" slot="end" :animated="true" class="count-skeleton" />
+                  <ion-toggle
+                    v-else
+                    slot="end"
+                    :checked="nativeSyncEnabled"
+                    :disabled="nativeSyncSaving || nativeSyncLoadFailed"
+                    :aria-label="translate('Native Inventory Transfer Sync')"
+                    @click.prevent="toggleNativeSync"
+                  />
                 </ion-item>
               </ion-list>
             </ion-card>
@@ -303,7 +329,25 @@
           </template>
 
           <template v-else>
-          <ion-card v-if="!pendingTotal">
+            <!-- A segment the last pass could not read is unknown, so it must not read as empty. -->
+            <ion-card v-if="activeTabFailure">
+              <ion-card-content class="fatal-error">
+                <ion-icon :icon="warningOutline" color="danger" />
+                <ion-label class="ion-text-wrap">
+                  {{ translate("This list could not be loaded") }}
+                  <p>{{ activeTabFailure.message }}</p>
+                  <p>{{ translate("Next automatic retry: {time}", { time: formatDateTime(activeTabFailure.retryAt) }) }}</p>
+                </ion-label>
+                <ion-button fill="outline" :disabled="retrying" @click="retry()">
+                  <ion-spinner v-if="retrying" name="crescent" />
+                  <template v-else>
+                    {{ translate("Retry") }}
+                  </template>
+                </ion-button>
+              </ion-card-content>
+            </ion-card>
+
+            <ion-card v-if="!pendingTotal && !Object.keys(failedSegments).length">
             <ion-card-content class="empty-state">
               <ion-icon :icon="checkmarkCircleOutline" />
               <ion-label class="ion-text-wrap">
@@ -313,7 +357,7 @@
             </ion-card-content>
           </ion-card>
 
-          <ion-card v-else-if="!presentationRows.length">
+            <ion-card v-else-if="!presentationRows.length && !activeTabFailure">
             <ion-card-content>
               {{ translate("Nothing outstanding in this tab.") }}
             </ion-card-content>
@@ -597,7 +641,7 @@ import {
   IonDatetime, IonDatetimeButton,
   IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonModal, IonNote, IonPage, IonPopover, IonRadio, IonRadioGroup,
   IonSegment, IonSegmentButton, IonInput,
-  IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
+  IonSkeletonText, IonSpinner, IonTitle, IonToggle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
 import { checkmarkCircleOutline, closeOutline, openOutline, refreshOutline, saveOutline, swapHorizontalOutline, warningOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
@@ -606,14 +650,16 @@ import { useRouter } from "vue-router";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import ShopifyTransferDeliveryStatus from "@/components/shopify/ShopifyTransferDeliveryStatus.vue";
 import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapshot.vue";
+import { useDb } from "@common";
+import { serviceState } from "@common/db";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/services/appDbSync";
 import ShopifyTransferStagingErrors from "@/components/shopify/ShopifyTransferStagingErrors.vue";
-import { useCachedList } from "@/composables/useCachedList";
-import { useCacheSync } from "@/composables/useCacheSync";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
 import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
 import {
   registerMissingTransferWebhook,
+  useShopifyNativeTransferSync,
   useShopifyPendingCounts,
   useShopifyPendingSegment,
   useShopifySyncedSegment,
@@ -623,12 +669,11 @@ import {
 } from "@/composables/useShopifyTransferSync";
 import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import { formatDateTime } from "@/utils";
-import { facilityCache } from "@/utils/cacheEntities";
 import { transferDeliveryState } from "@/utils/shopifyTransferDelivery";
 import { transferSyncIssuePath } from "@/utils/shopifyTransferStagingErrors";
 import { isTransferSyncMonitoringLoaded, shopifyTransferAdminUrl, transfersAppOrderUrl } from "@/utils/shopifyTransferSync";
 import { buildTransferSyncPresentation, formatSyncDuration } from "@/utils/shopifyTransferSyncPresentation";
-import type { PendingSegment, SyncDirection } from "@/workers/domains/shopifyTransferSyncDomain";
+import type { PendingSegment, SyncDirection, TransferSyncFailureDetails } from "@/workers/domains/shopifyTransferSyncDomain";
 
 const router = useRouter();
 const openTransfer = (orderId: string) => router.push(transferSyncIssuePath(shopId.value, orderId));
@@ -684,7 +729,7 @@ const { rows: pairedRows } = useShopifyPendingSegment(
 const segmentRows = computed<any[]>(() => [...primaryRows.value, ...pairedRows.value]
   .sort((a: any, b: any) => Number(a?.occurredAt ?? 0) - Number(b?.occurredAt ?? 0)));
 
-const { records: facilities } = useCachedList<any>(facilityCache);
+const { records: facilities } = useDb<any>("facilities");
 const facilityNamesById = computed<Record<string, string>>(() => Object.fromEntries(
   facilities.value
     .filter((facility: any) => facility?.facilityId)
@@ -705,6 +750,24 @@ const {
   load: loadLaunch,
   save: saveLaunch,
 } = useShopifyTransferSyncLaunch();
+
+// ---------------------------------------------------------------- native transfer sync switch
+const {
+  enabled: nativeSyncEnabled,
+  loading: nativeSyncLoading,
+  saving: nativeSyncSaving,
+  loadFailed: nativeSyncLoadFailed,
+  load: loadNativeSync,
+  save: saveNativeSync,
+} = useShopifyNativeTransferSync();
+
+async function toggleNativeSync(event: any) {
+  event?.stopImmediatePropagation?.();
+  if(nativeSyncSaving.value || nativeSyncLoadFailed.value) { return; }
+  if(!await saveNativeSync(shopId.value, !nativeSyncEnabled.value)) {
+    commonUtil.showToast(translate("Native Inventory Transfer Sync could not be updated."));
+  }
+}
 
 const showLaunchModal = ref(false);
 const launchChoice = ref("now");
@@ -1052,29 +1115,38 @@ function handleJobUpdated() {
   showJobModal.value = false;
 }
 
-const {
-  start: startSyncDomains,
-  stop: stopSyncDomains,
-  error: syncError,
-  failingDomains,
-  domainStatus,
-  syncNow,
-} = useCacheSync();
+const SYNC_OWNER = createSyncDomainOwner("shopifyTransferSyncView");
+const failingDomains = computed<Record<string, string>>(() => serviceState.errors);
+/** The `details` a failing domain attached to its last pass (e.g. which transfer lists did not load). */
+const failingDetails = computed<Record<string, unknown>>(() => serviceState.details);
 // Stager-read failures belong in the Errors tab; they do not make the activity ledger unavailable.
-const transferSyncError = computed(() => failingDomains?.value
-  ? failingDomains.value.shopifyTransferSync || failingDomains.value.auth || failingDomains.value.__start || ""
-  : syncError.value);
+const transferSyncError = computed(() =>
+  failingDomains.value.shopifyTransferSync || failingDomains.value.auth || failingDomains.value.__start || "");
 const viewSyncBaselineAt = ref(0);
 const viewActive = ref(false);
 const stagingSyncBaselineAt = ref(0);
-const stagingRunsChecked = computed(() => Number(domainStatus.value.serviceJobRun?.at ?? 0) > stagingSyncBaselineAt.value);
-const deliveryChecked = computed(() => Number(domainStatus.value.shopifyTransferDelivery?.at ?? 0) > stagingSyncBaselineAt.value);
+const stagingRunsChecked = computed(() => (serviceState.syncedAt.serviceJobRun ?? 0) > stagingSyncBaselineAt.value);
+const deliveryChecked = computed(() => (serviceState.syncedAt.shopifyTransferDelivery ?? 0) > stagingSyncBaselineAt.value);
+
+// Which segments the last pass could not read. A segment listed here is unknown, not empty.
+const transferSyncFailure = computed(() =>
+  failingDetails?.value?.shopifyTransferSync as TransferSyncFailureDetails | undefined);
+const failedSegments = computed(() => transferSyncFailure.value?.failedSegments ?? {});
+function tabFailure(tab: { key: PendingSegment; also?: PendingSegment }) {
+  return failedSegments.value[tab.key] ?? (tab.also ? failedSegments.value[tab.also] : undefined);
+}
+const activeTabFailure = computed(() => {
+  const tab = SEGMENT_TABS.find((candidate) => candidate.key === activeTab.value);
+
+  return tab ? tabFailure(tab) : undefined;
+});
 
 const monitoringLoaded = computed(() => isTransferSyncMonitoringLoaded({
   cacheHydrated: hydrated.value,
   cachedRowCount: pendingTotal.value,
-  liveSyncAt: Number(domainStatus.value.shopifyTransferSync?.at ?? 0),
+  liveSyncAt: serviceState.syncedAt.shopifyTransferSync ?? 0,
   viewSyncBaselineAt: viewSyncBaselineAt.value,
+  loadedSegmentCount: transferSyncFailure.value?.loadedSegments.length ?? 0,
 }));
 
 function activeSyncDomains() {
@@ -1091,12 +1163,13 @@ function activeSyncDomains() {
 
 function startTransferSyncDomains() {
   viewActive.value = true;
-  stagingSyncBaselineAt.value = Number(domainStatus.value.serviceJobRun?.at ?? 0);
+  stagingSyncBaselineAt.value = serviceState.syncedAt.serviceJobRun ?? 0;
   void loadLaunch(shopId.value, undefined, true);
+  void loadNativeSync(shopId.value);
   // Ionic retains this component between visits. Use the last completed pass as this visit's
   // baseline so an old sync-end cannot authorize a new cold empty state.
-  viewSyncBaselineAt.value = Number(domainStatus.value.shopifyTransferSync?.at ?? 0);
-  void startSyncDomains(activeSyncDomains());
+  viewSyncBaselineAt.value = serviceState.syncedAt.shopifyTransferSync ?? 0;
+  void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
   void loadWebhookReconciliation();
 }
 
@@ -1112,12 +1185,12 @@ async function retry() {
 watch(shopId, startTransferSyncDomains);
 watch(() => `${activeTab.value}|${stagingJobNames.value.join("|")}`, () => {
   if(!viewActive.value) {return;}
-  stagingSyncBaselineAt.value = Number(domainStatus.value.serviceJobRun?.at ?? 0);
-  void startSyncDomains(activeSyncDomains());
+  stagingSyncBaselineAt.value = serviceState.syncedAt.serviceJobRun ?? 0;
+  void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
 });
 onIonViewWillEnter(startTransferSyncDomains);
 
-onIonViewDidLeave(() => { viewActive.value = false; stopSyncDomains(); });
+onIonViewDidLeave(() => { viewActive.value = false; void deactivateSyncDomains(SYNC_OWNER); });
 </script>
 
 <style scoped>

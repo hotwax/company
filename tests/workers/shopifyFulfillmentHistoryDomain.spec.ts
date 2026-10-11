@@ -1,6 +1,6 @@
 /* eslint-disable require-await -- mocked async boundaries intentionally match worker/cache contracts */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FULFILLMENT_HISTORY_ENDPOINT_MISSING } from "@/utils/cacheEntities";
+import { FULFILLMENT_HISTORY_ENDPOINT_MISSING } from "@/utils/shopifyFulfillment";
 
 /**
  * L1 unit — the shopifyFulfillmentHistory worker domain.
@@ -25,11 +25,11 @@ const state = vi.hoisted(() => ({
   upserts: [] as any[][],
 }));
 
-vi.mock("@/utils/cacheEntities", async (importOriginal) => ({
-  // The real module keeps `FULFILLMENT_HISTORY_ENDPOINT_MISSING` genuine — a copy pasted into the
-  // mock could drift from what the domain actually throws and this suite would keep passing.
-  ...(await importOriginal<typeof import("@/utils/cacheEntities")>()),
-  shopifyFulfillmentHistoryCache: {
+// `FULFILLMENT_HISTORY_ENDPOINT_MISSING` stays the real one from `@/utils/shopifyFulfillment` — a
+// copy pasted into a mock could drift from what the domain actually throws and this suite would keep
+// passing.
+const tables = vi.hoisted(() => ({
+  shopifyFulfillmentHistories: {
     count: vi.fn(async () => state.cachedCount),
     newestCursor: vi.fn(async () => state.cursor),
     upsertMany: vi.fn(async (rows: any[]) => {
@@ -38,8 +38,8 @@ vi.mock("@/utils/cacheEntities", async (importOriginal) => ({
       return rows.length;
     }),
   },
-  shopifyFulfillmentHistorySupportCache: {
-    all: vi.fn(async () => state.supportRows),
+  shopifyFulfillmentHistorySupport: {
+    get: vi.fn(async (shopId: string) => state.supportRows.find((row) => String(row?.shopId ?? "") === shopId)),
     upsertMany: vi.fn(async (rows: any[]) => {
       state.supportUpserts.push(rows);
 
@@ -48,7 +48,11 @@ vi.mock("@/utils/cacheEntities", async (importOriginal) => ({
   },
 }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@/db/companyDb", () => ({
+  companyDb: { entity: (table: keyof typeof tables) => tables[table] },
+}));
+
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageNewestFirst: vi.fn(async (options: any) => {
     state.fetchCalls.push(options);
     if(state.fetchError) {throw state.fetchError;}
@@ -59,18 +63,14 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   workerGet: vi.fn(async () => state.refetchResponse),
 }));
 
-vi.mock("@/workers/syncRegistry", () => ({
-  registerSyncDomain: (domain: any) => { state.domains.push(domain); },
-}));
 
 const ctx = { maargUrl: "https://example.test", token: "token" } as any;
 
 async function loadDomain() {
   vi.resetModules();
-  state.domains = [];
-  await import("@/workers/domains/shopifyFulfillmentHistoryDomain");
+  const { shopifyFulfillmentHistoryDomain } = await import("@/workers/domains/shopifyFulfillmentHistoryDomain");
 
-  return state.domains.find((domain) => domain.name === "shopifyFulfillmentHistory");
+  return shopifyFulfillmentHistoryDomain as any;
 }
 
 describe("shopifyFulfillmentHistory cache domain", () => {

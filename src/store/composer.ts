@@ -15,6 +15,15 @@ export type SelectedTool = CatalogTool & { autoApprove: boolean }
 
 export type ModelOption = { providerName: string; modelName: string }
 
+/**
+ * Turn a failed catalog read into the message the view shows, so a 403 explains itself instead of
+ * leaving the model selector / tool dialog blank. Returns an untranslated locale key.
+ */
+const catalogLoadError = (error: any, forbidden: string, failed: string): string => {
+  const status = Number(error?.response?.status ?? error?.status ?? error?.statusCode ?? 0)
+  return status === 401 || status === 403 ? forbidden : failed
+}
+
 export const useComposerStore = defineStore('composer', {
   state: () => ({
     agentId: '',
@@ -27,6 +36,10 @@ export const useComposerStore = defineStore('composer', {
     selectedTools: [] as SelectedTool[],
     toolCatalog: [] as CatalogTool[],
     modelOptions: [] as ModelOption[],
+    /** Locale key explaining why ai/models could not be read; '' when it loaded. */
+    modelOptionsError: '',
+    /** Locale key explaining why ai/tools could not be read; '' when it loaded. */
+    toolCatalogError: '',
     reasoningEffortOptions: ['none', 'low', 'medium', 'high'] as string[],
     previewItems: [] as ChatItem[],
     saving: false,
@@ -41,6 +54,7 @@ export const useComposerStore = defineStore('composer', {
 
   actions: {
     async fetchModelOptions() {
+      this.modelOptionsError = ''
       try {
         const resp = await api({ url: 'ai/models', method: 'get' }) as any
         if (hasError(resp)) throw resp.data
@@ -55,16 +69,21 @@ export const useComposerStore = defineStore('composer', {
         }
       } catch (error) {
         logger.error(error)
+        this.modelOptionsError = catalogLoadError(error,
+          'You do not have permission to view AI models.', 'Unable to load AI models.')
       }
     },
 
     async fetchToolCatalog() {
+      this.toolCatalogError = ''
       try {
         const resp = await api({ url: 'ai/tools', method: 'get', params: { maxResults: 200 } }) as any
         if (hasError(resp)) throw resp.data
         this.toolCatalog = resp.data.capabilityList || []
       } catch (error) {
         logger.error(error)
+        this.toolCatalogError = catalogLoadError(error,
+          'You do not have permission to view AI tools.', 'Unable to load AI tools.')
       }
     },
 

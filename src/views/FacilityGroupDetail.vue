@@ -275,7 +275,7 @@ const { facilities: cachedFacilities } = useFacilities();
 
 // Derived, not copied: the cache emits asynchronously, so a one-shot read on view-enter sees an
 // empty table and never updates. These recompute on every cache write.
-const group = computed<any>(() => (cachedGroup.value as any)?.raw ?? cachedGroup.value ?? {});
+const group = computed<any>(() => cachedGroup.value ?? {});
 const productStoreCount = computed(() => cachedGroupProductStores.value.length);
 const allFacilities = computed<any[]>(() => cachedFacilities.value ?? []);
 // Sorted, not merely joined: the cache hands these back in primary-key order (alphabetical by

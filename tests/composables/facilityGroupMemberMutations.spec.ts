@@ -29,7 +29,7 @@ vi.mock("@common", () => ({
   translate: (value: string) => value,
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   bootstrapState: { running: false, written: {}, errors: {} },
   refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
   resyncDomain: (...args: any[]) => harness.resyncDomain(...args),
@@ -119,7 +119,7 @@ describe("saveMembers — fromDate must address an existing row exactly", () => 
 
     await saveMembers([], [{ facilityId: "BROADWAY", fromDate: 1718341888240, sequenceNum: 2 }]);
 
-    expect(harness.refreshAfterMutation).toHaveBeenCalledWith("facilityGroupMember", { facilityGroupId: "SAMEDAY" });
+    expect(harness.refreshAfterMutation).toHaveBeenCalledWith("groupFacility", { facilityGroupId: "SAMEDAY" });
   });
 
   it("skips the cache refresh when every revision was refused, since nothing was written", async () => {

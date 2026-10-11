@@ -48,6 +48,9 @@
                 {{ model.modelName }} ({{ model.providerName }})
               </ion-select-option>
             </ion-select>
+            <ion-item v-if="composer.modelOptionsError" lines="none">
+              <ion-label color="danger" class="ion-text-wrap">{{ translate(composer.modelOptionsError) }}</ion-label>
+            </ion-item>
 
             <!-- Reasoning Effort Dropdown -->
             <ion-select
@@ -77,7 +80,8 @@
               <ion-item v-if="!composer.selectedTools.length">
                 <ion-label>
                   {{ translate("No tools selected") }}
-                  <p v-if="composer.toolCatalog.length">
+                  <p v-if="composer.toolCatalogError" class="load-error">{{ translate(composer.toolCatalogError) }}</p>
+                  <p v-else-if="composer.toolCatalog.length">
                     {{ composer.toolCatalog.length }} {{ translate("tools available") }}:
                     {{ composer.toolCatalog.slice(0, 4).map((tool) => tool.toolName).join(", ") }}
                   </p>
@@ -157,6 +161,9 @@
 
         <ion-content>
           <ion-list>
+            <ion-item v-if="composer.toolCatalogError" lines="none">
+              <ion-label color="danger" class="ion-text-wrap">{{ translate(composer.toolCatalogError) }}</ion-label>
+            </ion-item>
             <ion-item v-for="tool in filteredTools" :key="tool.toolId" @click="toggleToolSelection(tool.toolId)">
               <ion-checkbox :checked="isToolSelected(tool.toolId)" justify="start">
                 <ion-label class="tool-picker-label">
@@ -395,6 +402,10 @@ ion-modal ion-label h2,
 ion-modal ion-note {
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.load-error {
+  color: var(--ion-color-danger);
 }
 
 .tool-picker-label {

@@ -11,6 +11,7 @@ vi.mock("@common", () => ({
   },
   showToast: vi.fn(),
   translate: (k: string) => k,
+  useDb: () => ({ records: { value: [] }, first: { value: undefined }, count: { value: 0 }, hydrated: { value: true }, error: { value: null } }),
 }));
 
 vi.mock("@ionic/vue", async () => {

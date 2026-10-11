@@ -306,9 +306,9 @@ several historical rows.
 
 The implementation touches the established cache seams:
 
-- add tables/indexes to `CACHE_SCHEMA` in `src/utils/appCacheDb.ts` without adding a Dexie version;
-- add projections and cached entities in `src/utils/cacheEntities.ts`;
-- add both class-B entries to `src/utils/cacheDomainCatalog.ts`;
+- add tables/indexes to `CACHE_SCHEMA` in `src/utils/db/appCacheDb.ts` without adding a Dexie version;
+- add projections and cached entities in `src/utils/db/cacheEntities.ts`;
+- add both class-B entries to `src/utils/db/cacheDomainCatalog.ts`;
 - register the relationship snapshot in `referenceDomains.ts` and the enriched organization
   snapshot in `organizationDomain.ts`;
 - expose reads and writes only through a new `src/composables/useOrganizations.ts`;
@@ -546,8 +546,8 @@ typed party-identification model rather than assuming one global external ID.
 
 | Area | Expected files/zones |
 | --- | --- |
-| Cache schema and projections | `src/utils/appCacheDb.ts`, `src/utils/cacheEntities.ts` |
-| Domain catalog and worker registration | `src/utils/cacheDomainCatalog.ts`, `src/workers/domains/referenceDomains.ts` |
+| Cache schema and projections | `src/utils/db/appCacheDb.ts`, `src/utils/db/cacheEntities.ts` |
+| Domain catalog and worker registration | `src/utils/db/cacheDomainCatalog.ts`, `src/workers/domains/referenceDomains.ts` |
 | Organization logic | new `src/composables/useOrganizations.ts`; narrow primary-organization compatibility changes in `src/composables/useSeed.ts` or a renamed focused module |
 | Organization screens | new views in `src/views/`; organization components/modals in `src/components/organization/` |
 | Facility owner UI | `src/views/FacilityDetails.vue`; add `changeOwner` to `useFacilityMutations` in `src/composables/useFacilities.ts` |

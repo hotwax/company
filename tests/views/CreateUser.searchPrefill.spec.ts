@@ -14,7 +14,7 @@ vi.mock("@ionic/vue", async (importOriginal) => ({
   ...(await importOriginal<any>()),
   onIonViewWillEnter: (cb: any) => { harness.enter = cb; onMounted(cb); },
 }));
-vi.mock("@/services/appCacheBootstrap", () => ({ resyncDomain: vi.fn() }));
+vi.mock("@/services/appDbSync", () => ({ resyncDomain: vi.fn(), refreshAfterMutation: vi.fn() }));
 
 vi.mock("@/router", () => ({ default: { push: vi.fn(), replace: vi.fn() } }));
 vi.mock("@/store/user", () => ({ useUserStore: () => ({ createUser: harness.createUser }) }));

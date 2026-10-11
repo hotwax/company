@@ -1,10 +1,10 @@
 import { computed, reactive, toRefs } from "vue";
-import { api, logger } from "@common";
+import { api, logger, useDb } from "@common";
 import cronstrue from "cronstrue";
-import { serviceJobCache, serviceJobRunCache } from "@/utils/cacheEntities";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { companyDb } from "@/db/companyDb";
+import { refreshAfterMutation } from "@/services/appDbSync";
+import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { onSessionCleared } from "./sessionScope";
-import { useCachedList, useCachedRecord } from "./useCachedList";
 
 /**
  * Service job master entity — job definitions, plus the live detail/history surface.
@@ -34,7 +34,7 @@ import { useCachedList, useCachedRecord } from "./useCachedList";
  * without touching a job-run endpoint.
  */
 export function useServiceJobs() {
-  const { records: cached, hydrated } = useCachedList<any>(serviceJobCache);
+  const { records: cached, hydrated } = useDb<any>("serviceJobs");
 
   /**
    * The LIST and DETAIL routes spell the human schedule differently: the list returns
@@ -61,8 +61,10 @@ export function useServiceJobs() {
   return { jobs: records, paused, active, clonesOf, records, hydrated };
 }
 
-export const useServiceJobRecord = (jobName: string | undefined) =>
-  useCachedRecord(serviceJobCache, "jobName", jobName);
+export const useServiceJobRecord = (jobName: string | undefined) => {
+  const { first: record, hydrated } = useDb<any>("serviceJobs", () => jobName ? { equals: { jobName } } : { filter: () => false });
+  return { record, hydrated };
+};
 
 /**
  * Cached runs for one job, newest first — index-backed via `[jobName+startTime]`.
@@ -72,7 +74,7 @@ export const useServiceJobRecord = (jobName: string | undefined) =>
  * empty rather than falling back to a fetch, keeping the read path request-free by construction.
  */
 export function useServiceJobRuns(jobName?: string, limit = 5) {
-  const { records, hydrated } = useCachedList<any>(serviceJobRunCache, {
+  const { records, hydrated } = useDb<any>("serviceJobRuns", {
     dateField: "startTime",
     ...(jobName ? { scope: { field: "jobName", value: jobName } } : {}),
     limit,
@@ -100,7 +102,7 @@ export function useServiceJobRuns(jobName?: string, limit = 5) {
  * told what to watch. Empty here means "not activated", never "no runs".
  */
 export function useServiceJobRunsByJob(jobNames: () => string[], limitPerJob = 5) {
-  const { records, hydrated } = useCachedList<any>(serviceJobRunCache, { dateField: "startTime" });
+  const { records, hydrated } = useDb<any>("serviceJobRuns", { dateField: "startTime" });
 
   const byJobName = computed<Record<string, any[]>>(() => {
     const wanted = new Set(jobNames().filter(Boolean).map(String));
@@ -220,10 +222,10 @@ export function useServiceJob() {
     const key = `jobs_${JSON.stringify(normalizedParams)}`;
 
     try {
-      const cached = await serviceJobCache.all();
+      const cached = await companyDb.entity("serviceJobs").all();
       if (cached.length) {
         state.jobs = cached.map((row: any) => {
-          const job = row.raw ?? row;
+          const job = row;
           return { ...job, cronString: job.cronExpression ? getCronString(job.cronExpression) : "" };
         });
         return state.jobs;
@@ -322,12 +324,12 @@ export function useServiceJob() {
     // CACHE-FIRST: the `serviceJobRun` domain keeps the newest runs per job, which is what every
     // caller here asks for (`pageSize: 1` or a handful, ordered by -startTime).
     if (!options.fromServer) try {
-      const cached = (await serviceJobRunCache.all())
+      const cached = (await companyDb.entity("serviceJobRuns").all())
         .filter((row: any) => row.jobName === jobName)
         .sort((a: any, b: any) => (Number(b.startTime ?? 0) - Number(a.startTime ?? 0)));
       if (cached.length) {
         const wanted = Number(params.pageSize ?? 250);
-        return cached.slice(0, wanted).map((row: any) => row.raw ?? row);
+        return cached.slice(0, wanted);
       }
     } catch (err) {
       logger.warn("Service job run cache unavailable; falling back to the server", err);
@@ -405,13 +407,24 @@ export function useServiceJob() {
     return resp;
   };
 
-  /** Run state (last run, next run) lives on the job row too, so the cache needs the same nudge. */
+  /**
+   * Run state (last run, next run) lives on the job row too, so the cache needs the same nudge.
+   *
+   * Unlike `updateJob`, a failed nudge does not reject: a run cannot be taken back, and the screens
+   * calling this report any rejection as "could not run", which invites a second run. The failure is
+   * still recorded as a sync error, so the stale row is reported there.
+   */
   const runNow = async (jobName: string) => {
     const resp = await api({
       url: `admin/serviceJobs/${jobName}/runNow`,
       method: "POST"
     });
-    await refreshAfterMutation("serviceJob", { jobName });
+    try {
+      await refreshAfterMutation("serviceJob", { jobName });
+    } catch (error) {
+      if(!isCacheReconciliationError(error)) throw error;
+      logger.warn(`Queued ${jobName}, but its cached job row could not be refreshed`, error);
+    }
     return resp;
   };
 

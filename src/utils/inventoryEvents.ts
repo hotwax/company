@@ -6,7 +6,7 @@
  * retired): unbatched with a non-zero delta is waiting, unbatched zero is a no-op, batched is whatever
  * its System Message says. Vue- and i18n-free so the rules test without a DOM or a locale.
  */
-import { toMillis } from "./cacheProjection";
+import { toMillis } from "@common/db/storage/projection";
 import { type InventoryEventSourceRoot, canonicalEventTypeId, isReservationEventType, sourceRootFor } from "./inventoryEventSourceRoots";
 import { type ServiceJob, parameterMap } from "./serviceJob";
 import { isSuccess } from "./systemMessage";
@@ -25,8 +25,8 @@ export interface InventoryEventMessage {
   statusId?: string;
   processedDate?: unknown;
   initDate?: unknown;
-  /** When this copy was cached: the freshness test between the row's joined copy and the message's. */
-  cachedAt?: number;
+  /** When this copy was synced: the freshness test between the row's joined copy and the message's. */
+  syncedAt?: number;
 }
 
 export interface InventoryEventSource {
@@ -120,18 +120,18 @@ export function isUnsettledMessage(statusId: string | undefined): boolean {
  */
 export function effectiveMessageOf(
   raw: Record<string, any>,
-  rowCachedAt: number | undefined,
+  rowSyncedAt: number | undefined,
   cachedMessage: InventoryEventMessage | undefined,
 ): InventoryEventMessage | undefined {
   if(!raw?.systemMessageId) {return undefined;}
   const joined = {
     statusId: raw.systemMessageStatusId, processedDate: raw.systemMessageProcessedDate,
-    initDate: raw.systemMessageInitDate, cachedAt: rowCachedAt,
+    initDate: raw.systemMessageInitDate, syncedAt: rowSyncedAt,
   };
   if(!cachedMessage) {return joined;}
   if(!joined.statusId) {return cachedMessage;}
 
-  return (cachedMessage.cachedAt ?? 0) > (joined.cachedAt ?? 0) ? cachedMessage : joined;
+  return (cachedMessage.syncedAt ?? 0) > (joined.syncedAt ?? 0) ? cachedMessage : joined;
 }
 
 /** The reference is the source row's natural key; reservations are `inventoryItemId:detailSeqId`. */

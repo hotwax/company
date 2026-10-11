@@ -52,7 +52,7 @@ import {
 import { computed, ref, watch } from "vue"
 import CalendarMetafieldPickerModal from "@/components/shopify-product-sync/CalendarMetafieldPickerModal.vue"
 import { useShopifyShopMutations, useShopifySyncContext, useShopifyTypeMappings } from "@/composables/useShopify"
-import { CACHE_RECONCILIATION_ERROR_MESSAGE, isCacheReconciliationError } from "@/utils/cacheReconciliationError"
+import { CACHE_RECONCILIATION_ERROR_MESSAGE, isCacheReconciliationError } from "@/utils/db/cacheReconciliationError"
 
 const CALENDAR_MAPPING_TYPE = "SHOPIFY_PRODUCT_CALENDAR_DATE"
 

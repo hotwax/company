@@ -1,9 +1,14 @@
-import { shopifyFulfillmentHealthCache } from "@/utils/cacheEntities";
-import { registerSyncDomain } from "../syncRegistry";
-import { workerGet } from "./workerFetch";
+import { companyDb } from "@/db/companyDb";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
+import { workerGet } from "@common/core/workerRemoteApi";
 
-registerSyncDomain({
+const fulfillmentHealthEntity = companyDb.entity("shopifyFulfillmentHealth");
+
+export const shopifyFulfillmentHealthDomain = defineSyncDomain({
   name: "shopifyFulfillmentHealth",
+  table: "shopifyFulfillmentHealth",
+  label: "Shopify fulfillment sync health",
+  syncClass: "A",
   intervalMs: 30_000,
   async sync(ctx, args: { shopId?: string } = {}) {
     const shopId = String(args.shopId ?? "").trim();
@@ -13,10 +18,10 @@ registerSyncDomain({
       const body = response?.data ?? response;
       const health = body?.health;
       if (!health || String(health.shopId) !== shopId || !Number.isFinite(health.shippedCount) || health.shippedCount !== health.syncedCount + health.unsyncedErrorCount + health.pendingCount) { throw new Error("Invalid fulfillment health response"); }
-      await shopifyFulfillmentHealthCache.upsertMany([{ ...health, state: "ready" }]);
+      await fulfillmentHealthEntity.upsertMany([{ ...health, state: "ready" }]);
       return 1;
     } catch (error) {
-      await shopifyFulfillmentHealthCache.upsertMany([{ shopId, state: "error" }]);
+      await fulfillmentHealthEntity.upsertMany([{ shopId, state: "error" }]);
       throw error;
     }
   },
