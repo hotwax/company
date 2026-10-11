@@ -27,8 +27,11 @@ import { useShopifyTransferUpdateCheck } from "@/composables/useShopifyTransferS
 describe("live update item comparison", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    state.api.mockImplementation(({ url }: any) =>
-      Promise.resolve({
+    state.api.mockImplementation(({ url }: any) => {
+      if (url.includes("sob/shopify/shops")) {
+        return Promise.resolve({ data: { shopRemotes: [{ systemMessageRemoteId: "REMOTE" }] } });
+      }
+      return Promise.resolve({
         data: url.includes("syncedCreate")
           ? [{ shopId: "UK", orderId: "TO", shopifyInventoryTransferId: "10" }]
           : {
@@ -39,8 +42,8 @@ describe("live update item comparison", () => {
                 },
               ],
             },
-      }),
-    );
+      });
+    });
     state.choices.mockResolvedValue([{ available: true, inventoryItemId: "20" }]);
     state.snapshot.mockResolvedValue({ lines: [{ inventoryItem: { id: "gid://shopify/InventoryItem/99" }, totalQuantity: 1 }] });
   });
@@ -53,7 +56,12 @@ describe("live update item comparison", () => {
   });
 
   it("refuses another shop's transfer", async () => {
-    state.api.mockResolvedValue({ data: [{ shopId: "US", orderId: "TO", shopifyInventoryTransferId: "10" }] });
+    state.api.mockImplementation(({ url }: any) => {
+      if (url.includes("sob/shopify/shops")) {
+        return Promise.resolve({ data: { shopRemotes: [{ systemMessageRemoteId: "REMOTE" }] } });
+      }
+      return Promise.resolve({ data: [{ shopId: "US", orderId: "TO", shopifyInventoryTransferId: "10" }] });
+    });
     await expect(useShopifyTransferUpdateCheck().check("UK", "TO", "S", "02")).rejects.toThrow("ownership");
     expect(state.snapshot).not.toHaveBeenCalled();
   });
@@ -62,7 +70,7 @@ describe("live update item comparison", () => {
     state.snapshot.mockResolvedValue({ lines: [{ inventoryItem: { id: "gid://shopify/InventoryItem/20" }, totalQuantity: 1 }] });
     const result = await useShopifyTransferUpdateCheck().check("UK", "TO", "S", "02");
     expect(result.matches).toHaveLength(1);
-    expect(state.api.mock.calls.every(([request]: any[]) => request.method === "GET")).toBe(true);
+    expect(state.api.mock.calls.every(([request]: any[]) => request.method === "GET" || request.method === "get")).toBe(true);
   });
 
   it("uses the current comparison for issue titles and resolution, including invalid quantities", async () => {
