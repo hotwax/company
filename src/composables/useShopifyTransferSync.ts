@@ -2,6 +2,7 @@ import { api, commonUtil } from "@common";
 import { computed, ref } from "vue";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { shopifyTransferPendingCache } from "@/utils/cacheEntities";
+import { deliveryConfigIdsOf } from "@/utils/shopifyTransferDelivery";
 import { PENDING_SEGMENT_ENDPOINTS, type PendingSegment, SYNCED_SEGMENT_ENDPOINTS } from "@/workers/domains/shopifyTransferSyncDomain";
 import {
   type ReconciliationSummary,
@@ -115,12 +116,20 @@ export function useShopifyTransferSyncLaunch() {
   const saving = ref(false);
   const error = ref("");
 
-  /** X-Total-Count is the whole answer, so ask for a single row and read the header. */
+  /**
+   * X-Total-Count is the whole answer, so ask for a single row and read the header.
+   *
+   * `orderEntryDate_from` in epoch millis, which every pending view honours. An
+   * `orderEntryDate_op=greater-equals` pair was silently ignored, so every preset previewed the
+   * shop's whole backlog.
+   */
   async function countAt(shopId: string, segment: PendingSegment, from: string): Promise<number> {
+    const fromMs = new Date(from).getTime();
+    if(!Number.isFinite(fromMs)) { throw new Error("The sync start date is not a valid date."); }
     const resp: any = await api({
       url: PENDING_SEGMENT_ENDPOINTS[segment],
       method: "GET",
-      params: { shopId, orderEntryDate: from, orderEntryDate_op: "greater-equals", pageSize: 1 },
+      params: { shopId, orderEntryDate_from: fromMs, pageSize: 1 },
     });
     const total = Number(resp?.headers?.["x-total-count"] ?? NaN);
     if(Number.isFinite(total)) { return total; }
@@ -462,6 +471,47 @@ function shopJobName(template: string, shopId: string) {
   return `${template}_${shopId}`;
 }
 
+function jobParameter(job: any, parameterName: string): string {
+  const parameter = (job?.serviceJobParameters ?? []).find((entry: any) => entry?.parameterName === parameterName);
+
+  return String(parameter?.parameterValue ?? "");
+}
+
+/** The configId a definition's clones are created with, for a shop that has no clone yet. */
+function defaultConfigId(definition: TransferSyncJobDefinition): string {
+  return definition.parameters?.find((parameter) => parameter.parameterName === "configId")?.parameterValue ?? "";
+}
+
+/**
+ * The shop's job for a shop-scoped definition: the one running the definition's SERVICE with this
+ * shop's shopId parameter, whatever it is named. Instances name their clones freely (demo-oms runs
+ * `DEMO_StageTransferCreate_10010`), so a name-prefix match reported a running stager as missing
+ * and offered to create a second one.
+ *
+ * When several match, an active job wins over a paused one, then the conventional
+ * `{template}_{shopId}` name, then name order, so the pick is stable across renders.
+ */
+function findShopJob(definition: TransferSyncJobDefinition, jobs: any[], shopId: string): any {
+  if(!definition.serviceName || !shopId) { return undefined; }
+  const conventionalName = shopJobName(definition.template, shopId);
+  const rank = (job: any) => (job.paused === "Y" ? 2 : 0) + (job.jobName === conventionalName ? 0 : 1);
+
+  return jobs
+    .filter((job: any) => job?.serviceName === definition.serviceName && jobParameter(job, "shopId") === shopId)
+    .sort((left: any, right: any) => rank(left) - rank(right) || String(left.jobName).localeCompare(String(right.jobName)))[0];
+}
+
+/** A fresh server read of one service's jobs, so creating a clone never relies on a stale cache. */
+async function fetchServiceJobsFor(serviceName: string): Promise<any[]> {
+  const resp: any = await api({ url: "admin/serviceJobs", method: "get", params: { serviceName, pageSize: 200 } });
+  if(commonUtil.hasError(resp)) { throw new Error("The existing transfer sync jobs could not be read."); }
+  const payload = resp?.data;
+  const jobs = Array.isArray(payload) ? payload : payload?.serviceJobList;
+  if(!Array.isArray(jobs)) { throw new Error("The existing transfer sync jobs could not be read."); }
+
+  return jobs;
+}
+
 async function serviceJobExists(jobName: string): Promise<boolean> {
   try {
     const resp: any = await api({ url: `admin/serviceJobs/${encodeURIComponent(jobName)}`, method: "get" });
@@ -480,6 +530,13 @@ async function serviceJobExists(jobName: string): Promise<boolean> {
  * creating the schedule and starting to push to Shopify are two decisions, not one.
  */
 async function ensureShopJob(definition: TransferSyncJobDefinition, shopId: string): Promise<string> {
+  // The card can be stale, and a clone made under another name is still this shop's job.
+  const existing = findShopJob(definition, await fetchServiceJobsFor(definition.serviceName ?? ""), shopId);
+  if(existing?.jobName) {
+    await refreshAfterMutation("serviceJob", { jobName: existing.jobName });
+
+    return existing.jobName;
+  }
   const jobName = shopJobName(definition.template, shopId);
   if(await serviceJobExists(jobName)) { return jobName; }
 
@@ -515,6 +572,8 @@ export interface TransferSyncJobCard {
   definition: TransferSyncJobDefinition;
   job: any;
   jobName: string;
+  /** The DataManagerConfig the stager writes its files under; its delivery logs are found by it. */
+  configId: string;
   status: "active" | "paused" | "missing";
   nextRun?: any;
 }
@@ -522,8 +581,8 @@ export interface TransferSyncJobCard {
 /**
  * One card's worth of state per job, resolved against the cached job definitions.
  *
- * A shop-scoped job is matched on its shopId PARAMETER rather than its name, the way the rest of
- * the app matches Shopify sync jobs — a name-based guess picks the wrong clone silently.
+ * A shop-scoped job is matched on its service and shopId PARAMETER rather than its name (see
+ * `findShopJob`) — a name-based guess misses clones named any other way.
  */
 export function useShopifyTransferSyncJobs(shopId: () => string | undefined, cachedJobs: () => any[]) {
   const cards = computed<TransferSyncJobCard[]>(() => {
@@ -532,10 +591,7 @@ export function useShopifyTransferSyncJobs(shopId: () => string | undefined, cac
 
     return TRANSFER_SYNC_JOBS.map((definition) => {
       const job = definition.scope === "shop"
-        ? jobs.find((candidate: any) =>
-          String(candidate?.jobName ?? "").startsWith(definition.template) &&
-          (candidate?.serviceJobParameters ?? []).some((parameter: any) =>
-            parameter.parameterName === "shopId" && String(parameter.parameterValue) === currentShopId))
+        ? findShopJob(definition, jobs, currentShopId)
         : jobs.find((candidate: any) => String(candidate?.jobName ?? "") === definition.template);
 
       let status: TransferSyncJobCard["status"] = "missing";
@@ -546,11 +602,15 @@ export function useShopifyTransferSyncJobs(shopId: () => string | undefined, cac
         job,
         jobName: job?.jobName ??
           (definition.scope === "shop" && currentShopId ? shopJobName(definition.template, currentShopId) : definition.template),
+        configId: jobParameter(job, "configId") || defaultConfigId(definition),
         status,
         nextRun: job?.paused !== "Y" && Number(job?.nextExecutionDateTime) > Date.now() ? job.nextExecutionDateTime : undefined,
       };
     });
   });
+
+  /** The stagers' own configs, which is what their delivery logs are filed under. */
+  const deliveryConfigIds = computed(() => deliveryConfigIdsOf(cards.value));
 
   async function ensure(key: string) {
     const definition = TRANSFER_SYNC_JOBS.find((entry) => entry.key === key);
@@ -562,8 +622,9 @@ export function useShopifyTransferSyncJobs(shopId: () => string | undefined, cac
     return await ensureShopJob(definition, currentShopId);
   }
 
-  return { cards, ensure };
+  return { cards, deliveryConfigIds, ensure };
 }
+
 
 
 /** Reconciliation state for one shop, refreshed on demand by the view. */

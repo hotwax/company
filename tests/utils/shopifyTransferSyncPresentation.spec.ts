@@ -220,6 +220,14 @@ describe("buildTransferSyncPresentation", () => {
     ]);
   });
 
+  it("does not pluralize a single line or unit", () => {
+    const rows = buildTransferSyncPresentation([
+      { segment: "create", orderId: "M200104", orderItemSeqId: "00001", quantity: 1 },
+    ], "pending", emptyEnrichment());
+
+    expect(rows[0].detail).toBe("1 item line, 1 unit");
+  });
+
   it("calculates a creation row's OMS-to-Shopify delay from its creation time", () => {
     const rows = buildTransferSyncPresentation([
       { segment: "create", orderId: "M200103", orderItemSeqId: "00001", syncedDate: "2026-08-31T10:04:00Z" },

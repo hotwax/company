@@ -1,9 +1,21 @@
 import { toMillis } from "./cacheProjection";
 
+/** The seeded configs. A shop's stager can run under another; its own `configId` parameter wins. */
 export const TRANSFER_DELIVERY_CONFIGS = {
   create: "POST_SHOPIFY_TRANSFER_ORDER",
   update: "UPDATE_SHOPIFY_INVENTORY_TRANSFER",
 } as const;
+
+export type TransferDeliveryStage = keyof typeof TRANSFER_DELIVERY_CONFIGS;
+export type TransferDeliveryConfigIds = Partial<Record<TransferDeliveryStage, string>>;
+
+/** Each stage's config: the stager's own where it has one, else the seeded default. */
+export function transferDeliveryConfigIds(overrides: TransferDeliveryConfigIds = {}): Record<TransferDeliveryStage, string> {
+  return {
+    create: overrides.create || TRANSFER_DELIVERY_CONFIGS.create,
+    update: overrides.update || TRANSFER_DELIVERY_CONFIGS.update,
+  };
+}
 
 export function transferDeliveryState(log: any): { label: string; explanation: string; color: string } {
   if(Number(log.failedRecordCount) > 0 || ["DmlsFailed", "DmlsCrashed", "DmlsError"].includes(log.statusId)) {
@@ -25,6 +37,13 @@ export function transferDeliveryState(log: any): { label: string; explanation: s
   return { label: "Delivery not confirmed", explanation: "The available log does not confirm Shopify delivery. Review the delivery log.", color: "medium" };
 }
 
+/** Each stager card's config, keyed by delivery stage; cards for other jobs are ignored. */
+export function deliveryConfigIdsOf(cards: Array<{ definition: { key: string }; configId?: string }>): TransferDeliveryConfigIds {
+  return Object.fromEntries(cards
+    .filter((card) => (card.definition.key === "create" || card.definition.key === "update") && card.configId)
+    .map((card) => [card.definition.key, card.configId]));
+}
+
 /** Membership is taken from the retained source file, never inferred from a successful shop run. */
 export function transferOrdersInFile(value: unknown, shopId: string): string[] {
   const rows = typeof value === "string" ? JSON.parse(value) : value;
@@ -35,8 +54,10 @@ export function transferOrdersInFile(value: unknown, shopId: string): string[] {
   return [...new Set(rows.map(row => String(row.orderId)))];
 }
 
-export function transferDeliveryLogs(logs: any[], shopId: string, stage: keyof typeof TRANSFER_DELIVERY_CONFIGS, orderId?: string) {
-  return logs.filter(log => log.transferShopId === shopId && log.configId === TRANSFER_DELIVERY_CONFIGS[stage] &&
+export function transferDeliveryLogs(logs: any[], shopId: string, stage: TransferDeliveryStage, orderId?: string, configIds: TransferDeliveryConfigIds = {}) {
+  const configId = transferDeliveryConfigIds(configIds)[stage];
+
+  return logs.filter(log => log.transferShopId === shopId && log.configId === configId &&
     (!orderId || log.transferOrderIds?.includes(orderId)))
     .sort((left, right) => (toMillis(right.createdDate) ?? 0) - (toMillis(left.createdDate) ?? 0));
 }

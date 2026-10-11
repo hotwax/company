@@ -1,20 +1,22 @@
 import { dataManagerLogCache } from "@/utils/cacheEntities";
 import { toMillis } from "@/utils/cacheProjection";
-import { TRANSFER_DELIVERY_CONFIGS, transferOrdersInFile } from "@/utils/shopifyTransferDelivery";
+import { type TransferDeliveryConfigIds, transferDeliveryConfigIds, transferOrdersInFile } from "@/utils/shopifyTransferDelivery";
 import { registerSyncDomain } from "../syncRegistry";
 import { workerGet, workerPost } from "./workerFetch";
 
 // A bounded shop-scoped window. In-flight logs are rechecked; immutable source membership is
 // loaded once. The parameter document also finds update logs whose job result has logIds:[null].
+// `configIds` are the shop's stagers' own configs (an instance can clone them under its own), so
+// discovery reads the files those stagers actually wrote; a stage without one reads the seeded config.
 registerSyncDomain({
   name: "shopifyTransferDelivery",
   intervalMs: 10_000,
-  async sync(ctx, args: { shopId?: string } = {}) {
+  async sync(ctx, args: { shopId?: string; configIds?: TransferDeliveryConfigIds } = {}) {
     const shopId = String(args.shopId || "").trim();
     if(!shopId) {return 0;}
     const cached = await dataManagerLogCache.all();
     let written = 0;
-    for(const configId of Object.values(TRANSFER_DELIVERY_CONFIGS)) {
+    for(const configId of new Set(Object.values(transferDeliveryConfigIds(args.configIds)))) {
       const response = await workerPost(ctx, "oms/dataDocumentView", {
         dataDocumentId: "DATA_MANAGER_LOG_AND_PARAMETER",
         customParametersMap: { parameterName: "transferShopId", parameterValue: shopId, configId, orderByField: "-logId" },

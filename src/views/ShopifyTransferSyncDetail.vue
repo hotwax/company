@@ -40,7 +40,7 @@
           <ion-card-header><ion-card-title>{{ translate('Issues') }}</ion-card-title><ion-card-subtitle v-if="issueEntries.length">{{ translate('Select an issue to resolve below') }}</ion-card-subtitle></ion-card-header>
           <ion-list lines="full">
             <ion-item v-if="!checked && !issueEntries.length"><ion-spinner slot="start" /><ion-label>{{ translate('Loading staging results') }}</ion-label></ion-item>
-            <ion-item v-else-if="!issueEntries.length"><ion-label class="ion-text-wrap">{{ translate(stages.some(stage => stage.run) ? 'No blocker reported for this transfer in this run.' : 'No completed staging run is available yet.') }}</ion-label></ion-item>
+            <ion-item v-else-if="!issueEntries.length"><ion-label class="ion-text-wrap">{{ translate(!jobNames.length ? 'No transfer staging job is set up for this shop.' : stages.some(stage => stage.run) ? 'No blocker reported for this transfer in this run.' : 'No completed staging run is available yet.') }}</ion-label></ion-item>
             <ion-radio-group v-model="selectedKey" :aria-label="translate('Transfer sync issues')">
               <ion-item v-for="entry in issueEntries" :key="entry.issue.key" :disabled="mappingBusy">
                 <ion-radio :value="entry.issue.key" :disabled="mappingBusy" label-placement="end" justify="start">
@@ -65,8 +65,15 @@
       <ion-card v-if="selectedEntry">
         <ion-card-header><ion-card-title>{{ translate('Resolve issue') }}</ion-card-title></ion-card-header>
         <ion-list lines="full">
-          <ShopifyTransferDeliveryStatus v-if="resolutionIssue.code === 'delivery'" :shop-id="id" :order-id="orderId"
-            :stage="selectedEntry.stage.card.definition.key as TransferStager" :checked="deliveryChecked" :error="failingDomains?.shopifyTransferDelivery" />
+          <ShopifyTransferDeliveryStatus
+            v-if="resolutionIssue.code === 'delivery'"
+            :shop-id="id"
+            :order-id="orderId"
+            :stage="selectedEntry.stage.card.definition.key as TransferStager"
+            :checked="deliveryChecked"
+            :error="failingDomains?.shopifyTransferDelivery"
+            :config-ids="deliveryConfigIds"
+          />
           <ShopifyTransferMappingConflict v-else-if="isMappingConflict(resolutionIssue) && resolutionIssue.productId"
             :key="`${resolutionIssue.key}:${mappingVersion}`" :shop-id="id" :product-id="resolutionIssue.productId" :domain="shop?.myshopifyDomain"
             @busy="setMappingBusy(resolutionIssue.key, $event)" @ready="mappingReady[resolutionIssue.key] = $event" />
@@ -120,8 +127,8 @@ import { shopifyTransferAdminUrl, transfersAppOrderUrl } from "@/utils/shopifyTr
 const props = defineProps<{ id: string; orderId: string }>();
 const shopId = computed(() => props.id);
 const { record: shop } = useShopifyShop(shopId);
-const { jobs } = useServiceJobs();
-const { cards } = useShopifyTransferSyncJobs(() => props.id, () => jobs.value);
+const { jobs, hydrated: jobsHydrated } = useServiceJobs();
+const { cards, deliveryConfigIds } = useShopifyTransferSyncJobs(() => props.id, () => jobs.value);
 const stagingCards = computed(() => cards.value.filter(card => ["create", "update"].includes(card.definition.key)));
 const jobNames = computed(() => stagingCards.value.filter(card => card.job).map(card => card.jobName));
 const { runsFor } = useServiceJobRunsByJob(() => jobNames.value, 5);
@@ -129,7 +136,7 @@ const stages = computed(() => stagingCards.value.map(card => {
   const run = latestCompletedStagingRun(runsFor(card.jobName));
   return { card, run, issues: transferStagingIssues(run, props.id, card.definition.key as TransferStager).filter(issue => !issue.orderId || issue.orderId === props.orderId) };
 }));
-const { logsFor } = useShopifyTransferDelivery(() => props.id);
+const { logsFor } = useShopifyTransferDelivery(() => props.id, () => deliveryConfigIds.value);
 const issueEntries = computed(() => stages.value.flatMap(stage => {
   const entries = displayIssues(stage.issues).map(issue => ({ stage, issue }));
   const log = logsFor(stage.card.definition.key as TransferStager, props.orderId)[0];
@@ -221,13 +228,14 @@ function itemLabel(issue: TransferStagingIssue) {
 watch(order, value => {void resolve((value?.items || []).map(item => item.productId || "").filter(Boolean));});
 const { start, stop, syncNow, error: syncError, domainStatus, failingDomains } = useCacheSync();
 const baseline = ref(0);
-const checked = computed(() => Number(domainStatus.value.serviceJobRun?.at || 0) > baseline.value);
+// With no stager there is no run to wait for, so the Issues card says so rather than spinning forever.
+const checked = computed(() => (jobsHydrated.value && !jobNames.value.length) || Number(domainStatus.value.serviceJobRun?.at || 0) > baseline.value);
 const deliveryChecked = computed(() => Number(domainStatus.value.shopifyTransferDelivery?.at || 0) > baseline.value);
 const active = ref(false);
 const refreshing = ref(false);
 function startRuns() {
   baseline.value = Number(domainStatus.value.serviceJobRun?.at || 0);
-  void start([{ name: "shopifyTransferDelivery", args: { shopId: props.id } }, ...(jobNames.value.length ? [{ name: "serviceJobRun", args: { jobNames: jobNames.value, total: 5, batchSize: 5 } }] : [])]).catch(() => undefined);
+  void start([{ name: "shopifyTransferDelivery", args: { shopId: props.id, configIds: { ...deliveryConfigIds.value } } }, ...(jobNames.value.length ? [{ name: "serviceJobRun", args: { jobNames: jobNames.value, total: 5, batchSize: 5 } }] : [])]).catch(() => undefined);
 }
 async function refresh() {
   if(mappingBusy.value) {return;}
@@ -237,7 +245,7 @@ async function refresh() {
 }
 function enter() {active.value = true; startRuns(); void load([{ orderId: props.orderId }], { refresh: true }); void loadSummary(); mappingVersion.value++;}
 watch(() => `${props.id}|${props.orderId}`, () => {mappingReady.value = {}; busyByIssue.value = {}; checks.value = {}; checkVersion++; summaryVersion++; if(active.value) {enter(); void recheckSelected();}});
-watch(jobNames, () => {if(active.value) {startRuns();}});
+watch(() => `${jobNames.value.join("|")}|${JSON.stringify(deliveryConfigIds.value)}`, () => {if(active.value) {startRuns();}});
 onIonViewWillEnter(enter);
 onIonViewDidLeave(() => {active.value = false; checkVersion++; summaryVersion++; stop();});
 const showJob = ref(false);

@@ -89,6 +89,7 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
         nextRun: "2026-09-02T20:00:00.000Z",
       },
     ]),
+    deliveryConfigIds: ref({}),
     ensure: vi.fn(),
   }),
   useShopifyWebhookReconciliation: () => ({

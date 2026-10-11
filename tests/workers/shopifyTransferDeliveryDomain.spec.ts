@@ -21,6 +21,14 @@ describe("transfer delivery worker", () => {
     expect(state.post.mock.calls.every(([, , body]) => body.customParametersMap.parameterName === "transferShopId" && body.customParametersMap.parameterValue === "UK" && body.pageSize === 5)).toBe(true);
     expect(state.write.mock.calls[0][0][0]).toMatchObject({ transferShopId: "UK", transferOrderIds: ["TO"] });
   });
+  it("discovers the files a stager wrote under its own config", async () => {
+    state.post.mockResolvedValue({ entityValueList: [] });
+    await state.domain.sync({}, { shopId: "10010", configIds: { create: "DEMO_TO_CREATE", update: "DEMO_TO_UPDATE" } });
+    expect(state.post.mock.calls.map(([, , body]) => body.customParametersMap.configId)).toEqual(["DEMO_TO_CREATE", "DEMO_TO_UPDATE"]);
+    state.post.mockClear();
+    await state.domain.sync({}, { shopId: "10010", configIds: { create: "DEMO_TO_CREATE" } });
+    expect(state.post.mock.calls.map(([, , body]) => body.customParametersMap.configId)).toEqual(["DEMO_TO_CREATE", "UPDATE_SHOPIFY_INVENTORY_TRANSFER"]);
+  });
   it("fails closed on cross-shop results", async () => {
     state.post.mockResolvedValue({ entityValueList: [{ ...scopeRow, parameterValue: "US" }] });
     await expect(state.domain.sync({}, { shopId: "UK" })).rejects.toThrow("scope");

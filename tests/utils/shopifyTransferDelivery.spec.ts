@@ -29,6 +29,14 @@ describe("transfer delivery evidence", () => {
     expect(transferDeliveryLogs(logs, "UK", "create", "TO1").map(log => log.logId)).toEqual(["one"]);
     expect(transferDeliveryLogs(logs, "UK", "create", "TO2")).toEqual([]);
   });
+  it("reads a stager's own config when it runs under one other than the seeded default", () => {
+    const logs = [
+      { logId: "seeded", configId: "POST_SHOPIFY_TRANSFER_ORDER", transferShopId: "10010", transferOrderIds: ["TO1"], createdDate: 100 },
+      { logId: "demo", configId: "DEMO_TO_CREATE", transferShopId: "10010", transferOrderIds: ["TO1"], createdDate: 200 },
+    ];
+    expect(transferDeliveryLogs(logs, "10010", "create", "TO1", { create: "DEMO_TO_CREATE" }).map(log => log.logId)).toEqual(["demo"]);
+    expect(transferDeliveryLogs(logs, "10010", "create", "TO1", { update: "DEMO_TO_UPDATE" }).map(log => log.logId)).toEqual(["seeded"]);
+  });
   it("verifies membership from shop-scoped source records, including batched updates", () => {
     expect(transferOrdersInFile(JSON.stringify([{ shopId: "UK", orderId: "TO1" }, { shopId: "UK", orderId: "TO2", payload: {} }]), "UK")).toEqual(["TO1", "TO2"]);
     expect(() => transferOrdersInFile([{ shopId: "US", orderId: "TO1" }], "UK")).toThrow();

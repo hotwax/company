@@ -89,7 +89,7 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     rows: ref([{ segment: "create", orderId: "128253", shopifyInventoryTransferId: "4604788917", orderItemSeqId: "01", quantity: 1 }]), total: ref(1), loading: ref(false), error: ref(""),
     hasMore: ref(false), load: vi.fn(), loadMore: vi.fn(),
   }),
-  useShopifyTransferSyncJobs: () => ({ cards: ref([]), ensure: vi.fn() }),
+  useShopifyTransferSyncJobs: () => ({ cards: ref([]), deliveryConfigIds: ref({}), ensure: vi.fn() }),
   useShopifyWebhookReconciliation: () => ({
     rows: ref([]),
     summary: ref({ subscribedCount: 0, requiredCount: 0, missingCount: 0, noConsumerCount: 0,

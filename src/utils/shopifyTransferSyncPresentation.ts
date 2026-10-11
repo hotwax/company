@@ -87,6 +87,11 @@ function transferRoute(order: TransferSyncOrder | undefined, facilityNamesById: 
   return origin && destination ? `From ${origin} to ${destination}` : "";
 }
 
+/** "1 unit", "2 units": these rows read one transfer line as often as many. */
+function counted(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function joinDetail(...parts: Array<string | undefined>): string {
   return parts.filter(Boolean).join(", ");
 }
@@ -121,7 +126,7 @@ function creationSummary(
     title: transferName(orderId, order),
     detail: joinDetail(
       transferRoute(order, enrichment.facilityNamesById),
-      `${items.length} item lines, ${totalQuantity} units`,
+      `${counted(items.length, "item line", "item lines")}, ${counted(totalQuantity, "unit", "units")}`,
     ),
     status: direction === "pending" ? "Outstanding" : "Synced",
     ...syncTiming(enrichment.creationOccurredAtByOrderId[orderId] ?? "", latestSyncedAt),
@@ -218,7 +223,7 @@ function actionSummary(
       detail: joinDetail(
         transferRoute(order, enrichment.facilityNamesById),
         item?.itemDescription,
-        cancelled > 0 ? `${cancelled} units cancelled` : "Quantity updated",
+        cancelled > 0 ? `${counted(cancelled, "unit", "units")} cancelled` : "Quantity updated",
       ),
       status,
       ...rowTiming(row),

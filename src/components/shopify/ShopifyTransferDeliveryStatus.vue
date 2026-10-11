@@ -36,11 +36,11 @@ import { computed, ref } from "vue";
 import DataManagerLogModal from "@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue";
 import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
 import { formatDateTime } from "@/utils";
-import { transferDeliveryState } from "@/utils/shopifyTransferDelivery";
+import { type TransferDeliveryConfigIds, transferDeliveryState } from "@/utils/shopifyTransferDelivery";
 
 defineOptions({ inheritAttrs: false });
-const props = defineProps<{ shopId: string; stage: "create" | "update"; orderId?: string; checked: boolean; error?: string; direction?: "pending" | "synced" }>();
-const { logsFor } = useShopifyTransferDelivery(() => props.shopId);
+const props = defineProps<{ shopId: string; stage: "create" | "update"; orderId?: string; checked: boolean; error?: string; direction?: "pending" | "synced"; configIds?: TransferDeliveryConfigIds }>();
+const { logsFor } = useShopifyTransferDelivery(() => props.shopId, () => props.configIds ?? {});
 const log = computed(() => logsFor(props.stage, props.orderId)[0]);
 const state = computed(() => transferDeliveryState(log.value || {}));
 const visible = computed(() => {

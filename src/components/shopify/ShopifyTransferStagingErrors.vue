@@ -27,7 +27,7 @@
           {{ translate("View job") }}
         </ion-button>
       </ion-list-header>
-      <ShopifyTransferDeliveryStatus :shop-id="shopId" :stage="stage.card.definition.key as TransferStager" direction="pending" :checked="Boolean(deliveryChecked)" :error="deliveryError" />
+      <ShopifyTransferDeliveryStatus :shop-id="shopId" :stage="stage.card.definition.key as TransferStager" direction="pending" :checked="Boolean(deliveryChecked)" :error="deliveryError" :config-ids="deliveryConfigIds" />
       <ion-item v-if="!stage.card.job">
         <ion-label class="ion-text-wrap">
           {{ translate("Configure this stager to check for transfer sync errors.") }}
@@ -88,6 +88,7 @@ import { useServiceJobRunsByJob } from "@/composables/useServiceJobs";
 import type { TransferSyncJobCard } from "@/composables/useShopifyTransferSync";
 import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import { formatDateTime } from "@/utils";
+import { deliveryConfigIdsOf } from "@/utils/shopifyTransferDelivery";
 import { type TransferStager, groupTransferStagingIssues, latestCompletedStagingRun, transferStagingIssues } from "@/utils/shopifyTransferStagingErrors";
 import ShopifyTransferDeliveryStatus from "./ShopifyTransferDeliveryStatus.vue";
 
@@ -95,6 +96,7 @@ const props = defineProps<{ shopId: string; cards: TransferSyncJobCard[]; checke
 const emit = defineEmits<{ openJob: [card: TransferSyncJobCard]; openTransfer: [orderId: string]; refresh: [] }>();
 const { runsFor, hydrated } = useServiceJobRunsByJob(() => props.cards.filter((card) => card.job).map((card) => card.jobName), 5);
 const { enrichment, load } = useShopifyTransferSyncEnrichment();
+const deliveryConfigIds = computed(() => deliveryConfigIdsOf(props.cards));
 
 const stages = computed(() => props.cards.map((card) => {
   const runs = card.job ? runsFor(card.jobName) : [];

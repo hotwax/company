@@ -194,7 +194,7 @@
             </ion-segment-button>
           </ion-segment>
 
-          <ShopifyTransferDeliveryStatus v-if="activeTab === 'create'" :shop-id="shopId" stage="create" :direction="direction" :checked="deliveryChecked" :error="failingDomains?.shopifyTransferDelivery" />
+          <ShopifyTransferDeliveryStatus v-if="activeTab === 'create'" :shop-id="shopId" stage="create" :direction="direction" :checked="deliveryChecked" :error="failingDomains?.shopifyTransferDelivery" :config-ids="deliveryConfigIds" />
           <ShopifyTransferStagingErrors
             v-if="activeTab === 'errors'"
             :key="shopId"
@@ -426,7 +426,7 @@
             <ion-radio :value="option.key" justify="start" label-placement="end">
               <ion-label class="ion-text-wrap">
                 {{ translate(option.label) }}
-                <p>{{ option.value ? formatDateTime(option.value) : translate("Not available") }}</p>
+                <p>{{ option.description ? translate(option.description) : formatDateTime(option.value) || translate("Not available") }}</p>
               </ion-label>
             </ion-radio>
           </ion-item>
@@ -541,7 +541,7 @@
         </ion-list>
 
         <div v-else-if="!webhookRows.length" class="empty-state">
-          <p>{{ translate("No transfer or shipment webhook topics are registered on this shop.") }}</p>
+          <p>{{ translate(webhookSummary && !webhookSummary.requiredCount ? "This OMS has no transfer or shipment topics configured. Load the connector's webhook seed data." : "No transfer or shipment webhook topics are registered on this shop.") }}</p>
         </div>
 
         <ion-list v-if="webhookRows.length" lines="full">
@@ -665,7 +665,9 @@ const SEGMENT_TABS = [
 
 type TransferSyncTab = PendingSegment | "errors";
 const activeTab = ref<TransferSyncTab>("create");
-const { logsFor: deliveryLogsFor } = useShopifyTransferDelivery(() => shopId.value);
+const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
+const { cards: jobCards, deliveryConfigIds, ensure: ensureJob } = useShopifyTransferSyncJobs(() => shopId.value, () => cachedJobs.value);
+const { logsFor: deliveryLogsFor } = useShopifyTransferDelivery(() => shopId.value, () => deliveryConfigIds.value);
 function creationDeliveryLabel(orderId: string) {
   const log = deliveryLogsFor("create", orderId)[0];
 
@@ -720,10 +722,18 @@ const launchCustom = ref<string | null>(null);
  */
 const EVERYTHING_FROM = "1970-01-01T00:00:00.000Z";
 
+/**
+ * The browser clock the presets read. A ref, re-read on open, on every choice and on save: a computed
+ * reading `new Date()` has no dependency, so it kept the first open's "Now" for the life of the view
+ * (Ionic retains this component) and saving "Now" hours later stored the stale instant.
+ */
+const launchClock = ref(Date.now());
+
 const launchOptions = computed(() => [
-  { key: "now", label: "Now — only transfers entered from this moment", value: new Date().toISOString() },
-  { key: "startOfToday", label: "Start of today", value: DateTime.now().startOf("day").toISO() },
-  { key: "oldest", label: "Everything — every transfer this shop owns", value: EVERYTHING_FROM },
+  { key: "now", label: "Now — only transfers entered from this moment", value: new Date(launchClock.value).toISOString(), description: "" },
+  { key: "startOfToday", label: "Start of today", value: DateTime.fromMillis(launchClock.value).startOf("day").toISO(), description: "" },
+  // The epoch is a technicality, not a date anyone chose; showing it read "Dec 31, 1969".
+  { key: "oldest", label: "Everything — every transfer this shop owns", value: EVERYTHING_FROM, description: "No start date limit" },
 ]);
 
 const selectedLaunchDate = computed<string | null>(() => {
@@ -754,13 +764,15 @@ function openLaunchModal() {
   showLaunchModal.value = true;
   launchChoice.value = "now";
   launchCustom.value = null;
+  launchClock.value = Date.now();
   // Context (saved setting, oldest owned order) plus the counts for the default choice.
-  void loadLaunch(shopId.value, new Date().toISOString(), true);
+  void loadLaunch(shopId.value, new Date(launchClock.value).toISOString(), true);
 }
 
 /** Every choice re-previews, because the count IS the decision. */
 function selectLaunchChoice(next: string) {
   launchChoice.value = next || "now";
+  launchClock.value = Date.now();
   if(selectedLaunchDate.value) { void loadLaunch(shopId.value, selectedLaunchDate.value); }
 }
 
@@ -770,6 +782,8 @@ watch(launchCustom, (next) => {
 });
 
 async function confirmLaunch() {
+  // "Now" means the moment of saving, not of choosing.
+  launchClock.value = Date.now();
   const chosen = selectedLaunchDate.value;
   if(!chosen) { return; }
   if(await saveLaunch(shopId.value, chosen)) {
@@ -849,6 +863,8 @@ const webhookSummaryColor = computed(() => {
   const s = webhookSummary.value;
   if(!s) { return "medium"; }
   if(s.missingCount || s.noConsumerCount) { return "danger"; }
+  // Nothing to subscribe to is not "all subscribed": the OMS is missing the connector's topic seed data.
+  if(!s.requiredCount) { return "warning"; }
   if(s.duplicateCount || s.elsewhereCount) { return "warning"; }
 
   return "success";
@@ -859,6 +875,7 @@ const webhookProblems = computed(() => {
   const s = webhookSummary.value;
   if(!s) { return []; }
   const problems: string[] = [];
+  if(!s.requiredCount) { problems.push(translate("This OMS has no transfer or shipment topics configured. Load the connector's webhook seed data.")); }
   if(s.missingCount) { problems.push(`${s.missingCount} ${translate("missing")}`); }
   if(s.noConsumerCount) { problems.push(`${s.noConsumerCount} ${translate("with no consumer")}`); }
   if(s.duplicateCount) { problems.push(`${s.duplicateCount} ${translate("duplicate")}`); }
@@ -899,8 +916,6 @@ function webhookStatusLabel(status: string) {
   return translate("Subscribed");
 }
 
-const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
-const { cards: jobCards, ensure: ensureJob } = useShopifyTransferSyncJobs(() => shopId.value, () => cachedJobs.value);
 const stagingJobCards = computed(() => jobCards.value.filter((card) => ["create", "update"].includes(card.definition.key)));
 const stagingJobNames = computed(() => stagingJobCards.value.filter((card) => card.job).map((card) => card.jobName));
 
@@ -1081,7 +1096,7 @@ function activeSyncDomains() {
   return shopId.value
     ? [
       { name: "shopifyTransferSync", args: { shopId: shopId.value } },
-      { name: "shopifyTransferDelivery", args: { shopId: shopId.value } },
+      { name: "shopifyTransferDelivery", args: { shopId: shopId.value, configIds: { ...deliveryConfigIds.value } } },
       ...(activeTab.value === "errors" && stagingJobNames.value.length
         ? [{ name: "serviceJobRun", args: { jobNames: stagingJobNames.value, total: 5, batchSize: 5 } }]
         : []),
@@ -1110,7 +1125,8 @@ async function retry() {
 }
 
 watch(shopId, startTransferSyncDomains);
-watch(() => `${activeTab.value}|${stagingJobNames.value.join("|")}`, () => {
+// A stager matched once the job cache hydrates brings its own config, so delivery discovery restarts with it.
+watch(() => `${activeTab.value}|${stagingJobNames.value.join("|")}|${JSON.stringify(deliveryConfigIds.value)}`, () => {
   if(!viewActive.value) {return;}
   stagingSyncBaselineAt.value = Number(domainStatus.value.serviceJobRun?.at ?? 0);
   void startSyncDomains(activeSyncDomains());
