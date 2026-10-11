@@ -1,9 +1,11 @@
+import { DateTime } from "luxon";
 import { ref } from "vue";
-import { api, commonUtil, logger } from "@common";
+import { api, commonUtil, logger, translate } from "@common";
 
 export function useRejectionReasons() {
   const rejectReasons = ref<any[]>([]);
   const rejectReasonEnumTypes = ref<any[]>([]);
+  const filteredReasons = ref<any[]>([]);
   const groupRejectReasons = ref<Record<string, Record<string, any>>>({
     FF_REJ_RSN_GRP: {},
     BOPIS_REJ_RSN_GRP: {}
@@ -138,9 +140,72 @@ export function useRejectionReasons() {
     });
   }
 
+  const findReasonsDiff = (previousSeq: any, updatedSeq: any) => {
+    const diffSeq: any = Object.keys(previousSeq).reduce((diff, key) => {
+      if (updatedSeq[key].enumId === previousSeq[key].enumId && updatedSeq[key].sequenceNum === previousSeq[key].sequenceNum) return diff;
+      return {
+        ...diff,
+        [key]: updatedSeq[key]
+      };
+    }, {});
+    return diffSeq;
+  };
+
+  const saveReasonsOrder = async () => {
+    const diffReasons = filteredReasons.value.filter((reason: any) =>
+      rejectReasons.value.some((rejectReason: any) => rejectReason.enumId === reason.enumId && rejectReason.sequenceNum !== reason.sequenceNum)
+    );
+
+    const responses = await Promise.allSettled(
+      diffReasons.map(async (reason: any) => {
+        await updateEnumeration(reason);
+      })
+    );
+
+    const isFailedToUpdateSomeReason = responses.some((response) => response.status === "rejected");
+    if (isFailedToUpdateSomeReason) {
+      commonUtil.showToast(translate("Failed to update sequence for some rejection reasons."));
+    } else {
+      commonUtil.showToast(translate("Sequence for rejection reasons updated successfully."));
+      rejectReasons.value = JSON.parse(JSON.stringify(filteredReasons.value));
+    }
+  };
+
+  const toggleReasonStatusForCurrentSegment = async (reason: any, groupId: string) => {
+    if (!groupId) return;
+
+    let resp: any;
+    const currentMember = groupRejectReasons.value[groupId]?.[reason.enumId];
+
+    const payload: any = {
+      enumerationId: reason.enumId,
+      enumerationGroupId: groupId,
+      sequenceNum: reason.sequenceNum,
+      fromDate: currentMember?.fromDate || DateTime.now().toMillis()
+    };
+
+    if (currentMember?.fromDate) {
+      payload.thruDate = DateTime.now().toMillis();
+    }
+
+    try {
+      resp = await updateEnumerationGroupMember(payload);
+
+      if (!commonUtil.hasError(resp)) {
+        await fetchEnumGroupMembers(groupId);
+      } else {
+        throw resp.data;
+      }
+    } catch (error: any) {
+      logger.error(error);
+      commonUtil.showToast(translate("Failed to update reason association with group."));
+    }
+  };
+
   return {
     rejectReasons,
     rejectReasonEnumTypes,
+    filteredReasons,
     groupRejectReasons,
     isFetching,
     fetchRejectReasons,
@@ -149,6 +214,9 @@ export function useRejectionReasons() {
     createEnumeration,
     updateEnumeration,
     deleteEnumeration,
-    updateEnumerationGroupMember
+    updateEnumerationGroupMember,
+    findReasonsDiff,
+    saveReasonsOrder,
+    toggleReasonStatusForCurrentSegment
   };
 }

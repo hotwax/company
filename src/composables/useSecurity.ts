@@ -84,7 +84,7 @@ export function useUserAccountActions() {
   };
 
   const resetPassword = async (payload: any, maarg: string) => {
-    return client({
+    const resp: any = await client({
       baseURL: getBaseURL(maarg),
       url: `admin/users/${payload.userId}/changePassword`,
       method: "post",
@@ -95,6 +95,13 @@ export function useUserAccountActions() {
         newPasswordVerify: payload.newPasswordVerify
       }
     });
+
+    // update#Password reports failures (wrong/missing old password, no permission, weak password) as a public
+    // "danger" message with updateSuccessful: false, not as commonUtil.hasError's generic error shape.
+    if (commonUtil.hasError(resp) || !resp.data?.updateSuccessful) {
+      throw resp.data;
+    }
+    return resp;
   };
 
   const setUserCreationDraftFromSearch = (search: string) => {
