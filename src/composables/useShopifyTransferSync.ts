@@ -207,7 +207,8 @@ export function useShopifyTransferSyncLaunch() {
 const NATIVE_SYNC_SETTING = "SHPFY_NATIVE_TO_SYNC";
 
 export function useShopifyNativeTransferSync() {
-  const enabled = ref(true);
+  // Unknown until the server answers: a default rendered as the switch's state reads as a fact.
+  const enabled = ref<boolean | undefined>(undefined);
   const loading = ref(false);
   const saving = ref(false);
   const loadFailed = ref(false);
@@ -215,6 +216,7 @@ export function useShopifyNativeTransferSync() {
 
   async function load(shopId: string) {
     const version = ++loadVersion;
+    enabled.value = undefined;
     if(!shopId) {
       loading.value = false;
       loadFailed.value = true;
@@ -248,7 +250,7 @@ export function useShopifyNativeTransferSync() {
   }
 
   async function save(shopId: string, next: boolean): Promise<boolean> {
-    if(!shopId) { return false; }
+    if(!shopId || enabled.value === undefined) { return false; }
     saving.value = true;
     try {
       const resp: any = await api({

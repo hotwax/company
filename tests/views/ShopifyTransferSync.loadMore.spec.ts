@@ -75,6 +75,7 @@ vi.mock("@/composables/useServiceJobs", () => ({
 
 /** What the cache holds per list: rows, and the distinct transfer orders behind them. */
 let cached: { counts: any; orderCounts: any };
+let nativeSync: any;
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyPendingCounts: () => {
@@ -93,9 +94,11 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     hydrated: ref(true),
     count: ref(0),
   }),
-  useShopifyNativeTransferSync: () => ({
-    enabled: ref(true), loading: ref(false), saving: ref(false), loadFailed: ref(false), load: vi.fn(), save: vi.fn(),
-  }),
+  useShopifyNativeTransferSync: () => {
+    nativeSync = { enabled: ref<boolean | undefined>(false), loading: ref(false), saving: ref(false), loadFailed: ref(false), load: vi.fn(), save: vi.fn() };
+
+    return nativeSync;
+  },
   useShopifyTransferSyncLaunch: () => ({
     currentDate: ref("2026-09-01T00:00:00.000Z"),
     counts: ref({}),
@@ -254,5 +257,24 @@ describe("ShopifyTransferSync - outstanding lists, ten transfers at a time", () 
     await wrapper.vm.$nextTick();
 
     expect(loadMoreButton(wrapper)).toBeUndefined();
+  });
+
+  it("never draws the native sync switch from a value the server did not confirm", async () => {
+    const wrapper = await mountPage();
+    expect(wrapper.find("ion-toggle").exists()).toBe(true);
+
+    // A failed read: no switch, which would show the default, but a retry.
+    nativeSync.enabled.value = undefined;
+    nativeSync.loadFailed.value = true;
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find("ion-toggle").exists()).toBe(false);
+    const retry = wrapper.findAll("button").find((button: any) => button.text() === "Retry")!;
+    await retry.trigger("click");
+    expect(nativeSync.load).toHaveBeenCalledWith("1000");
+
+    // Still unknown while it reloads.
+    nativeSync.loadFailed.value = false;
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find("ion-toggle").exists()).toBe(false);
   });
 });

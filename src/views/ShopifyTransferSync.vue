@@ -111,19 +111,23 @@
                     <p v-if="nativeSyncLoadFailed">
                       {{ translate("Not loaded") }}
                     </p>
-                    <p v-else-if="nativeSyncEnabled">
+                    <p v-else-if="nativeSyncEnabled === true">
                       {{ translate("Transfer orders sync to Shopify as inventory transfers.") }}
                     </p>
-                    <p v-else>
+                    <p v-else-if="nativeSyncEnabled === false">
                       {{ translate("Transfer orders do not sync as Shopify transfers. Their inventory changes sync as inventory updates.") }}
                     </p>
                   </ion-label>
-                  <ion-skeleton-text v-if="nativeSyncLoading" slot="end" :animated="true" class="count-skeleton" />
+                  <!-- Only the server's answer is drawn as the switch: unknown is a skeleton or a retry, never a default. -->
+                  <ion-button v-if="nativeSyncLoadFailed" slot="end" fill="outline" size="small" @click="loadNativeSync(shopId)">
+                    {{ translate("Retry") }}
+                  </ion-button>
+                  <ion-skeleton-text v-else-if="nativeSyncLoading || nativeSyncEnabled === undefined" slot="end" :animated="true" class="count-skeleton" />
                   <ion-toggle
                     v-else
                     slot="end"
                     :checked="nativeSyncEnabled"
-                    :disabled="nativeSyncSaving || nativeSyncLoadFailed"
+                    :disabled="nativeSyncSaving"
                     :aria-label="translate('Native Inventory Transfer Sync')"
                     @click.prevent="toggleNativeSync"
                   />
@@ -818,7 +822,7 @@ const {
 
 async function toggleNativeSync(event: any) {
   event?.stopImmediatePropagation?.();
-  if(nativeSyncSaving.value || nativeSyncLoadFailed.value) { return; }
+  if(nativeSyncSaving.value || nativeSyncEnabled.value === undefined) { return; }
   if(!await saveNativeSync(shopId.value, !nativeSyncEnabled.value)) {
     commonUtil.showToast(translate("Native Inventory Transfer Sync could not be updated."));
   }
