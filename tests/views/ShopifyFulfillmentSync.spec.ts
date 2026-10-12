@@ -64,7 +64,7 @@ vi.mock("@common", () => ({
     products: resolvedProducts,
     resolve: (...args: any[]) => harness.resolveProductNames(...args),
   }),
-  useDb: () => ({ records: ref([]), first: ref(undefined), count: ref(0), hydrated: ref(true) }),
+  useLiveEntity: () => ({ records: ref([]), first: ref(undefined), count: ref(0), hydrated: ref(true) }),
 }));
 
 // Only the alert overlay is replaced: ion-alert cannot be presented in jsdom, so the controller

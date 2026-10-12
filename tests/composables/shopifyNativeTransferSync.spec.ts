@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { api, hasError } = vi.hoisted(() => ({ api: vi.fn(), hasError: vi.fn(() => false) }));
 
-vi.mock("@common", () => ({ api, commonUtil: { hasError }, useDb: vi.fn() }));
+vi.mock("@common", () => ({ api, commonUtil: { hasError }, useLiveEntity: vi.fn() }));
 vi.mock("@/services/appCacheBootstrap", () => ({ refreshAfterMutation: vi.fn() }));
 vi.mock("@/utils/shopifyWebhookReconciliation", () => ({ reconcileWebhookTopics: vi.fn() }));
 vi.mock("@/workers/domains/shopifyTransferSyncDomain", () => ({

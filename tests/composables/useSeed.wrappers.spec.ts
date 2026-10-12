@@ -3,7 +3,7 @@ import { nextTick, reactive, shallowRef } from "vue";
 
 /**
  * The lookup composables in useSeed are thin wrappers over the framework's useSeedData. These pin
- * the shapes templates index into, and that `hydrated` keeps useDb's meaning: the first read has
+ * the shapes templates index into, and that `hydrated` keeps useLiveEntity's meaning: the first read has
  * landed, and an empty list is only trusted once sync has stopped filling the table.
  */
 const harness = vi.hoisted(() => ({
@@ -22,7 +22,7 @@ vi.mock("@common", () => ({
   api: vi.fn(),
   commonUtil: { hasError: () => false },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
-  useDb: () => ({ records: { value: [] }, hydrated: { value: true } }),
+  useLiveEntity: () => ({ records: { value: [] }, hydrated: { value: true } }),
 }));
 
 vi.mock("@common/db", () => ({

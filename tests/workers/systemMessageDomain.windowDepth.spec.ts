@@ -33,7 +33,7 @@ vi.mock("@common/core/workerRemoteApi", () => ({
 const cacheState = vi.hoisted(() => ({ count: 0 }));
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: {
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
     entity: (table: string) => {
       if (table === "systemMessages") {
         return {

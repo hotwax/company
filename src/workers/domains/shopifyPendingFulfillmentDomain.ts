@@ -2,8 +2,8 @@ import { companyDb } from "@/db/companyDb";
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import { workerGet } from "@common/core/workerRemoteApi";
 
-const pendingFulfillmentEntity = companyDb.entity("shopifyPendingFulfillments");
-const pendingFulfillmentStatusEntity = companyDb.entity("shopifyPendingFulfillmentStatus");
+const pendingFulfillmentEntity = companyDb.entity(companyDb.tables.shopifyPendingFulfillments);
+const pendingFulfillmentStatusEntity = companyDb.entity(companyDb.tables.shopifyPendingFulfillmentStatus);
 
 // A bounded oldest-first snapshot: shipped rows leave this set when Shopify confirms them.
 export const shopifyPendingFulfillmentDomain = defineSyncDomain({

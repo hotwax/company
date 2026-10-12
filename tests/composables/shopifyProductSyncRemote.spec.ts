@@ -12,7 +12,7 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: (response: any) => harness.hasError(response), showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
-  useDb: () => ({
+  useLiveEntity: () => ({
     rows: { value: [] },
     records: { value: [] },
     first: { value: undefined },
@@ -22,7 +22,7 @@ vi.mock("@common", () => ({
 }));
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: {
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
     entity: (table: string) => {
       if (table === "systemMessageRemotes") {
         return {

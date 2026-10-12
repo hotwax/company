@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: {
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
     entity: (table: string) => {
       if (table === "serviceJobRuns") {
         return {

@@ -160,7 +160,8 @@ import {
 } from "@ionic/vue";
 import { closeOutline, warningOutline } from "ionicons/icons";
 import { computed, ref } from "vue";
-import { commonUtil, logger, translate, useDb } from "@common";
+import { commonUtil, logger, translate, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { useFacilityGroups, useGroupFacilities } from "@/composables/useFacilities";
 import {
   createInventoryChannel,
@@ -197,7 +198,7 @@ const omsMappings = ref<any[]>([]);
 
 const { records: facilityGroups, hydrated: groupsHydrated } = useFacilityGroups();
 const { members: groupMembers, hydrated: membersHydrated } = useGroupFacilities();
-const { records: inventoryChannels } = useDb<any>("inventoryChannels");
+const { records: inventoryChannels } = useLiveEntity<any>(companyDb.tables.inventoryChannels);
 
 const facilityDataReady = computed(() => groupsHydrated.value && membersHydrated.value);
 

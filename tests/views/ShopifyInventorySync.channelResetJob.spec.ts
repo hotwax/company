@@ -55,7 +55,7 @@ vi.mock("@common", () => ({
       (message, [name, value]) => message.replace(`{${name}}`, String(value)),
       key,
     ),
-  useDb: (table: string) => {
+  useLiveEntity: (table: string) => {
     const read = (records: { value: any[] }, hydrated = ref(true)) => ({
       records, first: computed(() => records.value[0]), count: computed(() => records.value.length), hydrated,
     });

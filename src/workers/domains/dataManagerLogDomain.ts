@@ -1,7 +1,7 @@
 import { companyDb } from "@/db/companyDb";
 import { keepNewerThan } from "@common/db";
 
-const dataManagerLogEntity = companyDb.entity("dataManagerLogs");
+const dataManagerLogEntity = companyDb.entity(companyDb.tables.dataManagerLogs);
 
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";

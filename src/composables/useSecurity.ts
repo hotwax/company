@@ -1,5 +1,6 @@
 import { computed, onScopeDispose, ref, watch } from "vue";
-import { api, client, commonUtil, logger, useDb } from "@common";
+import { api, client, commonUtil, logger, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { useUserStore } from "@/store/user";
 import { resyncDomain } from "@/services/appDbSync";
 import { onSessionCleared } from "./sessionScope";
@@ -21,7 +22,7 @@ function byDescription(a: any, b: any): number {
  */
 
 export function useUserGroups() {
-  const { records, hydrated } = useDb<any>("userGroups");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.userGroups);
   const userGroups = computed(() => [...records.value].sort(byDescription));
 
   /** Client-side search over the complete cached set — no server round-trip. */
@@ -36,13 +37,13 @@ export function useUserGroups() {
 }
 
 export const useUserGroupRecord = (userGroupId: string | undefined) => {
-  const { first: record, hydrated } = useDb<any>("userGroups", () => userGroupId ? { equals: { userGroupId } } : { filter: () => false });
+  const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.userGroups, () => userGroupId ? { equals: { userGroupId } } : { filter: () => false });
   return { record, hydrated };
 };
 
 /** The master permission catalog (moqui.security.UserPermission). */
 export function usePermissions() {
-  const { records, hydrated } = useDb<any>("permissions");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.permissions);
   return { permissions: computed(() => [...records.value].sort(byDescription)), records, hydrated };
 }
 

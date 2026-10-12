@@ -6,9 +6,9 @@ import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
 
-const systemMessageEntity = companyDb.entity("systemMessages");
-const shopifyShopEntity = companyDb.entity("shopifyShops");
-const systemMessageRemoteEntity = companyDb.entity("systemMessageRemotes");
+const systemMessageEntity = companyDb.entity(companyDb.tables.systemMessages);
+const shopifyShopEntity = companyDb.entity(companyDb.tables.shopifyShops);
+const systemMessageRemoteEntity = companyDb.entity(companyDb.tables.systemMessageRemotes);
 
 /**
  * SystemMessage — class A (live, append-mostly).

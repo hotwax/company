@@ -32,7 +32,7 @@ vi.mock("@common", () => ({
   translate: (key: string, values: Record<string, unknown> = {}) =>
     Object.entries(values).reduce((message, [name, value]) => message.replace(`{${name}}`, String(value)), key),
   // Stored rows are the projected server rows themselves, with no synthetic key beside them.
-  useDb: (table: string, options?: any) => {
+  useLiveEntity: (table: string, options?: any) => {
     if(table.endsWith("AdjustmentDetails")) {harness.ledgerOptions = options;}
     const list = (source: { value: any[] }, hydrated = ref(true)) => {
       const records = computed(() => {

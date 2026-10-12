@@ -3,10 +3,10 @@ import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { unwrapCollection, workerGet, workerPost } from "@common/core/workerRemoteApi";
 
-const syncRunEntity = companyDb.entity("syncRuns");
-const shopifyShopEntity = companyDb.entity("shopifyShops");
-const systemMessageEntity = companyDb.entity("systemMessages");
-const dataManagerLogEntity = companyDb.entity("dataManagerLogs");
+const syncRunEntity = companyDb.entity(companyDb.tables.syncRuns);
+const shopifyShopEntity = companyDb.entity(companyDb.tables.shopifyShops);
+const systemMessageEntity = companyDb.entity(companyDb.tables.systemMessages);
+const dataManagerLogEntity = companyDb.entity(companyDb.tables.dataManagerLogs);
 
 /**
  * SyncRun — class A, and the only SHOP-SCOPED sync cursor.

@@ -4,7 +4,7 @@ import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import { workerGet, workerPost } from "@common/core/workerRemoteApi";
 import { TRANSFER_DELIVERY_CONFIGS, transferOrdersInFile } from "@/utils/shopifyTransferDelivery";
 
-const dataManagerLogEntity = companyDb.entity("dataManagerLogs");
+const dataManagerLogEntity = companyDb.entity(companyDb.tables.dataManagerLogs);
 
 // A bounded shop-scoped window. In-flight logs are rechecked; immutable source membership is
 // loaded once. The parameter document also finds update logs whose job result has logIds:[null].

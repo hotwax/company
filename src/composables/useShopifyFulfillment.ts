@@ -1,4 +1,5 @@
-import { api, logger, useDb } from "@common";
+import { api, logger, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { toMillis } from "@common/db";
 import { computed, toValue } from "vue";
 import {
@@ -29,7 +30,7 @@ import { useSystemMessages } from "./useSystemMessage";
  *                 synced row is opened (`useShopifyFulfillmentDetails`) — never polled, cached for
  *                 the session because a fulfillment's record only grows.
  *
- * Everything list-shaped reads from IndexedDB through `useDb`; the worker owns all
+ * Everything list-shaped reads from IndexedDB through `useLiveEntity`; the worker owns all
  * cadence (activate `fulfillmentSyncDomains(...)` from `@/utils/shopifyFulfillment` to run it).
  * The one live read is the expand-time GraphQL call, which has no OMS-side cache to serve it. The
  * pure halves — payload parsing, detail mapping, the domain factory — live in
@@ -131,9 +132,9 @@ export function useSyncedFulfillments(shopIdSource: ShopIdSource) {
   const shopId = computed(() => String(toValue(shopIdSource) ?? ""));
   const shopScope = () => ({ scope: { field: "shopId", value: shopId.value } });
   const { records: cachedRows, hydrated: historyHydrated } =
-    useDb<any>("shopifyFulfillmentHistories", shopScope);
+    useLiveEntity<any>(companyDb.tables.shopifyFulfillmentHistories, shopScope);
   const { records: supportRecords, hydrated: supportHydrated } =
-    useDb<any>("shopifyFulfillmentHistorySupport", shopScope);
+    useLiveEntity<any>(companyDb.tables.shopifyFulfillmentHistorySupport, shopScope);
 
   const hydrated = computed(() => historyHydrated.value && supportHydrated.value);
 
@@ -473,8 +474,8 @@ export function useShopOrderSearch() {
 export function usePendingFulfillments(shopIdSource: ShopIdSource) {
   const shopId = computed(() => String(toValue(shopIdSource) ?? ""));
   const shopScope = () => ({ scope: { field: "shopId", value: shopId.value } });
-  const { records: rows } = useDb<any>("shopifyPendingFulfillments", shopScope);
-  const { first: status } = useDb<any>("shopifyPendingFulfillmentStatus", shopScope);
+  const { records: rows } = useLiveEntity<any>(companyDb.tables.shopifyPendingFulfillments, shopScope);
+  const { first: status } = useLiveEntity<any>(companyDb.tables.shopifyPendingFulfillmentStatus, shopScope);
   return {
     rows: computed(() => rows.value
       .map((row: any) => ({ ...row, pendingKey: `${row.shopId}:${row.shipmentId}` }))
@@ -484,7 +485,7 @@ export function usePendingFulfillments(shopIdSource: ShopIdSource) {
 }
 
 export function useFulfillmentSyncHealth(shopIdSource: ShopIdSource) {
-  const { first: health, hydrated } = useDb<any>("shopifyFulfillmentHealth", () => ({
+  const { first: health, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyFulfillmentHealth, () => ({
     scope: { field: "shopId", value: String(toValue(shopIdSource) ?? "") },
   }));
   return { health, hydrated };

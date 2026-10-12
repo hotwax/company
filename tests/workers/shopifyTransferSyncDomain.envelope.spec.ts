@@ -14,7 +14,7 @@ vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
 })));
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: { entity: () => ({ snapshotReplace: state.snapshotReplace }) },
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any, entity: () => ({ snapshotReplace: state.snapshotReplace }) },
 }));
 
 const ctx = { maargUrl: "https://example.test/rest/s1/", token: "test", omsInstance: "demo", now: 0 } as any;

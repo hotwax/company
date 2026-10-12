@@ -17,7 +17,7 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: () => false, showToast: vi.fn(), getFeatures: () => "" },
   translate: (k: string, v: Record<string, any> = {}) =>
     Object.entries(v).reduce((m, [key, val]) => m.replace(`{${key}}`, String(val)), k),
-  useDb: () => ({ records: ref([]), hydrated: ref(true) }),
+  useLiveEntity: () => ({ records: ref([]), hydrated: ref(true) }),
   useProducts: () => ({ products: ref(new Map()), resolve: vi.fn() }),
   buildAppUrl: () => null,
 }));

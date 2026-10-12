@@ -179,7 +179,7 @@ const userFetchStatus = computed(() => userStore.fetchStatus)
 const {
   domains, refreshing, totalRows, oldestSyncedAt, lastSyncedAt, refreshDomain, refreshAll,
 } = useDbStatus(
-  companyDb.raw(),
+  companyDb.client(),
   // The domains the worker registers, read from the same list rather than asked of the worker: on a
   // reload here, or after sync failed to start, there is no worker to answer, and this card's
   // per-domain Refresh is the way back. Imported on demand to keep the domain code out of startup.

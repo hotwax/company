@@ -1,10 +1,10 @@
 import { companyDb } from "@/db/companyDb";
-import { hasSyncedThisLogin, markSyncedThisLogin } from "@common/db";
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageAll, workerGet } from "@common/core/workerRemoteApi";
 
-const organizationEntity = companyDb.entity("organizations");
+const companyClient = companyDb.client();
+const organizationEntity = companyDb.entity(companyDb.tables.organizations);
 
 const INTERNAL_ORG_ROLE = "INTERNAL_ORGANIZATIO";
 const PARTY_GROUP = "PARTY_GROUP";
@@ -78,12 +78,12 @@ export const organizationDomain = defineSyncDomain({
   syncClass: "B",
 
   async sync(ctx, _args, options) {
-    if(!options?.force && (await hasSyncedThisLogin(companyDb.raw(), "organization"))) {return 0;}
+    if(!options?.force && (await companyClient.syncedThisLogin("organization"))) {return 0;}
 
     const roles = await fetchRoleRows(ctx);
     const organizations = await fetchOrganizations(ctx, roles);
 
-    const existing = await (companyDb.raw() as any).organizations.count();
+    const existing = await companyClient.count("organizations");
     if(!options?.force && organizations.length === 0 && existing > 0) {
       console.warn("[sync] organization: server returned no usable internal organizations while the cache " +
         "is populated; refusing to prune. Use a manual resync to clear it deliberately.",);
@@ -92,7 +92,7 @@ export const organizationDomain = defineSyncDomain({
     }
 
     const { written } = await organizationEntity.snapshotReplace(organizations);
-    if (roles.length === 0 || written > 0) { await markSyncedThisLogin(companyDb.raw(), "organization"); }
+    if (roles.length === 0 || written > 0) { await companyClient.markSyncedThisLogin("organization"); }
 
     return written;
   },

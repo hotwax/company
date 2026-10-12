@@ -585,7 +585,8 @@
 </template>
 
 <script setup lang="ts">
-import { commonUtil, logger, translate, useDb } from "@common";
+import { commonUtil, logger, translate, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { isEffectiveNow, serviceState } from "@common/db";
 import {
   IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
@@ -690,11 +691,11 @@ const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
 
 const syncContext = useShopifySyncContext(() => props.id);
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
-const { records: cachedDataFeeds, hydrated: dataFeedsHydrated } = useDb<any>("dataFeeds");
-const { records: allInventoryChannels, hydrated: inventoryChannelsHydrated } = useDb<any>("inventoryChannels");
+const { records: cachedDataFeeds, hydrated: dataFeedsHydrated } = useLiveEntity<any>(companyDb.tables.dataFeeds);
+const { records: allInventoryChannels, hydrated: inventoryChannelsHydrated } = useLiveEntity<any>(companyDb.tables.inventoryChannels);
 // Class B, so a local read. The two scoped inventory-history mounts need a facilityId, and the ledger
 // carries a facility GROUP because the event is aggregate; these are the candidates to search.
-const { records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated } = useDb<any>("groupFacilities");
+const { records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated } = useLiveEntity<any>(companyDb.tables.groupFacilities);
 /**
  * A membership crossing its `fromDate` or `thruDate` while the page is open has to re-trigger the
  * computeds that read it. `Date.now()` is a snapshot, so an expired facility stayed in the channel's
@@ -734,7 +735,7 @@ const inventoryChannels = computed(() => allInventoryChannels.value.filter((chan
  * Shops by id, for naming a channel's target and for this connection's own push gate. Cached table,
  * so no request per row and no extra fetch for the toggle below.
  */
-const { records: allShopifyShops, hydrated: shopsHydrated } = useDb<any>("shopifyShops");
+const { records: allShopifyShops, hydrated: shopsHydrated } = useLiveEntity<any>(companyDb.tables.shopifyShops);
 const shopsById = computed<Record<string, any>>(() =>
   allShopifyShops.value.reduce((map: Record<string, any>, shop: any) => {
     map[String(shop.shopId)] = shop;

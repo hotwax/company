@@ -1,4 +1,5 @@
-import { api, commonUtil, useDb } from "@common";
+import { api, commonUtil, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { computed } from "vue";
 import { resyncDomain } from "@/services/appDbSync";
 import { useTypedEnums } from "./useSeed";
@@ -37,7 +38,7 @@ export interface AppVersionRecord {
 
 /** The configured app version pins, cached at login. */
 export function useAppVersions() {
-  const { records, hydrated } = useDb<AppVersionRecord>("appVersions");
+  const { records, hydrated } = useLiveEntity<AppVersionRecord>(companyDb.tables.appVersions);
 
   /** `${appId}_${environmentTypeId}` → the pin, matching the key the create modal excludes by. */
   const byAppEnv = computed<Record<string, AppVersionRecord>>(() =>
@@ -52,7 +53,7 @@ export function useAppVersions() {
 
 /** The app catalog (`admin/apps`) the create modal picks from. */
 export function useApps() {
-  const { records, hydrated } = useDb<{ appId: string; appName: string }>("apps");
+  const { records, hydrated } = useLiveEntity<{ appId: string; appName: string }>(companyDb.tables.apps);
 
   return { apps: records, hydrated };
 }

@@ -2,7 +2,7 @@ import { companyDb } from "@/db/companyDb";
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import { pageAll } from "@common/core/workerRemoteApi";
 
-const shopifyTransferPendingEntity = companyDb.entity("shopifyTransferPending" as any);
+const shopifyTransferPendingEntity = companyDb.entity(companyDb.tables.shopifyTransferPending);
 
 /**
  * Shopify transfer sync — what has not reached Shopify yet.

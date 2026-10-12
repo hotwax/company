@@ -2,7 +2,7 @@ import { ref } from 'vue';
 import { describe, it, expect, vi } from 'vitest';
 import { useOrderSyncHistory } from '@/composables/useOrderSyncHistory';
 const rows = ref<any[]>([]);
-vi.mock('@common', () => ({ api: vi.fn(), logger: {}, useDb: () => ({ records: rows }) }));
+vi.mock('@common', () => ({ api: vi.fn(), logger: {}, useLiveEntity: () => ({ records: rows }) }));
 
 describe('selected order sync history', () => {
   it('uses exact shop/order records outside the recent window and responds to selection changes', () => {

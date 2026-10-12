@@ -21,7 +21,7 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: () => false, showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
-  useDb: vi.fn((entityOrTable: any) => {
+  useLiveEntity: vi.fn((entityOrTable: any) => {
     const table = typeof entityOrTable === "string" ? entityOrTable : entityOrTable?.__kind;
     const records = table === "syncRuns" ? SPINE_ROWS : table === "systemMessages" || table === "messages" ? MESSAGES : table === "dataManagerLogs" || table === "logs" ? LOGS : [];
     return {

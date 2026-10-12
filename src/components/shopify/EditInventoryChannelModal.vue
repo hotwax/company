@@ -152,7 +152,8 @@ import {
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import cronstrue from "cronstrue";
 import { computed, ref, watch } from "vue";
-import { commonUtil, logger, translate, useDb } from "@common";
+import { commonUtil, logger, translate, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import {
   ABSOLUTE_CHANNEL_RESET_SERVICE,
   ensureChannelResetJob,
@@ -171,8 +172,8 @@ const emit = defineEmits<{
   "schedule-job": [{ jobName: string }];
 }>();
 
-const { records: cachedJobs } = useDb<any>("serviceJobs");
-const { records: inventoryChannels } = useDb<any>("inventoryChannels");
+const { records: cachedJobs } = useLiveEntity<any>(companyDb.tables.serviceJobs);
+const { records: inventoryChannels } = useLiveEntity<any>(companyDb.tables.inventoryChannels);
 
 const isSettingUpJob = ref(false);
 

@@ -5,8 +5,8 @@ import type { SyncContext } from "@common/db/types";
 import { pageNewestFirst, unwrapCollection, workerGet } from "@common/core/workerRemoteApi";
 import { FULFILLMENT_HISTORY_ENDPOINT_MISSING } from "@/utils/shopifyFulfillment";
 
-const fulfillmentHistoryEntity = companyDb.entity("shopifyFulfillmentHistories");
-const fulfillmentHistorySupportEntity = companyDb.entity("shopifyFulfillmentHistorySupport");
+const fulfillmentHistoryEntity = companyDb.entity(companyDb.tables.shopifyFulfillmentHistories);
+const fulfillmentHistorySupportEntity = companyDb.entity(companyDb.tables.shopifyFulfillmentHistorySupport);
 
 /**
  * ShopifyFulfillmentHistory — class A (live, append-mostly), the "Synced" feed of the fulfillment

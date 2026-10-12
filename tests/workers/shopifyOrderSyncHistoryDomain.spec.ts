@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 const h = vi.hoisted(() => ({ get: vi.fn(), upsert: vi.fn(async () => 1) }));
 vi.mock('@common/core/workerRemoteApi', () => ({ workerGet: h.get }));
-vi.mock('@/db/companyDb', () => ({ companyDb: { entity: () => ({ upsertMany: h.upsert }) } }));
+vi.mock('@/db/companyDb', () => ({ companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any, entity: () => ({ upsertMany: h.upsert }) } }));
 import { shopifyOrderSyncHistoryDomain } from '@/workers/domains/shopifyOrderSyncHistoryDomain';
 const h_domain = shopifyOrderSyncHistoryDomain;
 it('fetches every page for exact selected orders before publishing a complete snapshot', async () => {

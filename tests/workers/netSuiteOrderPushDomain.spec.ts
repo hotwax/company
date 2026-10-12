@@ -24,7 +24,7 @@ const entityFor = (table: string) => ({
 });
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: { entity: (table: string) => entityFor(table) },
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any, entity: (table: string) => entityFor(table) },
 }));
 
 vi.mock("@common/core/workerRemoteApi", () => ({

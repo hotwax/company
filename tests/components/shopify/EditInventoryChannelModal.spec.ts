@@ -28,7 +28,7 @@ vi.mock("@common", () => ({
       (message, [name, value]) => message.replace(`{${name}}`, String(value)),
       key,
     ),
-  useDb: (entityName: string) => ({
+  useLiveEntity: (entityName: string) => ({
     records: entityName === "inventoryChannels" ? cachedChannels : cachedJobs,
     rows: entityName === "inventoryChannels" ? cachedChannels : cachedJobs,
     hydrated: ref(true),

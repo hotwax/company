@@ -50,7 +50,7 @@ function getKind(entity: any): string {
 vi.mock("@common", () => ({
   api: vi.fn(),
   commonUtil: { hasError: vi.fn(() => false) },
-  useDb: (entity: any, optionsOrSelector: any = {}) => {
+  useLiveEntity: (entity: any, optionsOrSelector: any = {}) => {
     const kind = getKind(entity);
     const list = harness.records[kind] ?? [];
     let scope: any;

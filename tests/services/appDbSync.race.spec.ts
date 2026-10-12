@@ -74,11 +74,11 @@ vi.mock("@common", () => ({
   commonUtil: { getMaargURL: () => "https://example.test/rest/s1/" },
 }));
 
-vi.mock("@/db/companyDb", () => ({
-  companyDb: {
-    raw: () => ({ syncMeta: { delete: vi.fn(async () => undefined) } }),
-  },
-}));
+vi.mock("@/db/companyDb", async () => {
+  const { dbClient } = await import("@common/db/storage/dbClient");
+  const raw = () => ({ syncMeta: { delete: vi.fn(async () => undefined) } }) as any;
+  return { companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any, raw, client: () => dbClient(raw) } };
+});
 
 
 

@@ -24,7 +24,7 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: () => false, showToast: vi.fn(), isMoqui: () => true },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
-  useDb: () => ({ rows: { value: [] }, records: { value: [] }, first: { value: undefined }, count: { value: 0 }, hydrated: { value: true } }),
+  useLiveEntity: () => ({ rows: { value: [] }, records: { value: [] }, first: { value: undefined }, count: { value: 0 }, hydrated: { value: true } }),
 }));
 
 vi.mock("@/services/appDbSync", () => ({

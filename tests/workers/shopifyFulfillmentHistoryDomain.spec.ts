@@ -49,7 +49,7 @@ const tables = vi.hoisted(() => ({
 }));
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: { entity: (table: keyof typeof tables) => tables[table] },
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any, entity: (table: keyof typeof tables) => tables[table] },
 }));
 
 vi.mock("@common/core/workerRemoteApi", () => ({

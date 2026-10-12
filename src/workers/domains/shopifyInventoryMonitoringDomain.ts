@@ -1,11 +1,11 @@
 import { companyDb } from "@/db/companyDb";
-import { hasSyncedThisLogin, markSyncedThisLogin } from "@common/db/storage/baseDb";
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageAll, unwrapCollection, workerGet } from "@common/core/workerRemoteApi";
 
-const dataFeedEntity = companyDb.entity("dataFeeds");
-const inventoryChannelEntity = companyDb.entity("inventoryChannels");
+const companyClient = companyDb.client();
+const dataFeedEntity = companyDb.entity(companyDb.tables.dataFeeds);
+const inventoryChannelEntity = companyDb.entity(companyDb.tables.inventoryChannels);
 
 /**
  * Dedicated read resource over ShopifyInventoryChannelView, NOT a DataDocument.
@@ -41,14 +41,14 @@ export const shopifyInventoryEventFeedDomain = defineSyncDomain({
   label: "Shopify inventory event feed",
   syncClass: "B",
   async sync(ctx, _args, options) {
-    if (!options?.force && await hasSyncedThisLogin(companyDb.raw(), "shopifyInventoryEventFeed")) return 0;
+    if (!options?.force && await companyClient.syncedThisLogin("shopifyInventoryEventFeed")) return 0;
     const [channelFeed, locationFeed] = await Promise.all([
       fetchInventoryEventFeed(ctx, SHOPIFY_INVENTORY_EVENT_FEED_ID),
       fetchInventoryEventFeed(ctx, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID),
     ]);
     const feeds = [channelFeed, locationFeed].filter(Boolean);
     const result = await dataFeedEntity.snapshotReplace(feeds);
-    await markSyncedThisLogin(companyDb.raw(), "shopifyInventoryEventFeed");
+    await companyClient.markSyncedThisLogin("shopifyInventoryEventFeed");
     return result.written;
   },
   async refetchOne(ctx, pk) {
@@ -69,7 +69,7 @@ export const inventoryChannelDomain = defineSyncDomain({
   label: "Shopify inventory channels",
   syncClass: "B",
   async sync(ctx, _args, options) {
-    if (!options?.force && await hasSyncedThisLogin(companyDb.raw(), "inventoryChannel")) return 0;
+    if (!options?.force && await companyClient.syncedThisLogin("inventoryChannel")) return 0;
     const rows = await pageAll({
       ctx,
       url: CHANNEL_ENDPOINT,
@@ -79,7 +79,7 @@ export const inventoryChannelDomain = defineSyncDomain({
       label: CHANNEL_ENDPOINT,
     });
     const result = await inventoryChannelEntity.snapshotReplace(rows);
-    await markSyncedThisLogin(companyDb.raw(), "inventoryChannel");
+    await companyClient.markSyncedThisLogin("inventoryChannel");
     return result.written;
   },
   async refetchOne(ctx, pk) {

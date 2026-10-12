@@ -3,12 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 const deleted: string[] = [];
 
-vi.mock("@/db/companyDb", () => ({
-  companyDb: {
-    tableNames: [],
-    raw: () => ({ syncMeta: { delete: async (key: string) => { deleted.push(key); } } }),
-  },
-}));
+vi.mock("@/db/companyDb", async () => {
+  const { dbClient } = await import("@common/db/storage/dbClient");
+  const raw = () => ({ syncMeta: { delete: async (key: string) => { deleted.push(key); } } }) as any;
+  return { companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any, tableNames: [], raw, client: () => dbClient(raw) } };
+});
 
 vi.mock("@common/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@common/db")>();

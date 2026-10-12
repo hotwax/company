@@ -15,7 +15,7 @@ vi.mock("@common", () => ({
   api: vi.fn(),
   commonUtil: { hasError: vi.fn(() => false) },
   logger: { error: vi.fn() },
-  useDb: (_entity: any, options: any = {}) => {
+  useLiveEntity: (_entity: any, options: any = {}) => {
     const records = options.scope
       ? computed(() => harness.records.value.filter((row: any) => row[options.scope.field] === options.scope.value,))
       : harness.records;

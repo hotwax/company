@@ -1,4 +1,4 @@
-import { translate, useDb } from "@common";
+import { translate, useLiveEntity } from "@common";
 import { toMillis } from "@common/db";
 import { type MaybeRefOrGetter, computed, toValue } from "vue";
 import { companyDb } from "@/db/companyDb";
@@ -59,8 +59,8 @@ const SOURCE_RECORD_LABELS: Record<InventoryEventSourceRoot, string> = {
 };
 
 const LEDGER_TABLES = {
-  channel: "shopifyInventoryAdjustmentDetails",
-  location: "shopifyLocationInventoryAdjustmentDetails",
+  channel: companyDb.tables.shopifyInventoryAdjustmentDetails,
+  location: companyDb.tables.shopifyLocationInventoryAdjustmentDetails,
 } as const;
 
 /** A ledger row's identity: its primary-key values in declared order, the shape the old synthetic key had. */
@@ -87,17 +87,17 @@ function deliveryLabelOf(event: Pick<InventoryEvent, "delivery">, statusLabel: (
 /** `shopId` is reactive so a reused view follows its route from one shop to another. */
 export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: InventoryEventKind) {
   const scoped = () => ({ scope: { field: "shopId", value: String(toValue(shopId) ?? "") } });
-  const { records: scopedLedgerRows, hydrated } = useDb<any>(LEDGER_TABLES[kind], scoped);
+  const { records: scopedLedgerRows, hydrated } = useLiveEntity<any>(LEDGER_TABLES[kind], scoped);
   // Newest first. A scoped read comes back in key order, so the order is set here.
   const ledgerRows = computed(() => [...scopedLedgerRows.value]
     .sort((a, b) => (toMillis(b.createdDate) ?? 0) - (toMillis(a.createdDate) ?? 0)));
-  const { records: messageRows } = useDb<any>("systemMessages");
-  const { records: shopLocations } = useDb<any>("shopifyLocations", () => ({ ...scoped(), filter: isShopifyLocationMapping }));
-  const { records: facilities } = useDb<any>("facilities");
-  const { records: channels } = useDb<any>("inventoryChannels", scoped);
-  const { records: inventoryItemRows } = useDb<any>("shopifyInventoryItems", scoped);
-  const { records: serviceJobs } = useDb<any>("serviceJobs");
-  const { records: bounds } = useDb<any>("inventoryLedgerBounds", scoped);
+  const { records: messageRows } = useLiveEntity<any>(companyDb.tables.systemMessages);
+  const { records: shopLocations } = useLiveEntity<any>(companyDb.tables.shopifyLocations, () => ({ ...scoped(), filter: isShopifyLocationMapping }));
+  const { records: facilities } = useLiveEntity<any>(companyDb.tables.facilities);
+  const { records: channels } = useLiveEntity<any>(companyDb.tables.inventoryChannels, scoped);
+  const { records: inventoryItemRows } = useLiveEntity<any>(companyDb.tables.shopifyInventoryItems, scoped);
+  const { records: serviceJobs } = useLiveEntity<any>(companyDb.tables.serviceJobs);
+  const { records: bounds } = useLiveEntity<any>(companyDb.tables.inventoryLedgerBounds, scoped);
   const { labelFor: statusLabel } = useStatuses();
   const { sources, resolve: resolveSourceArtifacts, sourceKeyOf } = useInventoryEventSources();
 

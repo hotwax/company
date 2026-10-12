@@ -14,7 +14,7 @@ vi.mock("@common", () => ({
 }));
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: {
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
     entity: (table: string) => {
       if (table === "systemMessageErrors") {
         return {

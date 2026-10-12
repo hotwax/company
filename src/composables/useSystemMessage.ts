@@ -1,5 +1,5 @@
 import { computed, reactive, toRefs, type Ref } from 'vue';
-import { api, commonUtil, logger, useDb } from '@common'
+import { api, commonUtil, logger, useLiveEntity } from '@common'
 import { companyDb } from '@/db/companyDb';
 import {
   getReferencedBulkOperationSystemMessageIds,
@@ -144,7 +144,7 @@ export function useSystemMessage() {
         messagesKnownToHaveNoErrors.delete(systemMessageId);
         // `systemMessageId` is not echoed on each row — the id is only in the URL — so stamp it in,
         // otherwise the synthetic key cannot be built and the join has nothing to match on.
-        void companyDb.entity("systemMessageErrors").upsertMany(errors.map((error) => ({ ...error, systemMessageId })));
+        void companyDb.entity(companyDb.tables.systemMessageErrors).upsertMany(errors.map((error) => ({ ...error, systemMessageId })));
       }
       return errors;
     } catch (err) {
@@ -164,7 +164,7 @@ export function useSystemMessage() {
     if (messagesKnownToHaveNoErrors.has(systemMessageId)) return [];
 
     try {
-      const cached = (await companyDb.entity("systemMessageErrors").all())
+      const cached = (await companyDb.entity(companyDb.tables.systemMessageErrors).all())
         .filter((row: any) => row.systemMessageId === systemMessageId);
       if (cached.length) return cached;
     } catch {
@@ -196,7 +196,7 @@ export function useSystemMessage() {
   const ensureSystemMessageById = async (systemMessageId: string) => {
     if (!systemMessageId) return null;
     try {
-      const cached = (await companyDb.entity("systemMessages").all())
+      const cached = (await companyDb.entity(companyDb.tables.systemMessages).all())
         .find((row: any) => String(row.systemMessageId) === String(systemMessageId));
       if (cached) return cached;
     } catch {
@@ -204,7 +204,7 @@ export function useSystemMessage() {
     }
 
     const fetched = await fetchSystemMessageById(systemMessageId).catch(() => null);
-    if (fetched) await companyDb.entity("systemMessages").upsertMany([fetched]);
+    if (fetched) await companyDb.entity(companyDb.tables.systemMessages).upsertMany([fetched]);
     return fetched;
   };
 
@@ -289,7 +289,7 @@ export function useSystemMessage() {
   const fetchShopifyBulkOperation = async (bulkOperationId: string, systemMessageRemoteId: string) => {
     // Cache-first: a finished operation is immutable, so serve it locally and skip the remote call.
     try {
-      const cached = (await companyDb.entity("shopifyBulkOperations").all())
+      const cached = (await companyDb.entity(companyDb.tables.shopifyBulkOperations).all())
         .find((row: any) => row.id === bulkOperationId);
       if (cached && isTerminalBulkOperation(cached.status as string)) {
         state.currentShopifyBulkOperation = cached;
@@ -319,7 +319,7 @@ export function useSystemMessage() {
       if (payload) {
         state.currentShopifyBulkOperation = payload;
         // Cache it so a later visit needs no Shopify round-trip once it has finished.
-        void companyDb.entity("shopifyBulkOperations").upsertMany([{ ...payload, systemMessageRemoteId }]);
+        void companyDb.entity(companyDb.tables.shopifyBulkOperations).upsertMany([{ ...payload, systemMessageRemoteId }]);
         return payload;
       }
     } catch (err) {
@@ -541,7 +541,7 @@ export interface SystemMessageQuery {
 export function useSystemMessages(systemMessageRemoteId?: string, query: SystemMessageQuery = {}) {
   const statusSet = query.statusIds?.length ? new Set(query.statusIds) : undefined;
 
-  const { records, hydrated } = useDb<any>("systemMessages", {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.systemMessages, {
     dateField: 'initDate',
     ...(systemMessageRemoteId
       ? { scope: { field: 'systemMessageRemoteId', value: systemMessageRemoteId } }
@@ -571,13 +571,13 @@ export function useLatestSystemMessage(systemMessageRemoteId?: string, systemMes
 }
 
 export function useSystemMessageRecord(systemMessageId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("systemMessages", () => systemMessageId ? { equals: { systemMessageId } } : { filter: () => false });
+  const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.systemMessages, () => systemMessageId ? { equals: { systemMessageId } } : { filter: () => false });
   return { record, hydrated };
 }
 
 /** Cached errors for one message. Populated on demand — see `ensureSystemMessageErrors`. */
 export function useSystemMessageErrors(systemMessageId?: string) {
-  const { records, hydrated } = useDb<any>("systemMessageErrors", {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.systemMessageErrors, {
     dateField: 'errorDate',
     ...(systemMessageId ? { scope: { field: 'systemMessageId', value: systemMessageId } } : {}),
   });
@@ -596,7 +596,7 @@ export function useSystemMessageErrors(systemMessageId?: string) {
 
 /** A cached Shopify bulk operation by its gid. */
 export function useShopifyBulkOperationRecord(bulkOperationId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("shopifyBulkOperations", () => bulkOperationId ? { equals: { id: bulkOperationId } } : { filter: () => false });
+  const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyBulkOperations, () => bulkOperationId ? { equals: { id: bulkOperationId } } : { filter: () => false });
   return { record, hydrated };
 }
 
@@ -608,7 +608,7 @@ export function useShopifyBulkOperationRecord(bulkOperationId: string | undefine
 export function useBulkOperationForMessage(message: Ref<any> | (() => any)) {
   const source = computed<any>(() => (typeof message === 'function' ? message() : message.value));
   const bulkOperationId = computed<string>(() => getSystemMessageBulkOperationId(source.value) || '');
-  const { records, hydrated } = useDb<any>("shopifyBulkOperations");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyBulkOperations);
 
   const bulkOperation = computed<any>(() =>
     bulkOperationId.value
@@ -626,11 +626,11 @@ export function useBulkOperationForMessage(message: Ref<any> | (() => any)) {
  * (Shopify, Klaviyo, NetSuite) merely reference it.
  */
 export function useSystemMessageRemotes() {
-  const { records, hydrated } = useDb<any>("systemMessageRemotes");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.systemMessageRemotes);
   return { remotes: records, records, hydrated };
 }
 
 export function useSystemMessageRemoteRecord(systemMessageRemoteId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("systemMessageRemotes", () => systemMessageRemoteId ? { equals: { systemMessageRemoteId } } : { filter: () => false });
+  const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.systemMessageRemotes, () => systemMessageRemoteId ? { equals: { systemMessageRemoteId } } : { filter: () => false });
   return { record, hydrated };
 }

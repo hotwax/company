@@ -1,1 +1,1 @@
-export * from "@common/db";
+export { cacheScopeKey } from "@common/db/sync/reconciliation";

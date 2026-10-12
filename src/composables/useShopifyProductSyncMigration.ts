@@ -270,7 +270,7 @@ export async function fetchEligibility(): Promise<ProductSyncMigrationEligibilit
  */
 async function fetchSystemMessageTypeEntity(systemMessageTypeId: string) {
   try {
-    const cached = await companyDb.entity("systemMessageTypes").all();
+    const cached = await companyDb.entity(companyDb.tables.systemMessageTypes).all();
     if (cached.length) {
       return cached.find((row: any) => row.systemMessageTypeId === systemMessageTypeId);
     }
@@ -304,7 +304,7 @@ async function fetchDataManagerConfigEntity(configId: string) {
  */
 async function fetchServiceJobEntity(jobName: string) {
   try {
-    const cached = await companyDb.entity("serviceJobs").all();
+    const cached = await companyDb.entity(companyDb.tables.serviceJobs).all();
     if (cached.length) {
       return cached.find((row: any) => row.jobName === jobName);
     }
@@ -436,7 +436,7 @@ async function fetchDynamicLegacySystemMessageTypes(): Promise<string[]> {
   // The server form is a `_op: like` search over the type catalog. That catalog is cached in full,
   // so the same substring match runs locally (Moqui's bare `like` value is a contains match).
   try {
-    const cached = await companyDb.entity("systemMessageTypes").all();
+    const cached = await companyDb.entity(companyDb.tables.systemMessageTypes).all();
     if (cached.length) {
       return cached
         .map((row: any) => String(row.systemMessageTypeId || "").trim())

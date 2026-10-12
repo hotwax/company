@@ -73,32 +73,48 @@ Env config comes from `.env` (see `.env.example`): `VITE_OMS_TYPE` (`MOQUI`), lo
 
 ## 4. The data layer — read this before touching screen data
 
+**Load the `accxui-data-access` skill** (`.agents/skills/accxui-data-access/SKILL.md`) before reading
+or writing app data. It is the short, authoritative version of this section.
+
 This app has moved off "view calls store, store fetches, view renders". **Server data is read from
-IndexedDB through Dexie `liveQuery`; a single web worker is the only thing that fetches cached
-domains.** Getting this wrong (adding an `onMounted` fetch, adding a Pinia store for server data)
-re-introduces exactly the load waterfalls this layer exists to remove.
+the app database (IndexedDB, one per OMS instance); a single web worker is the only thing that
+fetches synced domains.** Getting this wrong (adding an `onMounted` fetch, adding a Pinia store for
+server data) re-introduces exactly the load waterfalls this layer exists to remove.
 
-### 4.1 The rule
+### 4.1 The rule — two patterns, nothing else
 
 ```
-                      main thread                    │        worker thread
- view ── useCachedList(entity) ──▶ Dexie liveQuery   │  syncRegistry domains
-   │                                  ▲              │        │  fetch via workerRemoteApi
-   │ mutation (composable)            │ live emit    │        ▼
-   └── api() POST/PUT ──▶ refreshAfterMutation ──────┼──▶ transactional upsert into IndexedDB
-                          / resyncDomain            │
+                      main thread                              │        worker thread
+ view ── useLiveEntity(companyDb.tables.x) ──▶ live query      │  sync domains (appSyncDomains)
+   │                                              ▲            │        │  fetch via workerRemoteApi
+   │ mutation (composable)                        │ live emit  │        ▼
+   └── api() POST/PUT ──▶ refreshAfterMutation ───┼────────────┼──▶ companyDb.entity(...) writes
+                          / resyncDomain          │            │
 ```
 
-- **Reads:** `useCachedList(entity, options)` / `useCachedRecord(...)`. No fetch, no loading race —
-  the view re-renders on every cache write, including writes made in the worker thread.
-- **Writes:** the owning composable calls `api()` directly, then `refreshAfterMutation(domain, pk)`
-  (re-reads that one record) or `resyncDomain(domain)` (re-snapshots the domain). Never hand-patch
-  cached rows. A failed post-write refetch rejects as `CacheReconciliationError`: the server write
-  is already committed, so presentation must warn and dismiss any retryable create/edit alert
-  rather than misreporting a write failure or replaying it.
+| You want… | Use | Where |
+| --- | --- | --- |
+| Rows that stay current **on screen** | `useLiveEntity<any>(companyDb.tables.x, options)` | components, views, composables — during `setup` |
+| An answer **now**, or a **write** | `companyDb.entity(companyDb.tables.x).get / query / all / upsertMany …` | anywhere: stores, services, utils, composables, workers |
+
+- **Reads on screen:** `useLiveEntity` returns `{ records, first, count, hydrated, error }` and
+  re-renders on every write to the table, including writes made in the worker thread.
+- **One-shot reads and writes:** `companyDb.entity(...)` — cache-first lookups, write-through after
+  a fetch, and every worker domain's writes.
+- **Table names** always come from `companyDb.tables` — never a string literal.
+- **Writes after a server mutation:** the owning composable calls `api()`, then
+  `refreshAfterMutation(domain, pk)` (re-reads that one record) or `resyncDomain(domain)`
+  (re-snapshots the domain). Never hand-patch rows. A failed post-write refetch rejects as
+  `CacheReconciliationError`: the server write is already committed, so presentation must warn and
+  dismiss any retryable create/edit alert rather than misreporting a write failure or replaying it.
+- **Seed labels and joins:** `useSeedData()` / `seedData`, wrapped in `src/composables/useSeed.ts`.
+- **Never** import Dexie, `dbClient`, `baseDb` or the app-db registry, call `companyDb.raw()` /
+  `.get()`, or `companyDb.client()` outside `src/workers/**` and the `useDbStatus` argument. The
+  `data-access/*` lint rules enforce all of this and `pnpm build` runs them first
+  (`pnpm lint:data-access`).
 - **Cadence:** owned entirely by the worker. Nothing on the main thread polls.
-- The cache is durable across reloads and **cleared on logout only** (`postLogout` →
-  `clearAllCaches()`); it is *not* shared cross-tab or cross-session by design.
+- The database is durable across reloads and **cleared on logout and on login** (`stopAppDbSync()`
+  wipes every data table); it is *not* shared cross-tab or cross-session by design.
 
 ### 4.2 Three sync classes
 
@@ -133,43 +149,44 @@ toolbar, never as a banner.
 
 ### 4.3 Layer map
 
+The framework lives in `common/db` (see `docs/APP_DB_ARCHITECTURE.md`); Company supplies its schema,
+its domains and its policy.
+
 | File | Role |
 | --- | --- |
-| [`src/utils/db/appCacheDb.ts`](src/utils/db/appCacheDb.ts) | The Dexie database `CompanyCacheDB`: schema, `defineCachedEntity()`, `live()` queries, `ensureCacheReady()`, login markers, `clearAllCaches()` |
-| [`src/utils/db/cacheProjection.ts`](src/utils/db/cacheProjection.ts) | Row projection/normalization (`text`/`date`/`count` field kinds), staleness diffing. Every cached row also carries the untouched server object in `raw` |
-| [`src/utils/db/cacheEntities.ts`](src/utils/db/cacheEntities.ts) | The entity definitions — the shared read/write contract between worker and views |
-| [`src/utils/db/cacheDomainCatalog.ts`](src/utils/db/cacheDomainCatalog.ts) | Domain → table → label → sync class |
-| [`src/config/appSyncConfig.ts`](src/config/appSyncConfig.ts) | **App-specific** sync policy: which class-A domains to run, their scope/filters/windows, and which seed domains to exclude |
-| [`src/services/appDbSync.ts`](src/services/appDbSync.ts) | Class-B once-per-login bootstrap; `refreshAfterMutation`, `resyncDomain`, `resyncReferenceData` |
-| [`src/services/pollingService.ts`](src/services/pollingService.ts) | Main-thread half: spawns/terminates the worker, pushes the bearer token over `BroadcastChannel`, routes `auth-error` |
+| [`src/db/companySchema.ts`](src/db/companySchema.ts) | Company's own tables: one `defineEntity` per table — fields (the stored whitelist), primary key, indexes |
+| [`src/db/companyDb.ts`](src/db/companyDb.ts) | `companyDb = defineAppDb(...)`: the picked seed tables merged with Company's own, and the schema `version`. Exposes `entity()`, `client()`, `tables` |
+| [`src/config/appSyncConfig.ts`](src/config/appSyncConfig.ts) | **App-specific** sync policy: which class-A domains to run, their scope/filters/windows |
+| [`src/services/appDbSync.ts`](src/services/appDbSync.ts) | `setupAppDbSync` wiring: `startAppDbSync` / `stopAppDbSync`, `refreshAfterMutation`, `resyncDomain`, `resyncReferenceData`, view-scoped activation |
 | [`src/workers/appSyncDomains.ts`](src/workers/appSyncDomains.ts) | Every domain Company registers: the common seed domains for its seed tables, plus its own. Read by the worker and by Settings |
-| [`src/workers/appSync.worker.ts`](src/workers/appSync.worker.ts) | The worker entry — registers `appSyncDomains`, then exposes the harness |
-| [`src/workers/pollingWorkerHarness.ts`](src/workers/pollingWorkerHarness.ts) | Worker-side harness: the tick loop, held token, 401 detection, teardown |
-| [`src/workers/syncRegistry.ts`](src/workers/syncRegistry.ts) | `SyncDomain` contract + the pure `dueDomains()` scheduling rule (unit-tested without a worker) |
-| [`src/workers/domains/*`](src/workers/domains/) | The domains: `snapshotDomain` (class-B factory), `referenceDomains`, `systemMessageDomain`, `dataManagerLogDomain`, `serviceJobRunDomain`, `productUpdateHistoryDomain`, `inventoryEventDomains`, `workerFetch` |
-| [`src/composables/useCachedList.ts`](src/composables/useCachedList.ts) | The read seam for views |
+| [`src/workers/appSync.worker.ts`](src/workers/appSync.worker.ts) | The worker entry — registers `appSyncDomains`, then exposes the harness (`companyDb.get` is used here only) |
+| [`src/workers/domains/*`](src/workers/domains/) | The domains: `referenceDomains` (class-B snapshot domains), `systemMessageDomain`, `dataManagerLogDomain`, `serviceJobRunDomain`, `inventoryEventDomains`, … |
+| [`src/composables/useSeed.ts`](src/composables/useSeed.ts) | Seed lookups for views, over `useSeedData` |
 | [`src/services/inventorySyncArea.ts`](src/services/inventorySyncArea.ts) | Route-scoped class-A activation for a shop's inventory sync pages (see §4.2) |
-
-`pollingService`, `pollingWorkerHarness`, and `syncRegistry` are **framework-shaped, app-local**:
-they are written to be promoted into `@common` later. Keep app specifics out of them — those belong
-in `appSyncConfig.ts` or a domain module.
 
 ### 4.4 Recipes
 
-**Read cached data in a view**
+**Read data on screen**
 
 ```ts
-const { records, rows, hydrated } = useCachedList<Facility>(facilityCache, {
-  scope: { productStoreId },     // resolves through a compound index when one is declared
+const { records, hydrated } = useLiveEntity<any>(companyDb.tables.facilities, () => ({
+  scope: { field: "productStoreId", value: productStoreId.value },   // through an index when declared
   filter: (row) => !row.isVirtual,
-})
+}))
 ```
 
-Respect `hydrated` — the cache is durable, so a warm visit paints instantly and must never flash a
-skeleton or an empty state:
+Respect `hydrated` — the database is durable, so a warm visit paints instantly and must never flash
+a skeleton or an empty state:
 
 - `!hydrated` → skeleton (`ion-skeleton-text`)
 - `hydrated && !length` → the genuine empty state
+
+**Read once / write (store, service, async handler, worker)**
+
+```ts
+const facility = await companyDb.entity(companyDb.tables.facilities).get(facilityId)
+await companyDb.entity(companyDb.tables.systemMessages).upsertMany([fetched])
+```
 
 **Mutate**
 
@@ -180,33 +197,25 @@ await refreshAfterMutation("facility", { facilityId })   // or resyncDomain("fac
 
 Domains with no by-PK read route (`facilityGroup`, `facilityGroupMember`, `shopifyShop`) use a
 scoped re-list so deletions inside the scope get pruned. A record that comes back empty is
-**removed** from the cache.
+**removed** from the database.
 
-**Add a cached domain**
+**Add a table and its domain**
 
-1. Add the table + indexes to `CACHE_SCHEMA` in `appCacheDb.ts` (primary key first, then indexes —
-   *not* columns).
-2. Define the projection in `cacheEntities.ts`.
-3. Register it in `cacheDomainCatalog.ts` with its sync class.
-4. Add the worker domain (usually one `createSnapshotDomain(...)` entry in `referenceDomains.ts`)
-   and, for class A, its scope/window in `appSyncConfig.ts`.
-5. Add the domain to `appSyncDomains` in `workers/appSyncDomains.ts`.
-6. Expose reads through the owning `use*` composable — never let a view import cache internals.
+1. Declare the entity in `src/db/companySchema.ts` (or pick a seed table in `companyDb.ts`).
+2. Add an index for every way you query it.
+3. **Bump `version`** in `src/db/companyDb.ts` — a changed schema is rebuilt only on a new version.
+4. Add the worker domain (usually a snapshot domain in `referenceDomains.ts`) and, for class A, its
+   scope/window in `appSyncConfig.ts`; add it to `appSyncDomains`.
+5. Expose reads through the owning `use*` composable with `companyDb.tables.<table>`.
+
+Details: `docs/APP_DB_DEVELOPER_GUIDE.md` §2–§3.
 
 ### 4.5 Hard-won rules (do not undo these)
 
-- **The Dexie schema is single-version on purpose.** Version bumps were actively harmful: Dexie
-  accepted `version(2)` but silently did not create the added store, so writes failed while fetches
-  kept succeeding. Just edit `CACHE_SCHEMA`; `ensureCacheReady()` compares declared tables to the
-  database's real `objectStoreNames` and rebuilds on mismatch. Never add `version(2)`.
-- **Changing what cached rows mean needs a contract bump.** The schema check above compares store
-  sets only, so a release that keeps every table and key field but changes what stored rows mean
-  (ids renamed or re-prefixed, a key field re-derived) passes it untouched. Domains written with
-  `upsertMany` never prune a row the server no longer has, so such rows linger and resolve nothing.
-  In the same commit as that change, increment `CACHE_CONTRACT_VERSION` in
-  [`appCacheDb.ts`](src/utils/appCacheDb.ts) and add a line to its changelog comment.
-  `ensureCacheIdentity` stamps the version into the cache identity, so every installation wipes and
-  re-seeds once on its next cache bootstrap. Never decrement or reuse a number.
+- **Bump the schema `version` on every schema change.** `companyDb.ts` declares it; a database
+  recording a different version is dropped and rebuilt on first use (`ensureDbReady`). That includes
+  changes that keep every table but change what stored rows mean (fields, keys, `rename`) — nothing
+  detects a forgotten bump, so rows quietly keep the old shape.
 - **Worker query params must expand arrays into repeated keys.** `workerRemoteApi` builds its query
   with `URLSearchParams`, which comma-joins arrays (`id=A%2CB`); Moqui reads that as one literal
   value and returns an empty list — a **silent** zero-row failure. Use `workerGet`'s serializer in
@@ -300,7 +309,7 @@ concept is the smell this rule prevents.
 | [`useKlaviyo.ts`](src/composables/useKlaviyo.ts) | The Klaviyo surface. Deliberately LIVE reads — Klaviyo has no cached domain; email types are a load-once memo |
 | [`useAppPermissions.ts`](src/composables/useAppPermissions.ts) | App permissions over the cached permission + user-group sets |
 | [`useInventoryEvents.ts`](src/composables/useInventoryEvents.ts) | Both Shopify inventory ledgers as one row model (`src/utils/inventoryEvents.ts`) for the monitor and `ShopifyInventoryEventHistory`. IndexedDB only; never reads `detailStatusId` |
-| [`useCachedList` / `useCacheSync` / `useCacheStatus`](src/composables/) | Data-layer seams (§4.3) |
+| `useLiveEntity` / `useSeedData` / `useDbStatus` (shared, in accxui `common/db`) | The data-layer read seams (§4.1); one-shot reads and writes go through `companyDb.entity(...)` |
 | `useProducts` (shared, in accxui `common/composables/useProducts.ts`) | The product master: productId → merchandiser-facing fields from Solr. Not app-owned, and it clears itself on logout through common's own session scope, so nothing in this app registers it |
 | [`sessionScope.ts`](src/composables/sessionScope.ts) | The logout story for module-level composable state: a composable holding session data registers a reset, and logout calls `clearSessionScopedState()` once. Module state survives an SPA logout, so without this user B sees user A's data |
 

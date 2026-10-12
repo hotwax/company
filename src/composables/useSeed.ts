@@ -1,5 +1,6 @@
 import { computed, ref } from "vue";
-import { api, commonUtil, logger, useDb } from "@common";
+import { api, commonUtil, logger, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { serviceState, useSeedData } from "@common/db";
 import { getResponseErrorMessage } from "@/utils";
 import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
@@ -27,7 +28,7 @@ function byDescription(a: any, b: any): number {
 const seed = useSeedData();
 
 /**
- * `useDb`'s `hydrated`, for a seed table read through `useSeedData`: its first read has landed,
+ * `useLiveEntity`'s `hydrated`, for a seed table read through `useSeedData`: its first read has landed,
  * and it either has rows or sync is no longer filling it, so an empty list really is empty.
  */
 function seedHydrated(firstRead: () => Promise<unknown>, rows: () => unknown[]) {
@@ -120,13 +121,13 @@ export function useGeos() {
 
 // --- type tables ----------------------------------------------------------------------------
 
-function sortedTypes(cache: string) {
-  const { records, hydrated } = useDb<any>(cache);
+function sortedTypes(table: string) {
+  const { records, hydrated } = useLiveEntity<any>(table);
   return { records: computed(() => [...records.value].sort(byDescription)), hydrated };
 }
 
 export function useProductTypes() {
-  const { records, hydrated } = sortedTypes("productTypes");
+  const { records, hydrated } = sortedTypes(companyDb.tables.productTypes);
   return { productTypes: records, hydrated };
 }
 
@@ -181,7 +182,7 @@ export function useShipmentMethodTypeMutations() {
 
 /** Currencies (UOMs of type UT_CURRENCY_MEASURE), cached at login. */
 export function useCurrencies() {
-  const { records, hydrated } = sortedTypes("currencies");
+  const { records, hydrated } = sortedTypes(companyDb.tables.currencies);
   return { currencies: records, hydrated };
 }
 
@@ -223,7 +224,7 @@ export function useRoleTypes() {
  * on a single page load, for 9 distinct ids). Cached as one set, so labelling is a local lookup.
  */
 export function useSystemMessageTypes() {
-  const { records, hydrated } = useDb<any>("systemMessageTypes");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.systemMessageTypes);
 
   /** systemMessageTypeId → description. */
   const typeItems = computed<Record<string, string>>(() =>

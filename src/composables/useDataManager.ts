@@ -1,5 +1,5 @@
 import { computed, reactive, toRefs, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
-import { api, logger, useDb } from '@common'
+import { api, logger, useLiveEntity } from '@common'
 import { companyDb } from '@/db/companyDb';
 import { clearStorage, getErrorRecords, setErrorRecords } from '@/utils/storage';
 import Papa from 'papaparse';
@@ -29,7 +29,7 @@ export function useRecentDataManagerLogs(
   limit = 10,
   systemMessageIds?: MaybeRefOrGetter<readonly string[]>,
 ) {
-  const { records: configLogs, hydrated } = useDb<any>("dataManagerLogs", {
+  const { records: configLogs, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, {
     dateField: "createdDate",
     equals: { configId },
   });
@@ -166,7 +166,7 @@ export function useDataManager() {
   const ensureDataManagerLog = async (logId: string) => {
     if (!logId) return null;
     try {
-      const cached = await companyDb.entity("dataManagerLogs").get(String(logId));
+      const cached = await companyDb.entity(companyDb.tables.dataManagerLogs).get(String(logId));
       if (cached) return cached;
     } catch {
       // cache unavailable — fall through to the network
@@ -180,7 +180,7 @@ export function useDataManager() {
       }) as any;
       const row = getFirstMdmLog(resp?.data);
       if (row) {
-        await companyDb.entity("dataManagerLogs").upsertMany([row]);
+        await companyDb.entity(companyDb.tables.dataManagerLogs).upsertMany([row]);
         return row;
       }
     } catch (err) {
@@ -319,7 +319,7 @@ export function useDataManager() {
 
 /** Cached DataManagerLogs, newest created first. Scope by config to follow one import type. */
 export function useDataManagerLogs(configId?: string) {
-  const { records, hydrated } = useDb<any>("dataManagerLogs", {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, {
     dateField: 'createdDate',
     ...(configId ? { scope: { field: 'configId', value: configId } } : {}),
   });
@@ -338,7 +338,7 @@ export function useDataManagerLogs(configId?: string) {
 }
 
 export function useDataManagerLogRecord(logId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("dataManagerLogs", () => logId ? { equals: { logId } } : { filter: () => false });
+  const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, () => logId ? { equals: { logId } } : { filter: () => false });
   return { record, hydrated };
 }
 
@@ -353,7 +353,7 @@ export function useDataManagerLogForMessages(systemMessageIds: Ref<string[]> | (
   const ids = computed<string[]>(() =>
     (typeof systemMessageIds === 'function' ? systemMessageIds() : systemMessageIds.value) ?? []);
 
-  const { records, hydrated } = useDb<any>("dataManagerLogs", { dateField: 'createdDate' });
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, { dateField: 'createdDate' });
 
   const log = computed<any>(() => {
     if (!ids.value.length) return undefined;
