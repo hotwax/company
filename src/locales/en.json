@@ -279,6 +279,7 @@
   "Left in SmsgSending. The sweep only picks up SmsgProduced or SmsgError, so this one needs its status reset.": "Left in SmsgSending. The sweep only picks up SmsgProduced or SmsgError, so this one needs its status reset.",
   "This OMS's Shopify connector is older than v4.4.0 and does not report which events changed, so only the newest 500 are re-read, every minute. Older events show as last read at {at}.": "This OMS's Shopify connector is older than v4.4.0 and does not report which events changed, so only the newest 500 are re-read, every minute. Older events show as last read at {at}.",
   "Loading events back to {date} from the OMS. The list fills in as they arrive.": "Loading events back to {date} from the OMS. The list fills in as they arrive.",
+  "Loading events back to {date} from the OMS; {count} shown so far, back to {reached}.": "Loading events back to {date} from the OMS; {count} shown so far, back to {reached}.",
   "Reading the newest events from the OMS.": "Reading the newest events from the OMS.",
   "Refreshing events from the OMS.": "Refreshing events from the OMS.",
   "Only events since {loaded} have loaded; the rest of this range has not been read from the OMS.": "Only events since {loaded} have loaded; the rest of this range has not been read from the OMS.",

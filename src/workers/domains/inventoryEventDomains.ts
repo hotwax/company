@@ -133,10 +133,11 @@ async function serverOldestAt(ctx: SyncContext, ledger: LedgerDefinition, shopId
 }
 
 /**
- * The shop's events from `fromMs` up to `beforeMs`, newest first. The entity list takes the range; the
- * older service has none, so it is paged newest first until a page reaches back past `fromMs`.
+ * Stores the shop's events from `fromMs` up to `beforeMs`, newest first, a page at a time, so the history
+ * fills in as they arrive; resolves to the rows written. The entity list takes the range; the older
+ * service has none, so it is paged newest first until a page reaches back past `fromMs`.
  */
-async function rowsSince(ctx: SyncContext, ledger: LedgerDefinition, shopId: string, fromMs: number, beforeMs?: number, cachedCount = 0) {
+async function loadRowsSince(ctx: SyncContext, ledger: LedgerDefinition, shopId: string, fromMs: number, beforeMs?: number, cachedCount = 0) {
   const range = { shopId, createdDate_from: fromMs, ...(beforeMs === undefined ? {} : { createdDate_thru: beforeMs }), orderByField: "-createdDate" };
   const read = (pageIndex: number) => workerGet(ctx, ledger.endpoint, { ...range, pageSize: PAGE_SIZE, pageIndex });
   const newestOf = (page: any) => toMillis(ledgerRowsOf(page, ledger.endpoint)[0]?.createdDate) ?? 0;
@@ -157,10 +158,18 @@ async function rowsSince(ctx: SyncContext, ledger: LedgerDefinition, shopId: str
       }
     }
   }
-  const rows: Array<Record<string, any>> = [];
+  // Only rows the cache does not reach yet, so a load that writes nothing has reached `fromMs`.
+  const uncached = (row: Record<string, any>) => {
+    const createdAt = toMillis(row.createdDate) ?? 0;
+
+    return createdAt >= fromMs && (beforeMs === undefined || createdAt < beforeMs);
+  };
+  let written = 0;
   for(;;) {
     const pageRows = ledgerRowsOf(page, ledger.endpoint);
-    rows.push(...pageRows);
+    // Each page continues the cache's run downward, so writing it now leaves no gap behind it.
+    const fresh = pageRows.filter(uncached);
+    if(fresh.length) {written += await ledger.entity.upsertMany(fresh);}
     const more = Array.isArray(page)
       ? pageRows.length === PAGE_SIZE
       : page.hasMore && (toMillis(pageRows[pageRows.length - 1]?.createdDate) ?? 0) >= fromMs;
@@ -169,12 +178,7 @@ async function rowsSince(ctx: SyncContext, ledger: LedgerDefinition, shopId: str
     requests++;
   }
 
-  // Only rows the cache does not reach yet, so a load that writes nothing has reached `fromMs`.
-  return rows.filter((row) => {
-    const createdAt = toMillis(row.createdDate) ?? 0;
-
-    return createdAt >= fromMs && (beforeMs === undefined || createdAt < beforeMs);
-  });
+  return written;
 }
 
 function cursorRead(
@@ -235,9 +239,8 @@ function ledgerDomains(ledger: LedgerDefinition): SyncDomain[] {
       const cached = await scopedRows(ledger, shopId);
       const cachedOldest = oldestCachedAt(cached);
       if(cachedOldest !== undefined && fromMs >= cachedOldest) {return 0;}
-      const rows = await rowsSince(ctx, ledger, shopId, fromMs, cachedOldest, cached.length);
 
-      return rows.length ? ledger.entity.upsertMany(rows) : 0;
+      return loadRowsSince(ctx, ledger, shopId, fromMs, cachedOldest, cached.length);
     },
   });
 

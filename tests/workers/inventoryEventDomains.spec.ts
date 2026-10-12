@@ -8,6 +8,8 @@ const state = vi.hoisted(() => ({
   posts: [] as Array<{ url: string; data: any }>,
   responses: {} as Record<string, (params: Record<string, unknown>) => any>,
   writes: {} as Record<string, number>,
+  /** Each `upsertMany` call's row count, by fake table, in order. */
+  batches: {} as Record<string, number[]>,
 }));
 
 /** A stored row's key in the fake tables: its primary-key values, the way `canonicalKey` joins them. */
@@ -45,6 +47,7 @@ vi.mock("@/db/companyDb", async (importOriginal) => {
           written++;
         }
         state.writes[alias] = (state.writes[alias] ?? 0) + raws.length;
+        (state.batches[alias] ??= []).push(raws.length);
 
         return written;
       }),
@@ -107,6 +110,7 @@ beforeEach(() => {
   state.posts = [];
   state.responses = {};
   state.writes = {};
+  state.batches = {};
 });
 
 describe("the rows poller", () => {
@@ -294,6 +298,17 @@ describe("the older service reaching past a long cache", () => {
     expect(state.gets.map((call) => call.params.pageIndex)).toEqual([0, 39, 40, 41, 42, 43, 44, 45, 46]);
     // Only rows older than the cache, and none older than the chosen date.
     expect(written).toBe(1_501);
+  });
+
+  it("writes each page as it arrives, so the history fills in while the load runs", async () => {
+    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+    olderService(12_000);
+    cacheNewest(10_000);
+
+    await domain.refetchOne(ctx, { fromMs: 88_500 }, { shopId: "100002" });
+
+    // Page 39 is all cached rows; each later page is its own write, the last one cut at the chosen date.
+    expect(state.batches.location).toEqual([250, 250, 250, 250, 250, 250, 1]);
   });
 
   it("steps back when the purge left the server fewer rows than the cache holds", async () => {

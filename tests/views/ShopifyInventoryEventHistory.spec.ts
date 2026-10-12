@@ -442,6 +442,12 @@ describe("ShopifyInventoryEventHistory - date pickers", () => {
     // Rows already on screen stay; the bar is what says more are coming.
     expect(rows(wrapper)).toHaveLength(1);
 
+    // A page lands mid-load: the list and the progress line move with it.
+    locationDetails.value = [...locationDetails.value, locationRow({ eventReferenceId: "OLDER", createdDate: Date.parse("2026-09-24T09:00:00") })];
+    await flushPromises();
+    expect(rows(wrapper)).toHaveLength(2);
+    expect(wrapper.text()).toMatch(/2 shown so far, back to .*Sep 24/);
+
     finish(0);
     await flushPromises();
 

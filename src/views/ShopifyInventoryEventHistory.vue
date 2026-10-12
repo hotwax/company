@@ -425,7 +425,14 @@ watch([() => filters.from, () => filters.to, oldestEventAt, serverOldestAt], () 
 /** What the OMS is being asked for right now, so a filtered list is never mistaken for the whole answer. */
 const fetchingNote = computed(() => {
   if(loadingFrom.value !== undefined) {
-    return translate("Loading events back to {date} from the OMS. The list fills in as they arrive.", { date: formatDateTime(loadingFrom.value) });
+    // Rows land a page at a time, so the cache's oldest row is how far the load has come.
+    const reached = oldestEventAt.value;
+
+    return reached === undefined || reached <= loadingFrom.value
+      ? translate("Loading events back to {date} from the OMS. The list fills in as they arrive.", { date: formatDateTime(loadingFrom.value) })
+      : translate("Loading events back to {date} from the OMS; {count} shown so far, back to {reached}.", {
+        date: formatDateTime(loadingFrom.value), count: visibleEvents.value.length, reached: formatDateTime(reached),
+      });
   }
   if(reading.value) {return translate("Reading the newest events from the OMS.");}
   if(manualRefreshing.value) {return translate("Refreshing events from the OMS.");}
