@@ -737,8 +737,10 @@ const activeTab = ref<TransferSyncTab>("create");
 const { logsFor: deliveryLogsFor } = useShopifyTransferDelivery(() => shopId.value);
 function creationDeliveryLabel(orderId: string) {
   const log = deliveryLogsFor("create", orderId)[0];
+  if(log) {return transferDeliveryState(log).label;}
 
-  return log ? transferDeliveryState(log).label : "Waiting for Shopify confirmation";
+  // Nothing stages while native sync is off, so nothing is waiting on Shopify.
+  return nativeSyncEnabled.value === false ? "Not sent: native sync is off" : "Waiting for Shopify confirmation";
 }
 const segment = computed<PendingSegment>(() => activeTab.value === "errors" ? "create" : activeTab.value);
 

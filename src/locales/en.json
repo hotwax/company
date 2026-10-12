@@ -320,6 +320,8 @@
   "Open transfer sync": "Open transfer sync",
   "Native Inventory Transfer Sync is off, so nothing below will be sent to Shopify": "Native Inventory Transfer Sync is off, so nothing below will be sent to Shopify",
   "These transfers were queued while it was on. Their stock changes reach Shopify as inventory updates instead. Detach each from native sync to stop listing it, or turn native sync back on to send them all as Shopify transfers.": "These transfers were queued while it was on. Their stock changes reach Shopify as inventory updates instead. Detach each from native sync to stop listing it, or turn native sync back on to send them all as Shopify transfers.",
+  "To stop listing it as outstanding, detach it from native sync. To send its shipments and receipts to its Shopify transfer, turn native sync back on from the transfer sync page; every transfer queued for this shop would then sync too.": "To stop listing it as outstanding, detach it from native sync. To send its shipments and receipts to its Shopify transfer, turn native sync back on from the transfer sync page; every transfer queued for this shop would then sync too.",
+  "Not sent: native sync is off": "Not sent: native sync is off",
   "Native Inventory Transfer Sync could not be updated.": "Native Inventory Transfer Sync could not be updated.",
   "Needs reconciliation: no fulfillable quantity": "Needs reconciliation: no fulfillable quantity",
   "Needs review": "Needs review",

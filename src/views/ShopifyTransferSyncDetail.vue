@@ -50,7 +50,8 @@
           <ion-item>
             <ion-label class="ion-text-wrap">
               <h2>{{ translate('Next steps') }}</h2>
-              <p>{{ translate('To stop listing it as outstanding, detach it from native sync. To send it to Shopify as a transfer, turn native sync back on from the transfer sync page; every transfer queued for this shop would then be created in Shopify.') }}</p>
+              <p v-if="summary?.transferId">{{ translate('To stop listing it as outstanding, detach it from native sync. To send its shipments and receipts to its Shopify transfer, turn native sync back on from the transfer sync page; every transfer queued for this shop would then sync too.') }}</p>
+              <p v-else>{{ translate('To stop listing it as outstanding, detach it from native sync. To send it to Shopify as a transfer, turn native sync back on from the transfer sync page; every transfer queued for this shop would then be created in Shopify.') }}</p>
             </ion-label>
             <ion-button slot="end" fill="outline" :router-link="`/shopify-connection-details/${id}/transfer-sync`">{{ translate('Open transfer sync') }}</ion-button>
           </ion-item>
