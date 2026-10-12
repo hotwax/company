@@ -131,13 +131,13 @@
           </ion-item>
 
           <ion-item lines="full" class="ion-margin-top">
-            <ion-input v-model="sftpFormData.guid" :label="translate('GUID')" :placeholder="translate('Unique SFTP identifier')" />
+            <ion-input v-model="sftpFormData.secretId" :label="translate('GUID')" :placeholder="translate('Unique SFTP identifier')" />
           </ion-item>
           <ion-item lines="full">
-            <ion-input v-model="sftpFormData.server" :label="translate('SERVER')" :placeholder="translate('Address or domain of the SFTP server')" />
+            <ion-input v-model="sftpFormData.hostName" :label="translate('SERVER')" :placeholder="translate('Address or domain of the SFTP server')" />
           </ion-item>
           <ion-item lines="full">
-            <ion-input v-model="sftpFormData.userId" :label="translate('USER ID')" :placeholder="translate('SFTP username')" />
+            <ion-input v-model="sftpFormData.userName" :label="translate('USER ID')" :placeholder="translate('SFTP username')" />
           </ion-item>
           <ion-item lines="full">
             <ion-input v-model="sftpFormData.port" :label="translate('PORT')" :placeholder="translate('Default is 22')" />
@@ -374,9 +374,9 @@ function openDepartments() {
 // SFTP modal
 const showSftpModal = ref(false);
 const sftpFormData = ref({
-  guid: "",
-  server: "",
-  userId: "",
+  secretId: "",
+  hostName: "",
+  userName: "",
   port: "",
   hostKey: "",
   defaultDirectory: ""
@@ -388,9 +388,9 @@ const isFormInvalid = computed(() => {
 
 function openSftpModal() {
   sftpFormData.value = {
-    guid: "",
-    server: "",
-    userId: "",
+    secretId: "",
+    hostName: "",
+    userName: "",
     port: "",
     hostKey: "",
     defaultDirectory: ""
@@ -405,12 +405,12 @@ function closeSftpModal() {
 async function saveSftpConfig() {
   try {
     const payload = {
-      guid: sftpFormData.value.guid,
-      server: sftpFormData.value.server,
-      userId: sftpFormData.value.userId,
+      hostName: sftpFormData.value.hostName,
+      userName: sftpFormData.value.userName,
       port: sftpFormData.value.port,
       hostKey: sftpFormData.value.hostKey,
-      defaultDirectory: sftpFormData.value.defaultDirectory
+      defaultDirectory: sftpFormData.value.defaultDirectory,
+      secretId: sftpFormData.value.secretId
     };
 
     const resp = await updateSftpConfig(payload);
