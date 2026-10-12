@@ -15,6 +15,8 @@ const jobsHydrated = ref(true);
 const nativeSyncEnabled = ref<boolean | undefined>(true);
 const runsByJob: Record<string, any[]> = {};
 const summaryResult: { value: Record<string, unknown> } = { value: {} };
+/** What the native sync owner lookup does: resolve an owner (or none), or reject like a request. */
+const ownerLookup: { value: () => Promise<unknown> } = { value: async () => undefined };
 
 // Entering the view loads the summary and settings; mounting stands in for Ionic's view lifecycle.
 vi.mock("@ionic/vue", async (importOriginal) => {
@@ -66,6 +68,10 @@ vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
   }),
 }));
 
+vi.mock("@/composables/useShopifyTransferDetach", () => ({
+  useShopifyTransferDetach: () => ({ fetchOwner: () => ownerLookup.value(), fetchEventSelectors: vi.fn(), detach: vi.fn() }),
+}));
+
 vi.mock("@/composables/useShopifyTransferUpdateCheck", () => ({
   useShopifyTransferUpdateCheck: () => ({ check: vi.fn() }),
 }));
@@ -79,6 +85,7 @@ const stubs = {
   ShopifyTransferDeliveryStatus: true,
   ShopifyTransferMappingConflict: true,
   ShopifyTransferUpdateBlocker: true,
+  ShopifyTransferDetachModal: true,
 };
 
 async function mountDetail() {
@@ -94,6 +101,7 @@ describe("ShopifyTransferSyncDetail - no configured stagers", () => {
     jobsHydrated.value = true;
     nativeSyncEnabled.value = true;
     summaryResult.value = {};
+    ownerLookup.value = async () => undefined;
     for(const key of Object.keys(runsByJob)) {delete runsByJob[key];}
     // Stager cards exist but none has a job behind it: `jobNames` is empty.
     cards.value = [
@@ -141,6 +149,7 @@ describe("ShopifyTransferSyncDetail - what a stager's result says about this tra
     jobsHydrated.value = true;
     nativeSyncEnabled.value = true;
     summaryResult.value = {};
+    ownerLookup.value = async () => undefined;
     for(const key of Object.keys(runsByJob)) {delete runsByJob[key];}
   });
 
@@ -173,6 +182,44 @@ describe("ShopifyTransferSyncDetail - what a stager's result says about this tra
     const wrapper = await mountDetail();
 
     expect(wrapper.findAll("ion-radio")).toHaveLength(2);
+    wrapper.unmount();
+  });
+});
+
+describe("ShopifyTransferSyncDetail - detaching from native sync", () => {
+  const detachButton = (wrapper: any) => wrapper.findAll("ion-button").find((button: any) => button.text().includes("Detach from native sync"));
+
+  beforeEach(() => {
+    vi.resetModules();
+    jobsHydrated.value = true;
+    nativeSyncEnabled.value = false;
+    summaryResult.value = {};
+    cards.value = [];
+  });
+
+  it("offers detach for an owned transfer that never reached Shopify", async () => {
+    ownerLookup.value = async () => ({ shopId: "SHOP", orderId: "ORDER_1" });
+    const wrapper = await mountDetail();
+
+    expect(detachButton(wrapper)).toBeDefined();
+    expect(wrapper.text()).toContain("use Detach from native sync above");
+    wrapper.unmount();
+  });
+
+  it("treats an OMS without the owner resource as detach unavailable, not as a failed refresh", async () => {
+    ownerLookup.value = async () => { throw Object.assign(new Error("Request failed with status code 404"), { response: { status: 404 } }); };
+    const wrapper = await mountDetail();
+
+    expect(detachButton(wrapper)).toBeUndefined();
+    expect(wrapper.text()).not.toContain("Some details could not be refreshed");
+    wrapper.unmount();
+  });
+
+  it("still reports any other owner lookup failure", async () => {
+    ownerLookup.value = async () => { throw Object.assign(new Error("Request failed with status code 500"), { response: { status: 500 } }); };
+    const wrapper = await mountDetail();
+
+    expect(wrapper.text()).toContain("Some details could not be refreshed");
     wrapper.unmount();
   });
 });
