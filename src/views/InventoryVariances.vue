@@ -110,7 +110,7 @@ import { computed, ref } from 'vue';
 import { DateTime } from 'luxon';
 import { useEnumGroupMembers, useNetSuite } from "@/composables/useNetSuite";
 import { useTypedEnums } from "@/composables/useSeed";
-import { isEffectiveNow } from "@common/db";
+import { isEffectiveNow } from "@/utils/cacheProjection";
 
 const inventoryVarianceTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
 

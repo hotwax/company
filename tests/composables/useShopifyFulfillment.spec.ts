@@ -9,64 +9,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * `tests/utils/shopifyFulfillment.spec.ts`; here it only proves it is APPLIED per row.
  *
  * The api client is stubbed at `@common` (importing the composable otherwise pulls `useAuth` →
- * `cookieHelper`, which has no browser context here), and so is `useDb`, the read seam every table
- * goes through — the mock applies scope/equals/filter/limit the way the real seam's options contract
- * promises, so the composables' declared queries are exercised rather than bypassed.
+ * `cookieHelper`, which has no browser context here) and the Dexie layer at `useCachedList`, the
+ * read seam every cached entity goes through — the mock applies scope/equals/filter/sort the way
+ * the real seam's options contract promises, so the composables' declared queries are exercised
+ * rather than bypassed.
  */
 
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
 }));
 
-vi.mock("@common", async () => {
-  const { computed } = await import("vue");
-
-  return {
-    api: (...args: any[]) => harness.api(...args),
-    commonUtil: { hasError: () => false, showToast: vi.fn() },
-    logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
-    translate: (value: string) => value,
-    useDb: (table: string, source: any = {}) => {
-      const records = computed(() => {
-        const options = typeof source === "function" ? source() : source;
-        let rows = [...(CACHE[TABLES[table]] ?? [])];
-        if(options.scope) {
-          rows = rows.filter((row) => String(row?.[options.scope.field]) === String(options.scope.value));
-        }
-        if(options.equals) {
-          rows = rows.filter((row) =>
-            Object.entries(options.equals).every(([field, value]) => row?.[field] === value));
-        }
-        if(options.filter) {rows = rows.filter(options.filter);}
-        if(options.order === "desc") {rows.reverse();}
-        if(options.limit) {rows = rows.slice(0, options.limit);}
-
-        return rows;
-      });
-
-      return {
-        records,
-        first: computed(() => records.value[0]),
-        count: computed(() => records.value.length),
-        hydrated: computed(() => true),
-      };
-    },
-  };
-});
-
-vi.mock("@/services/appDbSync", () => ({
-  refreshAfterMutation: vi.fn(),
+vi.mock("@common", () => ({
+  api: (...args: any[]) => harness.api(...args),
+  commonUtil: { hasError: () => false, showToast: vi.fn() },
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+  translate: (value: string) => value,
 }));
 
-/** The table each `CACHE` fixture stands in for. */
-const TABLES: Record<string, string> = {
-  shopifyShops: "shops",
-  productStores: "stores",
-  systemMessageRemotes: "remotes",
-  systemMessages: "messages",
-  shopifyFulfillmentHistories: "fulfillmentHistories",
-  shopifyFulfillmentHistorySupport: "fulfillmentHistorySupport",
-};
+vi.mock("@/services/appCacheBootstrap", () => ({
+  refreshAfterMutation: vi.fn(),
+  bootstrapState: { running: false },
+}));
 
 const SHOP_ID = "10000";
 const OTHER_SHOP_REMOTE = "OtherShopConfig";
@@ -102,6 +65,48 @@ function seedShopContext() {
     },
   ];
 }
+
+vi.mock("@/composables/useCachedList", () => ({
+  useCachedList: (entity: any, options: any = {}) => {
+    let rows = [...(CACHE[entity?.__kind] ?? [])];
+    if(options.scope) {
+      rows = rows.filter((row) => String(row?.[options.scope.field]) === String(options.scope.value));
+    }
+    if(options.equals) {
+      rows = rows.filter((row) =>
+        Object.entries(options.equals).every(([field, value]) => row?.[field] === value));
+    }
+    if(options.filter) {rows = rows.filter(options.filter);}
+    if(options.dateField) {
+      rows = [...rows].sort((a, b) => ((b?.[options.dateField] as number) ?? 0) - ((a?.[options.dateField] as number) ?? 0));
+    }
+    if(options.limit) {rows = rows.slice(0, options.limit);}
+
+    return { rows: { value: rows }, records: { value: rows }, hydrated: { value: true } };
+  },
+  useCachedRecord: () => ({ record: { value: undefined }, hydrated: { value: true } }),
+  byDescription: () => 0,
+}));
+
+vi.mock("@/utils/cacheEntities", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/utils/cacheEntities")>()),
+  dataManagerLogCache: { __kind: "logs" },
+  productStoreCache: { __kind: "stores" },
+  serviceJobCache: { __kind: "jobs" },
+  serviceJobRunCache: { __kind: "jobRuns" },
+  shopifyBulkOperationCache: { __kind: "bulkOps" },
+  shopifyCarrierShipmentCache: { __kind: "carrierShipments" },
+  shopifyFulfillmentHistoryCache: { __kind: "fulfillmentHistories" },
+  shopifyFulfillmentHistorySupportCache: { __kind: "fulfillmentHistorySupport" },
+  shopifyLocationCache: { __kind: "locations" },
+  shopifyShopCache: { __kind: "shops" },
+  shopifyTypeMappingCache: { __kind: "typeMappings" },
+  inventoryEventDocumentCache: { __kind: "inventoryEventDocuments" },
+  syncRunCache: { __kind: "syncRuns" },
+  systemMessageCache: { __kind: "messages" },
+  systemMessageErrorCache: { __kind: "errors" },
+  systemMessageRemoteCache: { __kind: "remotes" },
+}));
 
 import {
   QUEUED_FULFILLMENT_MESSAGE_TYPE_ID,
@@ -201,6 +206,7 @@ describe("useSyncedFulfillments", () => {
     seedShopContext();
     CACHE.fulfillmentHistories = [
       {
+        fulfillmentKey: "10000:4471301884",
         shopId: SHOP_ID,
         fulfillmentId: "4471301884",
         shopifyOrderId: "5734893781",
@@ -212,6 +218,7 @@ describe("useSyncedFulfillments", () => {
         lastUpdatedStamp: 200,
       },
       {
+        fulfillmentKey: "10000:4471302915",
         shopId: SHOP_ID,
         fulfillmentId: "4471302915",
         omsOrderId: "RAI-100491",
@@ -221,6 +228,7 @@ describe("useSyncedFulfillments", () => {
       },
       // Same numeric fulfillment id on ANOTHER shop — must not leak into this shop's feed.
       {
+        fulfillmentKey: "10010:4471301884",
         shopId: "10010",
         fulfillmentId: "4471301884",
         lastUpdatedStamp: 999,

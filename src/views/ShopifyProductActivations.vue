@@ -104,63 +104,55 @@ import {
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { translate } from "@common";
 import { formatDateTime, getResponseErrorMessage } from "@/utils";
-import { fetchProductFacilityActivations, useShopifyShops } from "@/composables/useShopify";
-import { activationKey, activationLabel, type ProductFacilityActivation } from "@/utils/shopifyActivation";
+import { useProductFacilityActivations, useShopifyShops } from "@/composables/useShopify";
+import { activationKey, activationLabel } from "@/utils/shopifyActivation";
 
 const props = defineProps<{ id: string }>();
 const { shops } = useShopifyShops();
 const shop = computed(() => shops.value.find((row: any) => row.shopId === props.id));
 const PAGE_SIZE = 25;
-const rows = ref<ProductFacilityActivation[]>([]);
 const status = ref("all");
 const productId = ref("");
 const facilityId = ref("");
 const appliedFilters = ref({ productId: "", facilityId: "" });
 const pageIndex = ref(0);
-const totalCount = ref(0);
 const checkedAt = ref<number | undefined>();
-const loading = ref(false);
 const loaded = ref(false);
-const error = ref("");
-let generation = 0;
+const { rows, totalCount, loading, error, load: loadActivations, clearGeneration } = useProductFacilityActivations();
 
 async function load() {
-  const request = ++generation;
-  loading.value = true;
-  error.value = "";
-  rows.value = [];
-  totalCount.value = 0;
+  loaded.value = false;
   checkedAt.value = undefined;
   try {
-    const result = await fetchProductFacilityActivations(props.id, {
-      ...appliedFilters.value, activationStatus: status.value, pageIndex: pageIndex.value, pageSize: PAGE_SIZE,
+    await loadActivations(props.id, {
+      ...appliedFilters.value,
+      activationStatus: status.value,
+      pageIndex: pageIndex.value,
+      pageSize: PAGE_SIZE,
     });
-    if (request !== generation) return;
-    rows.value = result.activations;
-    totalCount.value = result.totalCount;
     checkedAt.value = Date.now();
     loaded.value = true;
   } catch (cause) {
-    if (request !== generation) return;
     error.value = getResponseErrorMessage(cause, translate("Check your connection and ensure the OMS activation-monitor endpoint is installed."));
-  } finally {
-    if (request === generation) loading.value = false;
   }
 }
+
 function applyFilters() {
   appliedFilters.value = { productId: productId.value.trim(), facilityId: facilityId.value.trim() };
   pageIndex.value = 0;
   void load();
 }
+
 function clearFilters() {
   productId.value = "";
   facilityId.value = "";
   applyFilters();
 }
+
 function changePage(delta: number) { pageIndex.value += delta; void load(); }
 watch(status, () => { pageIndex.value = 0; void load(); });
-watch(() => props.id, () => { pageIndex.value = 0; rows.value = []; loaded.value = false; void load(); });
+watch(() => props.id, () => { pageIndex.value = 0; loaded.value = false; void load(); });
 onIonViewWillEnter(() => { void load(); });
-onIonViewWillLeave(() => { generation++; loading.value = false; });
-onBeforeUnmount(() => { generation++; });
+onIonViewWillLeave(() => { clearGeneration(); });
+onBeforeUnmount(() => { clearGeneration(); });
 </script>

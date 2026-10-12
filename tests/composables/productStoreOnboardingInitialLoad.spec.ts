@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { effectScope, ref } from "vue"
+import { useCacheSync } from "@/composables/useCacheSync"
 import {
   ONBOARDING_INITIAL_LOAD_CONTRACTS,
   deriveOnboardingInitialLoadSnapshot,
@@ -17,12 +18,6 @@ import {
   useShopifySyncContext,
   useShopifySyncRuns
 } from "@/composables/useShopify"
-import {
-  activateSyncDomains,
-  deactivateSyncDomains,
-  refreshAfterMutation,
-  syncNow
-} from "@/services/appDbSync"
 
 vi.mock("@/composables/useShopify", () => ({
   PRODUCT_SYNC_FEATURE: { activePollMs: 10_000 },
@@ -36,14 +31,7 @@ vi.mock("@/composables/useShopify", () => ({
   useShopifySyncRuns: vi.fn()
 }))
 
-vi.mock("@/services/appDbSync", () => ({
-  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
-  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
-  createSyncDomainOwner: (label: string) => label,
-  syncNow: vi.fn().mockResolvedValue(undefined),
-  refreshAfterMutation: vi.fn().mockResolvedValue(undefined),
-  syncDomainsError: ref("")
-}))
+vi.mock("@/composables/useCacheSync", () => ({ useCacheSync: vi.fn() }))
 vi.mock("@/composables/useServiceJobs", () => ({ useServiceJobRunsByJob: vi.fn() }))
 vi.mock("@/utils", () => ({ formatDateTime: (value: unknown) => String(value) }))
 
@@ -54,6 +42,12 @@ function arrangeLiveInitialLoadScope(options: {
 }) {
   const fetchSyncRun = vi.fn().mockResolvedValue(undefined)
   const clearSyncRun = vi.fn()
+  const start = vi.fn().mockResolvedValue(undefined)
+  const stop = vi.fn()
+  const syncNow = vi.fn().mockResolvedValue(undefined)
+  const afterMutation = vi.fn().mockResolvedValue(undefined)
+  const busy = ref(true)
+  const manualRefreshing = ref(false)
 
   vi.mocked(useShopifySyncContext).mockReturnValue({
     shop: ref(null),
@@ -88,14 +82,18 @@ function arrangeLiveInitialLoadScope(options: {
     runsFor: () => [],
     hydrated: ref(true)
   } as any)
-  return {
-    fetchSyncRun,
-    clearSyncRun,
-    activateSyncDomains: vi.mocked(activateSyncDomains),
-    deactivateSyncDomains: vi.mocked(deactivateSyncDomains),
-    syncNow: vi.mocked(syncNow),
-    refreshAfterMutation: vi.mocked(refreshAfterMutation)
-  }
+  vi.mocked(useCacheSync).mockReturnValue({
+    start,
+    stop,
+    syncNow,
+    afterMutation,
+    busy,
+    manualRefreshing,
+    error: ref(""),
+    lastSyncAt: ref(null)
+  } as any)
+
+  return { fetchSyncRun, clearSyncRun, start, stop, syncNow, afterMutation, busy, manualRefreshing }
 }
 
 beforeEach(() => {
@@ -117,7 +115,7 @@ describe("useProductStoreOnboardingInitialLoad shop scope", () => {
 
     await initialLoad.activate()
 
-    expect(mocks.activateSyncDomains).not.toHaveBeenCalled()
+    expect(mocks.start).not.toHaveBeenCalled()
     expect(mocks.syncNow).not.toHaveBeenCalled()
     expect(mocks.fetchSyncRun).not.toHaveBeenCalled()
     expect(initialLoad.scopeRefreshed.value).toBe(false)
@@ -151,7 +149,7 @@ describe("useProductStoreOnboardingInitialLoad shop scope", () => {
 
     await initialLoad.activate()
 
-    const domains = mocks.activateSyncDomains.mock.calls[0][0]
+    const domains = mocks.start.mock.calls[0][0]
     const systemMessageDomains = domains.filter((domain: any) => domain.name === "systemMessage")
     expect(systemMessageDomains).toHaveLength(2)
     expect(systemMessageDomains).toEqual(expect.arrayContaining([
@@ -176,6 +174,23 @@ describe("useProductStoreOnboardingInitialLoad shop scope", () => {
     expect(initialLoad.products.value.hydrated).toBe(true)
 
     initialLoad.deactivate()
+    scope.stop()
+  })
+
+  it("does not expose background cache activity as a manual refresh", () => {
+    const mocks = arrangeLiveInitialLoadScope({
+      contextHydrated: true,
+      remoteIds: ["SHOP-REMOTE"]
+    })
+    const scope = effectScope()
+    const initialLoad = scope.run(() => useProductStoreOnboardingInitialLoad(() => "SHOP"))!
+
+    expect(mocks.busy.value).toBe(true)
+    expect(initialLoad.refreshing.value).toBe(false)
+
+    mocks.manualRefreshing.value = true
+    expect(initialLoad.refreshing.value).toBe(true)
+
     scope.stop()
   })
 })

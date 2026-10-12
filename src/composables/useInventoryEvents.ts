@@ -1,10 +1,21 @@
-import { translate, useDb } from "@common";
-import { toMillis } from "@common/db";
+import { translate } from "@common";
 import { type MaybeRefOrGetter, computed, toValue } from "vue";
-import { companyDb } from "@/db/companyDb";
+import { useCachedList } from "@/composables/useCachedList";
 import { useStatuses } from "@/composables/useSeed";
 import { type InventoryEventSourceLookup, useInventoryEventSources } from "@/composables/useShopify";
-import { isShopifyLocationMapping } from "@/utils/shopifyShop";
+import {
+  facilityCache,
+  inventoryChannelCache,
+  inventoryLedgerBoundCache,
+  serviceJobCache,
+  shopifyInventoryAdjustmentDetailCache,
+  shopifyInventoryItemCache,
+  shopifyInventoryItemKey,
+  shopifyLocationCache,
+  shopifyLocationInventoryAdjustmentDetailCache,
+  systemMessageCache,
+} from "@/utils/cacheEntities";
+import { toMillis } from "@/utils/cacheProjection";
 import {
   type DeliveryStateId,
   type InventoryEvent,
@@ -18,7 +29,7 @@ import { type InventoryEventSourceRoot, canonicalEventTypeId } from "@/utils/inv
 
 /**
  * Both Shopify inventory ledgers, read from IndexedDB into one row shape. Nothing here fetches: the
- * inventory sync area's domains keep the tables current, and every label comes from a cached table.
+ * inventory sync area's worker keeps the tables current, and every label comes from a cached table.
  * Location is the facilities mapped to it (never `_NA_`, which is named "Brokering Queue"), else the
  * channel mapped to it; product is Shopify's own inventory item read.
  */
@@ -58,19 +69,10 @@ const SOURCE_RECORD_LABELS: Record<InventoryEventSourceRoot, string> = {
   inventoryItemDetails: "",
 };
 
-const LEDGER_TABLES = {
-  channel: "shopifyInventoryAdjustmentDetails",
-  location: "shopifyLocationInventoryAdjustmentDetails",
+const LEDGER_CACHES = {
+  channel: shopifyInventoryAdjustmentDetailCache,
+  location: shopifyLocationInventoryAdjustmentDetailCache,
 } as const;
-
-/** A ledger row's identity: its primary-key values in declared order, the shape the old synthetic key had. */
-function ledgerRowKeyOf(kind: InventoryEventKind, row: Record<string, unknown>): string {
-  return JSON.stringify(companyDb.entities[LEDGER_TABLES[kind]].primaryKeyFields.map((field) => String(row[field] ?? "")));
-}
-
-function inventoryItemKey(shopId: unknown, shopifyInventoryItemId: unknown): string {
-  return `${String(shopId ?? "")}|${String(shopifyInventoryItemId ?? "")}`;
-}
 
 /** "Default Title" is what Shopify names the only variant of a product with no options. */
 function variantLabelOf(variantTitle: string, productTitle: string): string {
@@ -87,25 +89,23 @@ function deliveryLabelOf(event: Pick<InventoryEvent, "delivery">, statusLabel: (
 /** `shopId` is reactive so a reused view follows its route from one shop to another. */
 export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: InventoryEventKind) {
   const scoped = () => ({ scope: { field: "shopId", value: String(toValue(shopId) ?? "") } });
-  const { records: scopedLedgerRows, hydrated } = useDb<any>(LEDGER_TABLES[kind], scoped);
-  // Newest first. A scoped read comes back in key order, so the order is set here.
-  const ledgerRows = computed(() => [...scopedLedgerRows.value]
-    .sort((a, b) => (toMillis(b.createdDate) ?? 0) - (toMillis(a.createdDate) ?? 0)));
-  const { records: messageRows } = useDb<any>("systemMessages");
-  const { records: shopLocations } = useDb<any>("shopifyLocations", () => ({ ...scoped(), filter: isShopifyLocationMapping }));
-  const { records: facilities } = useDb<any>("facilities");
-  const { records: channels } = useDb<any>("inventoryChannels", scoped);
-  const { records: inventoryItemRows } = useDb<any>("shopifyInventoryItems", scoped);
-  const { records: serviceJobs } = useDb<any>("serviceJobs");
-  const { records: bounds } = useDb<any>("inventoryLedgerBounds", scoped);
+  const { rows: ledgerRows, hydrated } = useCachedList(LEDGER_CACHES[kind], () => ({ ...scoped(), dateField: "createdDate" }));
+  const { rows: messageRows } = useCachedList(systemMessageCache);
+  const { records: shopLocations } = useCachedList<any>(shopifyLocationCache, scoped);
+  const { records: facilities } = useCachedList<any>(facilityCache);
+  const { records: channels } = useCachedList<any>(inventoryChannelCache, scoped);
+  const { rows: inventoryItemRows } = useCachedList(shopifyInventoryItemCache, scoped);
+  const { records: serviceJobs } = useCachedList<any>(serviceJobCache);
+  const { records: bounds } = useCachedList<any>(inventoryLedgerBoundCache, scoped);
   const { labelFor: statusLabel } = useStatuses();
   const { sources, resolve: resolveSourceArtifacts, sourceKeyOf } = useInventoryEventSources();
 
   const messagesById = computed(() => {
     const map = new Map<string, InventoryEventMessage>();
     for(const row of messageRows.value) {
-      map.set(String(row.systemMessageId), {
-        statusId: row.statusId, processedDate: row.processedDate, initDate: row.initDate, syncedAt: row.syncedAt,
+      const raw = row.raw as Record<string, any>;
+      map.set(String(raw.systemMessageId), {
+        statusId: raw.statusId, processedDate: raw.processedDate, initDate: raw.initDate, cachedAt: row.cachedAt,
       });
     }
 
@@ -143,7 +143,7 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
   }
 
   const inventoryItemsByKey = computed(() => new Map(inventoryItemRows.value
-    .map((row) => [inventoryItemKey(row.shopId, row.shopifyInventoryItemId), row as Record<string, any>])));
+    .map((row) => [String(row.itemKey ?? ""), row.raw as Record<string, any>])));
 
   function sourceLabelOf(event: InventoryEvent): string {
     const recordLabel = event.source.root ? SOURCE_RECORD_LABELS[event.source.root] : "";
@@ -155,9 +155,11 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
   }
 
   const events = computed<InventoryEventRow[]>(() => ledgerRows.value.map((row) => {
-    const message = effectiveMessageOf(row, row.syncedAt, messagesById.value.get(String(row.systemMessageId ?? "")));
-    const event = toInventoryEvent(kind, ledgerRowKeyOf(kind, row), row, message);
-    const item = inventoryItemsByKey.value.get(inventoryItemKey(event.shopId, event.inventoryItemId));
+    const raw = row.raw as Record<string, any>;
+    const cacheKey = String(row[kind === "channel" ? "adjustmentKey" : "locationAdjustmentKey"] ?? "");
+    const message = effectiveMessageOf(raw, row.cachedAt, messagesById.value.get(String(raw.systemMessageId ?? "")));
+    const event = toInventoryEvent(kind, cacheKey, raw, message);
+    const item = inventoryItemsByKey.value.get(shopifyInventoryItemKey(event.shopId, event.inventoryItemId));
     const productName = String(item?.productTitle ?? "");
 
     return {
@@ -195,7 +197,7 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
 
   /** A ledger view without an update cursor still stores the recent window, but nothing after it arrives. */
   const liveUpdates = computed(() => !ledgerRows.value.length ||
-    ledgerRows.value.some((row) => row.detailLastUpdatedStamp != null));
+    ledgerRows.value.some((row) => (row.raw as Record<string, any>)?.detailLastUpdatedStamp != null));
 
   /**
    * The cache holds a window of the ledger, not all of it. `oldestEventAt` is where the window starts
@@ -207,7 +209,7 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
 
   const retention = computed(() => ledgerRetentionOf(kind, serviceJobs.value));
 
-  const loadedAt = computed(() => ledgerRows.value.reduce((newest, row) => Math.max(newest, Number(row.syncedAt) || 0), 0) || undefined);
+  const loadedAt = computed(() => ledgerRows.value.reduce((newest, row) => Math.max(newest, Number(row.cachedAt) || 0), 0) || undefined);
 
   function sourceArtifactFor(event: InventoryEvent) {
     return sources.value.get(sourceKeyOf(event.eventTypeId, event.eventReferenceId));

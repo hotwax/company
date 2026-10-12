@@ -1,4 +1,4 @@
-import type { ActiveDomain } from "@common/db/sync/syncRegistry";
+import type { ActiveDomain } from "@/workers/syncRegistry";
 
 /**
  * Shopify fulfillment sync — domain model + behaviors (pure, Vue-free).
@@ -9,17 +9,6 @@ import type { ActiveDomain } from "@common/db/sync/syncRegistry";
  * readers live in `@/composables/useShopifyFulfillment` and import these. Aside from the
  * `ActiveDomain` TYPE (erased at compile time), this module imports nothing from the app.
  */
-
-/**
- * The stable message the fulfillment-history domain raises when the endpoint 404s.
- *
- * Shared here — the worker/view contract seam — because both sides must agree on it verbatim: the
- * worker domain throws it (so `serviceState.errors.shopifyFulfillmentHistory` carries it), and the
- * screen matches on it to render "endpoint not available" instead of a generic sync failure.
- * Durable state lives on the `shopifyFulfillmentHistorySupport` row; this string is only the
- * error-channel face of it.
- */
-export const FULFILLMENT_HISTORY_ENDPOINT_MISSING = "fulfillmentHistories endpoint not available (404)";
 
 /** The message type queue#SystemMessage produces for a shipped, eligible shipment. */
 export const QUEUED_FULFILLMENT_MESSAGE_TYPE_ID = "CreateShopifyFulfillment";
@@ -105,7 +94,7 @@ export function parseFulfillmentMessageText(messageText: unknown): ParsedFulfill
  *
  * Exists because the message domain syncs ONLY declared types (the app config deliberately lists
  * none for this screen: every configured type costs one request per remote on every tick of every
- * page that falls back to the config). Passing this list to `activateSyncDomains()` is what makes
+ * page that falls back to the config). Passing this list to `useCacheSync().start()` is what makes
  * CreateShopifyFulfillment messages as fresh as every other monitored type — the same
  * declare-your-own-types rule `syncFeatureDomains` applies for product and order sync.
  */

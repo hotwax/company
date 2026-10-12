@@ -2,7 +2,7 @@ import { translate } from "@common";
 import {
   CACHE_RECONCILIATION_ERROR_MESSAGE,
   isCacheReconciliationError,
-} from "@/utils/db/cacheReconciliationError";
+} from "@/utils/cacheReconciliationError";
 
 export const ERROR_WITH_DETAILS_KEY = "{summary} Details: {details}";
 export const REFERENCE_DATA_ERROR_KEY =

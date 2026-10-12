@@ -14,7 +14,7 @@ vi.mock("@common", () => ({
   translate: (key: string) => key,
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/services/appCacheBootstrap", () => ({
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
 }));

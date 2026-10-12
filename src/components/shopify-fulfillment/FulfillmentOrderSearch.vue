@@ -56,11 +56,10 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { translate } from '@common';
+import { api, translate } from '@common';
 import { IonCard, IonCardHeader, IonCardTitle, IonSearchbar, IonSelect, IonSelectOption, IonInput, IonItem, IonList, IonLabel, IonCheckbox, IonNote, IonButton, IonChip, IonIcon, IonSkeletonText, IonModal, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonFooter } from '@ionic/vue';
 import { closeCircle, closeOutline } from 'ionicons/icons';
 import { useStatuses } from '@/composables/useSeed';
-import { useShopOrderSearch } from '@/composables/useShopify';
 import { formatDateTime, hasError } from '@/utils';
 
 export interface SearchOrder { orderId: string; orderName?: string; shopifyOrderId?: string; orderDate?: number; statusId?: string }
@@ -84,6 +83,7 @@ const FIELDS = [
 const props = defineProps<{ shopId: string; modelValue: SearchOrder[] }>();
 const emit = defineEmits<{ (e: 'update:modelValue', rows: SearchOrder[]): void }>();
 
+const DOCUMENT_ID = 'SHOPIFY_SHOP_ORDER_SEARCH';
 const PAGE = 20;
 const field = ref<string>(FIELDS[0].value);
 const statusId = ref('');
@@ -99,7 +99,6 @@ const modalOpen = ref(false);
 const modalContent = ref<any>();
 
 const { ofType, labelFor } = useStatuses();
-const { searchOrders } = useShopOrderSearch();
 const orderStatuses = computed(() => ofType('ORDER_STATUS'));
 const fieldOptions = computed(() => FIELDS.map(option => ({ value: option.value, label: option.label })));
 const activeField = computed(() => FIELDS.find(option => option.value === field.value) ?? FIELDS[0]);
@@ -131,8 +130,17 @@ async function fetchPage(term: string) {
     if (dateFrom.value) { search.orderDate_from = `${dateFrom.value} 00:00:00`; }
     if (dateThru.value) { search.orderDate_thru = `${dateThru.value} 23:59:59`; }
 
-    // One over the page so a full page tells us there is more, without a count call.
-    const response: any = await searchOrders(search, PAGE + 1);
+    const response: any = await api({
+      url: 'oms/dataDocumentView',
+      method: 'POST',
+      data: {
+        dataDocumentId: DOCUMENT_ID,
+        pageIndex: 0,
+        // One over the page so a full page tells us there is more, without a count call.
+        pageSize: PAGE + 1,
+        customParametersMap: search,
+      },
+    });
     if (id !== request) return;
     const rows = Array.isArray(response?.data?.entityValueList) ? response.data.entityValueList : undefined;
     if (hasError(response) || !rows) throw new Error('Invalid order search');

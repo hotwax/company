@@ -63,12 +63,12 @@ describe("effectiveMessageOf — the fresher of the two cached reads wins", () =
   const raw = { systemMessageId: "B", systemMessageStatusId: "SmsgProduced", systemMessageProcessedDate: 5 };
 
   it("uses whichever read landed later", () => {
-    expect(effectiveMessageOf(raw, 200, { statusId: "SmsgError", syncedAt: 100 })?.statusId).toBe("SmsgProduced");
-    expect(effectiveMessageOf(raw, 100, { statusId: "SmsgSent", syncedAt: 200 })?.statusId).toBe("SmsgSent");
+    expect(effectiveMessageOf(raw, 200, { statusId: "SmsgError", cachedAt: 100 })?.statusId).toBe("SmsgProduced");
+    expect(effectiveMessageOf(raw, 100, { statusId: "SmsgSent", cachedAt: 200 })?.statusId).toBe("SmsgSent");
   });
 
   it("has no message for an unbatched row", () => {
-    expect(effectiveMessageOf({ systemMessageId: "" }, 1, { statusId: "SmsgSent", syncedAt: 2 })).toBeUndefined();
+    expect(effectiveMessageOf({ systemMessageId: "" }, 1, { statusId: "SmsgSent", cachedAt: 2 })).toBeUndefined();
   });
 });
 

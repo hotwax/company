@@ -12,7 +12,9 @@ vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobRunsByJob: () => ({ runsFor: (name: string) => state.runs[name] ?? [], hydrated: ref(true) }),
 }));
 vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
+  useTransferSyncSummary: () => ({ summary: ref(undefined), summaryError: ref(""), loadSummary: vi.fn() }),
   useShopifyTransferSyncEnrichment: () => ({
+
     enrichment: ref({ ordersById: { "128255": { orderName: "TO10261" } } }),
     load: vi.fn(),
   }),

@@ -59,11 +59,9 @@ function mockBackend(options: {
     if(config?.method === "get" && match) {
       return { data: { userGroupPermissionList: options.groupPermissions?.[match[1]] ?? [] } };
     }
-    match = url.match(/^admin\/userGroups\/([^/]+)\/users$/);
+    match = url.match(/^admin\/groups\/([^/]+)\/users$/);
     if(config?.method === "get" && match) {
-      // An array is served in the service's `userList` envelope; anything else is returned as-is.
-      const users = options.groupUsers?.[match[1]] ?? [];
-      return { data: Array.isArray(users) ? { userList: users } : users };
+      return { data: options.groupUsers?.[match[1]] ?? [] };
     }
 
     return { data: {} };
@@ -72,7 +70,7 @@ function mockBackend(options: {
 
 const calls = () => api.mock.calls.map(([config]: any[]) => config);
 const groupUserRequests = () =>
-  calls().filter((config: any) => config.method === "get" && /^admin\/userGroups\/[^/]+\/users$/.test(String(config.url)));
+  calls().filter((config: any) => config.method === "get" && /^admin\/groups\/[^/]+\/users$/.test(String(config.url)));
 const groupPermissionRequests = () =>
   calls().filter((config: any) => config.method === "get" && /^admin\/userGroups\/[^/]+\/permissions$/.test(String(config.url)));
 
@@ -221,9 +219,9 @@ describe("useAppPermissions — the fetchGroupUsers N+1 is gone", () => {
     expect(groupUserRequests()).toHaveLength(2);
   });
 
-  it("reads the users from the service's userList envelope", async () => {
+  it("unwraps the endpoint's alternate envelopes (users/docs) like the store did", async () => {
     const { security, useAppPermissions } = await freshModule();
-    mockBackend({ groupUsers: { GROUP_0: { userList: [{ userId: "wrapped" }] } } });
+    mockBackend({ groupUsers: { GROUP_0: { users: [{ userId: "wrapped" }] } } });
     security.__setUserGroups(accessGroups(1));
     security.__setPermissions([]);
 

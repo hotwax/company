@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
+  domains: [] as any[],
   tables: {} as Record<string, Map<string, any>>,
   gets: [] as Array<{ url: string; params: Record<string, unknown> }>,
   pages: [] as any[],
@@ -10,65 +11,56 @@ const state = vi.hoisted(() => ({
   writes: {} as Record<string, number>,
 }));
 
-/** A stored row's key in the fake tables: its primary-key values, the way `canonicalKey` joins them. */
-const joinKey = (...values: unknown[]) => values.map(String).join("\u0000");
+function fakeCache(table: string, keyOf: (raw: any) => string | undefined, fields: string[]) {
+  state.tables[table] ??= new Map();
+  const rows = () => [...state.tables[table].values()];
+  const project = (raw: any) => {
+    const row: Record<string, any> = { raw, cachedAt: Date.now() };
+    for(const field of fields) {if(raw[field] !== undefined) {row[field] = raw[field];}}
 
-vi.mock("@/db/companyDb", async (importOriginal) => {
-  const { companyDb } = await importOriginal<typeof import("@/db/companyDb")>();
-  const { canonicalKey, entityKeyOf, projectRow } = await import("@common/db/storage/projection");
-  /** The fake tables' names, by the real table each stands in for. */
-  const TABLE_ALIASES: Record<string, string> = {
-    shopifyInventoryAdjustmentDetails: "channel",
-    shopifyLocationInventoryAdjustmentDetails: "location",
-    systemMessages: "systemMessages",
-    shopifyInventoryItems: "shopifyInventoryItems",
-    inventoryLedgerBounds: "bounds",
+    return row;
   };
 
-  /** The `EntityClient` surface the domains use, over a Map, projecting through the real schema. */
-  function fakeEntity(table: string) {
-    const alias = TABLE_ALIASES[table];
-    const entity = companyDb.entities[table];
-    state.tables[alias] ??= new Map();
-    const rows = () => [...state.tables[alias].values()];
+  return {
+    table,
+    all: vi.fn(async () => rows()),
+    getMany: vi.fn(async (keys: string[]) => keys.map((key) => state.tables[table].get(key))),
+    upsertMany: vi.fn(async (raws: any[]) => {
+      for(const raw of raws) {state.tables[table].set(keyOf(raw)!, project(raw));}
+      state.writes[table] = (state.writes[table] ?? 0) + raws.length;
 
-    return {
-      table,
-      query: vi.fn(async ({ scope }: any = {}) => rows().filter((row) => !scope || String(row[scope.field]) === String(scope.value))),
-      getMany: vi.fn(async (keys: any[]) => keys.map((key) => state.tables[alias].get(canonicalKey(key))).filter(Boolean)),
-      upsertMany: vi.fn(async (raws: any[]) => {
-        let written = 0;
-        for(const raw of raws) {
-          const row = projectRow(raw, entity, Date.now());
-          if(!row) {continue;}
-          state.tables[alias].set(canonicalKey(entityKeyOf(row, entity)!), row);
-          written++;
-        }
-        state.writes[alias] = (state.writes[alias] ?? 0) + raws.length;
+      return raws.length;
+    }),
+    removeMany: vi.fn(async (keys: string[]) => { keys.forEach((key) => state.tables[table].delete(key)); }),
+    newestCursor: vi.fn(async (field: string, scope?: { field: string; value: unknown }) => {
+      let newest: number | undefined;
+      for(const row of rows()) {
+        if(scope && String(row.raw[scope.field]) !== String(scope.value)) {continue;}
+        const value = Number(row.raw[field]);
+        if(Number.isFinite(value) && row.raw[field] !== undefined && row.raw[field] !== null && (newest === undefined || value > newest)) {newest = value;}
+      }
 
-        return written;
-      }),
-      bulkRemove: vi.fn(async (keys: any[]) => { keys.forEach((key) => state.tables[alias].delete(canonicalKey(key))); }),
-      newestCursor: vi.fn(async (field: string, scope?: { field: string; value: unknown }) => {
-        let newest: number | undefined;
-        for(const row of rows()) {
-          if(scope && String(row[scope.field]) !== String(scope.value)) {continue;}
-          const value = row[field];
-          if(typeof value === "number" && (newest === undefined || value > newest)) {newest = value;}
-        }
+      return newest;
+    }),
+  };
+}
 
-        return newest;
-      }),
-    };
-  }
+const channelKey = (raw: any) => [raw.eventTypeId, raw.eventReferenceId, raw.inventoryChannelId, raw.shopifyInventoryItemId].join("|");
+const locationKey = (raw: any) => [raw.eventTypeId, raw.eventReferenceId, raw.shopId, raw.shopifyLocationId, raw.shopifyInventoryItemId].join("|");
+const itemKey = (raw: any) => `${raw.shopId}|${raw.shopifyInventoryItemId}`;
 
-  return { companyDb: { entities: companyDb.entities, entity: fakeEntity } };
-});
+vi.mock("@/utils/cacheEntities", () => ({
+  shopifyInventoryAdjustmentDetailProjection: { buildKey: channelKey },
+  locationInventoryAdjustmentKey: locationKey,
+  shopifyInventoryItemKey: (shopId: unknown, itemId: unknown) => `${shopId}|${itemId}`,
+  shopifyInventoryAdjustmentDetailCache: fakeCache("channel", channelKey, ["shopId"]),
+  shopifyLocationInventoryAdjustmentDetailCache: fakeCache("location", locationKey, ["shopId"]),
+  systemMessageCache: fakeCache("systemMessages", (raw) => String(raw.systemMessageId), []),
+  shopifyInventoryItemCache: fakeCache("shopifyInventoryItems", itemKey, ["shopId"]),
+  inventoryLedgerBoundCache: fakeCache("bounds", (raw) => `${raw.kind}|${raw.shopId}`, ["shopId"]),
+}));
 
-const channelKey = (raw: any) => joinKey(raw.eventTypeId, raw.eventReferenceId, raw.inventoryChannelId, raw.shopifyInventoryItemId);
-const locationKey = (raw: any) => joinKey(raw.eventTypeId, raw.eventReferenceId, raw.shopId, raw.shopifyLocationId, raw.shopifyInventoryItemId);
-
-vi.mock("@common/core/workerRemoteApi", () => ({
+vi.mock("@/workers/domains/workerFetch", () => ({
   workerGet: vi.fn(async (_ctx: any, url: string, params: Record<string, unknown>) => {
     state.gets.push({ url, params });
 
@@ -86,13 +78,18 @@ vi.mock("@common/core/workerRemoteApi", () => ({
   }),
 }));
 
+vi.mock("@/workers/syncRegistry", () => ({
+  registerSyncDomain: (domain: any) => { state.domains.push(domain); },
+}));
+
 const ctx = { maargUrl: "https://example.test", token: "token" } as any;
 
 async function load(name: string) {
   vi.resetModules();
-  const { inventoryEventDomains } = await import("@/workers/domains/inventoryEventDomains");
+  state.domains = [];
+  await import("@/workers/domains/inventoryEventDomains");
 
-  return inventoryEventDomains.find((domain) => domain.name === name) as any;
+  return state.domains.find((domain) => domain.name === name);
 }
 
 const locationRow = (over: Record<string, any> = {}) => ({
@@ -125,7 +122,7 @@ describe("the rows poller", () => {
 
   it("then asks only for rows updated since its cursor, with an overlap", async () => {
     const domain = await load("shopifyInventoryAdjustmentDetail");
-    state.tables.channel.set("seed", { shopId: "100002", detailLastUpdatedStamp: 500_000 });
+    state.tables.channel.set("seed", { raw: { shopId: "100002", detailLastUpdatedStamp: 500_000 }, shopId: "100002" });
 
     await domain.sync(ctx, { shopId: "100002" });
 
@@ -163,7 +160,7 @@ describe("the rows poller", () => {
   it("does not rewrite rows a cursor read returns unchanged", async () => {
     const domain = await load("shopifyLocationInventoryAdjustmentDetail");
     const row = locationRow();
-    state.tables.location.set(locationKey(row), row);
+    state.tables.location.set(locationKey(row), { raw: row, shopId: "100002" });
     state.responses["sob/shopify/locationInventoryAdjustmentDetails"] = () => [row, locationRow({ eventReferenceId: "2", detailLastUpdatedStamp: 2_000 })];
 
     const written = await domain.sync(ctx, { shopId: "100002" });
@@ -175,7 +172,7 @@ describe("the rows poller", () => {
     const domain = await load("shopifyInventoryAdjustmentDetail");
     const row = { ...locationRow(), inventoryChannelId: "IC_1", detailLastUpdatedStamp: undefined };
     // Cached by an older build: no top-level shopId, so this build's shop-scoped cursor cannot see it.
-    state.tables.channel.set(channelKey(row), row);
+    state.tables.channel.set(channelKey(row), { raw: row });
     state.responses["sob/shopify/inventoryAdjustmentDetails"] = () => [row];
 
     expect(await domain.sync(ctx, { shopId: "100002" })).toBe(1);
@@ -195,7 +192,7 @@ describe("the history reaching past the cache", () => {
   const LOCATION = "sob/shopify/locationInventoryAdjustmentDetails";
   const cacheRow = (ref: string, createdDate: number) => {
     const row = locationRow({ eventReferenceId: ref, createdDate });
-    state.tables.location.set(locationKey(row), row);
+    state.tables.location.set(locationKey(row), { raw: row, shopId: "100002" });
   };
 
   it("stores the server's oldest row from one sorted row, and drops cached rows the purge already removed", async () => {
@@ -208,8 +205,8 @@ describe("the history reaching past the cache", () => {
 
     // One request, for this ledger only: the page asks once when it loads.
     expect(state.gets).toEqual([{ url: LOCATION, params: { shopId: "100002", orderByField: "createdDate", pageSize: 1, pageIndex: 0 } }]);
-    expect(state.tables.bounds.get(joinKey("location", "100002")).oldestCreatedDate).toBe(1_000);
-    expect([...state.tables.location.values()].map((row) => row.eventReferenceId)).toEqual(["KEPT"]);
+    expect(state.tables.bounds.get("location|100002").raw.oldestCreatedDate).toBe(1_000);
+    expect([...state.tables.location.values()].map((row) => row.raw.eventReferenceId)).toEqual(["KEPT"]);
   });
 
   it("reads the oldest from the older service's count and last page", async () => {
@@ -219,7 +216,7 @@ describe("the history reaching past the cache", () => {
     await domain.refetchOne(ctx, { kind: "location", shopId: "100002" });
 
     expect(state.gets.map((call) => call.params.pageIndex)).toEqual([0, 2]);
-    expect(state.tables.bounds.get(joinKey("location", "100002")).oldestCreatedDate).toBe(700);
+    expect(state.tables.bounds.get("location|100002").raw.oldestCreatedDate).toBe(700);
   });
 
   it("loads the range between a chosen date and the cache's oldest row from the entity list", async () => {
@@ -254,7 +251,7 @@ describe("the history reaching past the cache", () => {
 describe("the message poller", () => {
   it("waits until a cached row has been batched", async () => {
     const domain = await load("shopifyLocationInventoryAdjustmentDetailMessage");
-    state.tables.location.set("a", locationRow());
+    state.tables.location.set("a", { raw: locationRow(), shopId: "100002" });
 
     expect(await domain.sync(ctx, { shopId: "100002" })).toBe(0);
     expect(state.pages).toEqual([]);
@@ -263,14 +260,14 @@ describe("the message poller", () => {
   it("asks for rows whose message changed since the newest message stamp", async () => {
     const domain = await load("shopifyLocationInventoryAdjustmentDetailMessage");
     const row = locationRow({ systemMessageId: "M1", systemMessageStatusId: "SmsgProduced", systemMessageLastUpdatedStamp: 900_000 });
-    state.tables.location.set(locationKey(row), row);
+    state.tables.location.set(locationKey(row), { raw: row, shopId: "100002" });
     state.responses["sob/shopify/locationInventoryAdjustmentDetails"] = () => [{ ...row, systemMessageStatusId: "SmsgSent", systemMessageLastUpdatedStamp: 950_000 }];
 
     const written = await domain.sync(ctx, { shopId: "100002" });
 
     expect(state.pages[0].params).toEqual({ shopId: "100002", systemMessageLastUpdatedStamp_from: 840_000, orderByField: "systemMessageLastUpdatedStamp" });
     expect(written).toBe(1);
-    expect(state.tables.location.get(locationKey(row)).systemMessageStatusId).toBe("SmsgSent");
+    expect(state.tables.location.get(locationKey(row)).raw.systemMessageStatusId).toBe("SmsgSent");
   });
 });
 
@@ -279,7 +276,7 @@ describe("the unsettled message poller", () => {
     const domain = await load("inventoryEventSystemMessage");
     for(const [ref, status] of [["1", "SmsgProduced"], ["2", "SmsgSent"], ["3", "SmsgError"]]) {
       const row = locationRow({ eventReferenceId: ref, systemMessageId: `M${ref}`, systemMessageStatusId: status });
-      state.tables.location.set(locationKey(row), { ...row, syncedAt: 1 });
+      state.tables.location.set(locationKey(row), { raw: row, shopId: "100002", cachedAt: 1 });
     }
     state.responses["admin/systemMessages"] = (params) => ({ systemMessages: [{ systemMessageId: params.systemMessageId, statusId: "SmsgSent" }] });
 
@@ -297,7 +294,7 @@ describe("the product resolver", () => {
   function cacheItems(itemIds: string[]) {
     itemIds.forEach((itemId, index) => {
       const row = locationRow({ eventReferenceId: String(index), shopifyInventoryItemId: itemId, createdDate: 1_000 + index });
-      state.tables.location.set(locationKey(row), row);
+      state.tables.location.set(locationKey(row), { raw: row, shopId: "100002" });
     });
   }
 
@@ -349,7 +346,7 @@ describe("the product resolver", () => {
 
     await domain.sync(ctx, { shopId: "100002" });
 
-    expect(state.tables.shopifyInventoryItems.get(joinKey("100002", "45457490215081"))).toMatchObject({
+    expect(state.tables.shopifyInventoryItems.get("100002|45457490215081").raw).toEqual({
       shopId: "100002",
       shopifyInventoryItemId: "45457490215081",
       sku: "SKU-45457490215081",
@@ -359,7 +356,7 @@ describe("the product resolver", () => {
       productTitle: "Getty Wide Leg",
       imageUrl: "https://cdn.test/variant.jpg",
     });
-    expect(state.tables.shopifyInventoryItems.get(joinKey("100002", "45457490215082")).imageUrl).toBe("https://cdn.test/product.jpg");
+    expect(state.tables.shopifyInventoryItems.get("100002|45457490215082").raw.imageUrl).toBe("https://cdn.test/product.jpg");
   });
 
   it("asks about an item Shopify has no variant for once per worker, not once per tick", async () => {

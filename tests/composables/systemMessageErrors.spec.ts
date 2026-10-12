@@ -13,18 +13,14 @@ vi.mock("@common", () => ({
   translate: (value: string) => value,
 }));
 
-vi.mock("@/db/companyDb", () => ({
-  companyDb: {
-    entity: (table: string) => {
-      if (table === "systemMessageErrors") {
-        return {
-          all: (...args: any[]) => mocks.errorCacheAll(...args),
-          upsertMany: (...args: any[]) => mocks.errorCacheUpsertMany(...args),
-        };
-      }
-      return { all: vi.fn(async () => []), upsertMany: vi.fn(async () => 0) };
-    },
+vi.mock("@/utils/cacheEntities", () => ({
+  shopifyBulkOperationCache: { all: vi.fn(), upsertMany: vi.fn() },
+  systemMessageCache: { all: vi.fn(), upsertMany: vi.fn() },
+  systemMessageErrorCache: {
+    all: (...args: any[]) => mocks.errorCacheAll(...args),
+    upsertMany: (...args: any[]) => mocks.errorCacheUpsertMany(...args),
   },
+  systemMessageRemoteCache: { all: vi.fn(), upsertMany: vi.fn() },
 }));
 
 import { clearSessionScopedState } from "@/composables/sessionScope";
@@ -117,10 +113,9 @@ describe("ensureSystemMessageErrors", () => {
 
     expect(await ensureSystemMessageErrors("MSG_4")).toEqual([]);
     expect(await fetchSystemMessageErrors("MSG_4")).toEqual([retryError]);
-    // Stored rows are the projected error itself, with the message id stamped in.
-    mocks.errorCacheAll.mockResolvedValue([{ systemMessageId: "MSG_4", ...retryError }]);
+    mocks.errorCacheAll.mockResolvedValue([{ systemMessageId: "MSG_4", raw: retryError }]);
 
-    expect(await ensureSystemMessageErrors("MSG_4")).toEqual([{ systemMessageId: "MSG_4", ...retryError }]);
+    expect(await ensureSystemMessageErrors("MSG_4")).toEqual([retryError]);
   });
 
   it("does not let a late empty response from the previous session restore the memo", async () => {
