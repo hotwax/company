@@ -410,8 +410,17 @@ describe("ShopifyInventoryEventHistory - date pickers", () => {
     expect(harness.loadEventsFrom).toHaveBeenCalledWith("location", Date.parse("2026-09-23T00:00:00"));
   });
 
-  it("loads nothing for a To date the cache already covers, and says the list starts at the cache", async () => {
+  it("loads everything up to a To date the cache already reaches, back to the server's oldest row", async () => {
     routeQuery.value = { to: "2026-09-26" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    await mountHistory("location");
+
+    // Not only when To is older than the cache: the first batch pulls the cache past To mid-load.
+    expect(harness.loadEventsFrom).toHaveBeenCalledWith("location", Date.parse("2026-09-22T13:00:00"));
+  });
+
+  it("says the list starts at the cache when no date asks for older events", async () => {
     locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
     bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
     const wrapper = await mountHistory("location");

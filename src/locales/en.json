@@ -174,7 +174,7 @@
   "event publisher job": "event publisher job",
   "Event sources unavailable": "Event sources unavailable",
   "Events cancelled": "Events cancelled",
-  "Events for this connection, kept current with every event and batch that has changed since. The newest 500 load first; a From or To date older than those loads the rest.": "Events for this connection, kept current with every event and batch that has changed since. The newest 500 load first; a From or To date older than those loads the rest.",
+  "Events for this connection, kept current with every event and batch that has changed since. The newest 500 load first; a From date older than those, or any To date, loads the rest.": "Events for this connection, kept current with every event and batch that has changed since. The newest 500 load first; a From date older than those, or any To date, loads the rest.",
   "Events in this batch": "Events in this batch",
   "Every Shopify location for this shop is already mapped to a HotWax facility, so none can be used as an aggregate target.": "Every Shopify location for this shop is already mapped to a HotWax facility, so none can be used as an aggregate target.",
   "Existing product mappings could not be checked.": "Existing product mappings could not be checked.",

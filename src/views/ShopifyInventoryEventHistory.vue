@@ -124,7 +124,7 @@
               {{ kind === "channel" ? translate("Channel inventory events") : translate("Location inventory events") }}
               <!-- Until this visit's first read lands, the rows are an earlier visit's cache and say nothing about the OMS. -->
               <p v-if="reading || liveUpdates">
-                {{ translate("Events for this connection, kept current with every event and batch that has changed since. The newest 500 load first; a From or To date older than those loads the rest.") }}
+                {{ translate("Events for this connection, kept current with every event and batch that has changed since. The newest 500 load first; a From date older than those, or any To date, loads the rest.") }}
               </p>
               <p v-else>
                 {{ translate("This OMS's Shopify connector is older than v4.4.0 and does not report which events changed, so only the newest 500 are re-read, every minute. Older events show as last read at {at}.", { at: formatDateTime(loadedAt) }) }}
@@ -362,9 +362,9 @@ watch(() => props.id, (shopId) => { loadLedgerBounds(props.kind, shopId).catch((
 
 /**
  * A date range reaching past the cache loads it from the server first. A From date older than the cache
- * starts the range; a To date older than the cache with no From asks for everything up to To, so it
- * starts at the server's oldest row, or at To's own day until that is known. Until the rows land, the
- * progress bar runs and the loading card stands in for the empty one.
+ * starts the range. A To date with no From asks for everything up to To, so it runs back to the server's
+ * oldest row; before that is known, a To date older than the cache starts at its own day. Until the rows
+ * land, the progress bar runs and the loading card stands in for the empty one.
  */
 const loadingFrom = ref<number>();
 const loadingOlder = computed(() => loadingFrom.value !== undefined);
@@ -378,9 +378,11 @@ function startOfDay(isoDate: string): number {
 
 function requestedStart(cachedOldest: number, serverOldest: number | undefined): number | undefined {
   if(filters.from) {return startOfDay(filters.from);}
-  if(filters.to && DateTime.fromISO(filters.to).endOf("day").toMillis() < cachedOldest) {return serverOldest ?? startOfDay(filters.to);}
+  if(!filters.to) {return undefined;}
+  // Not "older than the cache" alone: the first batch pulls the cache past To and would end the load half way.
+  if(serverOldest !== undefined) {return serverOldest;}
 
-  return undefined;
+  return DateTime.fromISO(filters.to).endOf("day").toMillis() < cachedOldest ? startOfDay(filters.to) : undefined;
 }
 
 async function loadRequestedRange(): Promise<void> {
@@ -440,7 +442,7 @@ const coverageNote = computed(() => {
   if(rangeStart >= cachedOldest || (loadedBackTo.value !== undefined && loadedBackTo.value <= rangeStart)) {return "";}
   const values = { loaded: formatDateTime(cachedOldest), oldest: formatDateTime(serverOldest) };
 
-  return filters.from
+  return filters.from || filters.to
     ? translate("Only events since {loaded} have loaded; the rest of this range has not been read from the OMS.", values)
     : translate("Showing events since {loaded}. The OMS has events back to {oldest}; choose an earlier From or To date to load them.", values);
 });
