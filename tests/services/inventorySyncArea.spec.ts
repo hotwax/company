@@ -6,9 +6,14 @@ const sync = vi.hoisted(() => ({
   refresh: vi.fn(),
   syncNow: vi.fn(),
   errors: {} as Record<string, string>,
+  syncedAt: {} as Record<string, number>,
 }));
 
-vi.mock("@common/db", () => ({ serviceState: { errors: sync.errors } }));
+vi.mock("@common/db", async () => {
+  const { reactive } = await import("vue");
+
+  return { serviceState: reactive({ errors: sync.errors, syncedAt: sync.syncedAt }) };
+});
 
 vi.mock("@/services/appDbSync", () => ({
   activateSyncDomains: sync.activate,
@@ -30,6 +35,7 @@ describe("inventory sync area", () => {
     sync.deactivate.mockReset();
     sync.refresh.mockReset();
     for(const key of Object.keys(sync.errors)) {delete sync.errors[key];}
+    for(const key of Object.keys(sync.syncedAt)) {delete sync.syncedAt[key];}
   });
 
   it("recognises every page of a shop's inventory sync area, and nothing else", async () => {
@@ -99,5 +105,20 @@ describe("inventory sync area", () => {
       ["shopifyLocationInventoryAdjustmentDetail", { fromMs: 2_000 }],
       ["inventoryEventBounds", { kind: "location", shopId: "100002" }],
     ]);
+  });
+
+  it("reads a ledger as loading until this visit's first pass of its rows lands or fails", async () => {
+    const { useInventorySyncArea } = await load();
+    const { serviceState } = await import("@common/db");
+    const location = useInventorySyncArea().ledgerReading("location");
+    const channel = useInventorySyncArea().ledgerReading("channel");
+
+    expect(location.value).toBe(true);
+    serviceState.syncedAt.shopifyLocationInventoryAdjustmentDetail = 1;
+    expect(location.value).toBe(false);
+    // Another ledger's pass says nothing about this one.
+    expect(channel.value).toBe(true);
+    serviceState.errors.shopifyInventoryAdjustmentDetail = "boom";
+    expect(channel.value).toBe(false);
   });
 });
