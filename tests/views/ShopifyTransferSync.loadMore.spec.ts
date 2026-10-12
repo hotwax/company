@@ -284,4 +284,14 @@ describe("ShopifyTransferSync - outstanding lists, ten transfers at a time", () 
     await wrapper.vm.$nextTick();
     expect(wrapper.find("ion-toggle").exists()).toBe(false);
   });
+
+  it("warns over the outstanding lists that nothing in them will be sent while native sync is off", async () => {
+    const wrapper = await mountPage();
+    const banner = "Native Inventory Transfer Sync is off, so nothing below will be sent to Shopify";
+    expect(wrapper.text()).toContain(banner);
+
+    nativeSync.enabled.value = true;
+    await wrapper.vm.$nextTick();
+    expect(wrapper.text()).not.toContain(banner);
+  });
 });

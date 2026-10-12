@@ -12,6 +12,16 @@ import { reactive, ref } from "vue";
 
 const cards = ref<any[]>([]);
 const jobsHydrated = ref(true);
+const nativeSyncEnabled = ref<boolean | undefined>(true);
+const runsByJob: Record<string, any[]> = {};
+const summaryResult: { value: Record<string, unknown> } = { value: {} };
+
+// Entering the view loads the summary and settings; mounting stands in for Ionic's view lifecycle.
+vi.mock("@ionic/vue", async (importOriginal) => {
+  const { onMounted } = await import("vue");
+
+  return { ...(await importOriginal<Record<string, unknown>>()), onIonViewWillEnter: onMounted, onIonViewDidLeave: () => undefined };
+});
 
 vi.mock("@common", () => ({
   commonUtil: { hasError: () => false, showToast: vi.fn(), getFeatures: () => "" },
@@ -37,7 +47,7 @@ vi.mock("@/services/appDbSync", () => ({
 
 vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobs: () => ({ jobs: ref([]), hydrated: jobsHydrated }),
-  useServiceJobRunsByJob: () => ({ runsFor: () => [], hydrated: ref(true) }),
+  useServiceJobRunsByJob: () => ({ runsFor: (jobName: string) => runsByJob[jobName] ?? [], hydrated: ref(true) }),
 }));
 
 vi.mock("@/composables/useShopify", () => ({
@@ -46,10 +56,11 @@ vi.mock("@/composables/useShopify", () => ({
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyTransferSyncJobs: () => ({ cards }),
+  useShopifyNativeTransferSync: () => ({ enabled: nativeSyncEnabled, load: vi.fn() }),
 }));
 
 vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
-  fetchTransferSyncSummary: vi.fn().mockResolvedValue({}),
+  fetchTransferSyncSummary: vi.fn(async () => summaryResult.value),
   useShopifyTransferSyncEnrichment: () => ({
     enrichment: ref({ ordersById: {} }), load: vi.fn().mockResolvedValue(undefined), loading: ref(false), error: ref(""),
   }),
@@ -81,6 +92,9 @@ describe("ShopifyTransferSyncDetail - no configured stagers", () => {
   beforeEach(() => {
     vi.resetModules();
     jobsHydrated.value = true;
+    nativeSyncEnabled.value = true;
+    summaryResult.value = {};
+    for(const key of Object.keys(runsByJob)) {delete runsByJob[key];}
     // Stager cards exist but none has a job behind it: `jobNames` is empty.
     cards.value = [
       { definition: { key: "create" }, jobName: "create_job", job: undefined },
@@ -106,6 +120,59 @@ describe("ShopifyTransferSyncDetail - no configured stagers", () => {
     cards.value = [{ definition: { key: "create" }, jobName: "create_job", job: { jobName: "create_job" } }];
     const wrapper = await mountDetail();
     expect(wrapper.text()).toContain("Loading staging results");
+    wrapper.unmount();
+  });
+});
+
+describe("ShopifyTransferSyncDetail - what a stager's result says about this transfer", () => {
+  /** Both stagers configured, each with one completed run whose result is `results`. */
+  function stagersWithResult(results: unknown) {
+    cards.value = [
+      { definition: { key: "create" }, jobName: "create_job", job: { jobName: "create_job" } },
+      { definition: { key: "update" }, jobName: "update_job", job: { jobName: "update_job" } },
+    ];
+    for(const jobName of ["create_job", "update_job"]) {
+      runsByJob[jobName] = [{ jobRunId: `${jobName}_run`, startTime: 1, endTime: 2, hasError: "N", results }];
+    }
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    jobsHydrated.value = true;
+    nativeSyncEnabled.value = true;
+    summaryResult.value = {};
+    for(const key of Object.keys(runsByJob)) {delete runsByJob[key];}
+  });
+
+  it("explains that native sync is off, with next steps, instead of calling the stagers' empty results unreadable", async () => {
+    stagersWithResult({});
+    nativeSyncEnabled.value = false;
+    const wrapper = await mountDetail();
+    const text = wrapper.text();
+
+    expect(text).toContain("Native Inventory Transfer Sync is off");
+    expect(text).toContain("Next steps");
+    expect(text).not.toContain("Staging results could not be read");
+    expect(text).not.toContain("Resolve issue");
+    wrapper.unmount();
+  });
+
+  it("does not list a run-wide creation result for a transfer Shopify already has", async () => {
+    stagersWithResult({});
+    summaryResult.value = { transferId: "gid://shopify/InventoryTransfer/1" };
+    const wrapper = await mountDetail();
+    const issues = wrapper.findAll("ion-radio").map((radio) => radio.text());
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain("Updates");
+    wrapper.unmount();
+  });
+
+  it("still lists both when the transfer has not reached Shopify", async () => {
+    stagersWithResult({});
+    const wrapper = await mountDetail();
+
+    expect(wrapper.findAll("ion-radio")).toHaveLength(2);
     wrapper.unmount();
   });
 });

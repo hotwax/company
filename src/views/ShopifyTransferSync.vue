@@ -194,6 +194,17 @@
             </ion-card>
           </section>
 
+          <!-- Owned transfers stay listed after native sync is turned off, but nothing will send them. -->
+          <ion-card v-if="nativeSyncEnabled === false && pendingTotal">
+            <ion-item lines="none">
+              <ion-icon slot="start" :icon="warningOutline" color="warning" />
+              <ion-label class="ion-text-wrap">
+                {{ translate("Native Inventory Transfer Sync is off, so nothing below will be sent to Shopify") }}
+                <p>{{ translate("These transfers were queued while it was on. Their stock changes reach Shopify as inventory updates instead. Detach each from native sync to stop listing it, or turn native sync back on to send them all as Shopify transfers.") }}</p>
+              </ion-label>
+            </ion-item>
+          </ion-card>
+
           <!-- Four activity tabs over five resources, followed by the latest staging errors.
                Each activity row is one artifact the shop has not sent to
                Shopify yet; the server view decides that from the provenance ledger, so there is no

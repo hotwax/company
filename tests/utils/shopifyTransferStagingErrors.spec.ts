@@ -59,6 +59,14 @@ describe("transfer staging blockers", () => {
     expect(transferStagingIssues({ results, hasError: "N" }, "100051", "create")[0].code).toBe("unreadable-results");
   });
 
+  it.each(["create", "update"] as const)("reads a %s run skipped for native sync being off as that, not as unreadable", (stager) => {
+    const results = { skippedReason: "nativeTransferSyncDisabled", orderCount: 0, blockedOrderCount: 0, blockedOrderList: [], diagnostics: [] };
+    const issues = transferStagingIssues({ jobRunId: "R1", results, hasError: "N" }, "100051", stager);
+
+    expect(issues.map((row) => row.code)).toEqual(["native-sync-off"]);
+    expect(issues[0].title).toBe("Native Inventory Transfer Sync is off");
+  });
+
   it("preserves unknown errors without guessing their cause", () => {
     const rows = transferStagingIssues({ results: { diagnostics: [{ shopId: "100051", orderId: "O1", code: "future-code", message: "New validation message" }] } }, "100051", "update");
     expect(rows[0]).toMatchObject({ code: "future-code", message: "New validation message", title: "Transfer could not be staged" });

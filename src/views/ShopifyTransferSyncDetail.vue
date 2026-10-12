@@ -35,7 +35,29 @@
         </ion-card-content>
       </ion-card>
 
-      <section class="transfer-status-cards">
+      <!-- With native sync off the stagers skip this shop, so their results say nothing about this transfer. -->
+      <ion-card v-if="nativeSyncOff">
+        <ion-card-header>
+          <ion-card-title>{{ translate('Native Inventory Transfer Sync is off') }}</ion-card-title>
+          <ion-card-subtitle>{{ translate('This transfer will not be created or updated in Shopify while it is off.') }}</ion-card-subtitle>
+        </ion-card-header>
+        <ion-list lines="full">
+          <ion-item>
+            <ion-label class="ion-text-wrap">
+              {{ translate('Its stock changes reach Shopify as inventory updates instead, so nothing here is waiting on a staging job.') }}
+            </ion-label>
+          </ion-item>
+          <ion-item>
+            <ion-label class="ion-text-wrap">
+              <h2>{{ translate('Next steps') }}</h2>
+              <p>{{ translate('To stop listing it as outstanding, detach it from native sync. To send it to Shopify as a transfer, turn native sync back on from the transfer sync page; every transfer queued for this shop would then be created in Shopify.') }}</p>
+            </ion-label>
+            <ion-button slot="end" fill="outline" :router-link="`/shopify-connection-details/${id}/transfer-sync`">{{ translate('Open transfer sync') }}</ion-button>
+          </ion-item>
+        </ion-list>
+      </ion-card>
+
+      <section v-else class="transfer-status-cards">
         <ion-card>
           <ion-card-header><ion-card-title>{{ translate('Issues') }}</ion-card-title><ion-card-subtitle v-if="issueEntries.length">{{ translate('Select an issue to resolve below') }}</ion-card-subtitle></ion-card-header>
           <ion-list lines="full">
@@ -62,7 +84,7 @@
         </ion-card>
       </section>
 
-      <ion-card v-if="selectedEntry">
+      <ion-card v-if="selectedEntry && !nativeSyncOff">
         <ion-card-header><ion-card-title>{{ translate('Resolve issue') }}</ion-card-title></ion-card-header>
         <ion-list lines="full">
           <ShopifyTransferDeliveryStatus v-if="resolutionIssue.code === 'delivery'" :shop-id="id" :order-id="orderId"
@@ -118,7 +140,7 @@ import { serviceState } from "@common/db";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncDomainsError as syncError, syncNow } from "@/services/appDbSync";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
-import { type TransferSyncJobCard, useShopifyTransferSyncJobs } from "@/composables/useShopifyTransferSync";
+import { type TransferSyncJobCard, useShopifyNativeTransferSync, useShopifyTransferSyncJobs } from "@/composables/useShopifyTransferSync";
 import { fetchTransferSyncSummary, useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import { type TransferUpdateCheck, useShopifyTransferUpdateCheck } from "@/composables/useShopifyTransferUpdateCheck";
 import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
@@ -135,9 +157,15 @@ const { cards } = useShopifyTransferSyncJobs(() => props.id, () => jobs.value);
 const stagingCards = computed(() => cards.value.filter(card => ["create", "update"].includes(card.definition.key)));
 const jobNames = computed(() => stagingCards.value.filter(card => card.job).map(card => card.jobName));
 const { runsFor } = useServiceJobRunsByJob(() => jobNames.value, 5);
+const summary = ref<Awaited<ReturnType<typeof fetchTransferSyncSummary>>>();
+const { enabled: nativeSyncEnabled, load: loadNativeSync } = useShopifyNativeTransferSync();
+const nativeSyncOff = computed(() => nativeSyncEnabled.value === false);
 const stages = computed(() => stagingCards.value.map(card => {
   const run = latestCompletedStagingRun(runsFor(card.jobName));
-  return { card, run, issues: transferStagingIssues(run, props.id, card.definition.key as TransferStager).filter(issue => !issue.orderId || issue.orderId === props.orderId) };
+  // A run-wide creation result says nothing about a transfer Shopify already has.
+  const created = card.definition.key === "create" && !!summary.value?.transferId;
+  return { card, run, issues: transferStagingIssues(run, props.id, card.definition.key as TransferStager)
+    .filter(issue => issue.orderId ? issue.orderId === props.orderId : !created) };
 }));
 const { logsFor } = useShopifyTransferDelivery(() => props.id);
 const issueEntries = computed(() => stages.value.flatMap(stage => {
@@ -161,7 +189,6 @@ const { products, resolve } = useProducts();
 const { records: facilities } = useDb<any>("facilities");
 function facilityName(id?: string) {return facilities.value.find(row => row.facilityId === id)?.facilityName || id || translate("Not available");}
 const transfersUrl = computed(() => transfersAppOrderUrl(props.orderId));
-const summary = ref<Awaited<ReturnType<typeof fetchTransferSyncSummary>>>();
 const summaryError = ref("");
 let summaryVersion = 0;
 async function loadSummary() {
@@ -252,7 +279,7 @@ async function refresh() {
   try {await Promise.all([load([{ orderId: props.orderId }], { refresh: true }), loadSummary(), recheckSelected(), syncNow()]);}
   catch { /* Owning read helpers expose their errors. */ } finally {refreshing.value = false;}
 }
-function enter() {active.value = true; startRuns(); void load([{ orderId: props.orderId }], { refresh: true }); void loadSummary(); mappingVersion.value++;}
+function enter() {active.value = true; startRuns(); void load([{ orderId: props.orderId }], { refresh: true }); void loadSummary(); void loadNativeSync(props.id); mappingVersion.value++;}
 watch(() => `${props.id}|${props.orderId}`, () => {mappingReady.value = {}; busyByIssue.value = {}; checks.value = {}; checkVersion++; summaryVersion++; if(active.value) {enter(); void recheckSelected();}});
 watch(jobNames, () => {if(active.value) {startRuns();}});
 onIonViewWillEnter(enter);
