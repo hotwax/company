@@ -8,6 +8,8 @@ const state = vi.hoisted(() => ({
   posts: [] as Array<{ url: string; data: any }>,
   responses: {} as Record<string, (params: Record<string, unknown>) => any>,
   writes: {} as Record<string, number>,
+  /** Each `upsertMany` call's row count, by fake table, in order. */
+  batches: {} as Record<string, number[]>,
 }));
 
 /** A stored row's key in the fake tables: its primary-key values, the way `canonicalKey` joins them. */
@@ -45,6 +47,7 @@ vi.mock("@/db/companyDb", async (importOriginal) => {
           written++;
         }
         state.writes[alias] = (state.writes[alias] ?? 0) + raws.length;
+        (state.batches[alias] ??= []).push(raws.length);
 
         return written;
       }),
@@ -107,6 +110,7 @@ beforeEach(() => {
   state.posts = [];
   state.responses = {};
   state.writes = {};
+  state.batches = {};
 });
 
 describe("the rows poller", () => {
@@ -137,20 +141,32 @@ describe("the rows poller", () => {
     });
   });
 
-  it("stores the window from an OMS without update cursors, then rests until a manual refresh", async () => {
-    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
-    // The older location service wraps its rows in `details`, and carries no update stamps.
-    state.responses["sob/shopify/locationInventoryAdjustmentDetails"] = () => ({ details: [locationRow({ detailLastUpdatedStamp: undefined })] });
+  it("stores the window from an OMS without update cursors, then re-reads it every minute or on a manual refresh", async () => {
+    vi.useFakeTimers({ now: 10_000_000 });
+    try {
+      const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+      // The older location service wraps its rows in `details`, and carries no update stamps.
+      state.responses["sob/shopify/locationInventoryAdjustmentDetails"] = () => ({ details: [locationRow({ detailLastUpdatedStamp: undefined })] });
 
-    expect(await domain.sync(ctx, { shopId: "100002" })).toBe(1);
-    expect(state.tables.location.size).toBe(1);
+      expect(await domain.sync(ctx, { shopId: "100002" })).toBe(1);
+      expect(state.tables.location.size).toBe(1);
 
-    expect(await domain.sync(ctx, { shopId: "100002" })).toBe(0);
-    expect(state.gets).toHaveLength(1);
+      // The older service loads the whole ledger per request, so the 10s cadence does not apply.
+      vi.setSystemTime(10_050_000);
+      expect(await domain.sync(ctx, { shopId: "100002" })).toBe(0);
+      expect(state.gets).toHaveLength(1);
 
-    await domain.sync(ctx, { shopId: "100002" }, { force: true });
-    expect(state.gets).toHaveLength(2);
-    expect(state.gets[1].params).toMatchObject({ orderByField: "-createdDate", pageSize: 500 });
+      await domain.sync(ctx, { shopId: "100002" }, { force: true });
+      expect(state.gets).toHaveLength(2);
+      expect(state.gets[1].params).toMatchObject({ orderByField: "-createdDate", pageSize: 500 });
+
+      vi.setSystemTime(10_111_000);
+      await domain.sync(ctx, { shopId: "100002" });
+      expect(state.gets).toHaveLength(3);
+      expect(state.gets[2].params).toMatchObject({ orderByField: "-createdDate", pageSize: 500, pageIndex: 0 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("still reports a response it cannot read at all", async () => {
@@ -248,6 +264,67 @@ describe("the history reaching past the cache", () => {
     expect(state.gets.map((call) => call.params.pageIndex)).toEqual([0, 1]);
     expect(state.tables.location.has(locationKey(locationRow({ eventReferenceId: "4000" })))).toBe(true);
     expect(state.tables.location.has(locationKey(locationRow({ eventReferenceId: "900" })))).toBe(false);
+  });
+});
+
+describe("the older service reaching past a long cache", () => {
+  const LOCATION = "sob/shopify/locationInventoryAdjustmentDetails";
+  /** A ledger of `count` rows, newest first one per ms below 100_000, served by the older service's pages. */
+  function olderService(count: number, gone: Set<number> = new Set()) {
+    const ledger = Array.from({ length: count }, (_, index) => 100_000 - index).filter((createdDate) => !gone.has(createdDate));
+    state.responses[LOCATION] = (params) => {
+      const start = Number(params.pageIndex) * 250;
+      const page = ledger.slice(start, start + 250);
+
+      return { hasMore: start + 250 < ledger.length, details: page.map((createdDate) => locationRow({ eventReferenceId: String(createdDate), createdDate })) };
+    };
+  }
+  /** The newest `count` rows of that ledger, cached. */
+  function cacheNewest(count: number) {
+    for(let index = 0; index < count; index++) {
+      const row = locationRow({ eventReferenceId: String(100_000 - index), createdDate: 100_000 - index });
+      state.tables.location.set(locationKey(row), row);
+    }
+  }
+
+  it("jumps behind the cached rows instead of re-reading them from the newest page", async () => {
+    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+    olderService(12_000);
+    cacheNewest(10_000);
+
+    const written = await domain.refetchOne(ctx, { fromMs: 88_500 }, { shopId: "100002" });
+
+    // Page 0 tells the shapes apart; 39 is the last page the 10,000 cached rows certainly fill.
+    expect(state.gets.map((call) => call.params.pageIndex)).toEqual([0, 39, 40, 41, 42, 43, 44, 45, 46]);
+    // Only rows older than the cache, and none older than the chosen date.
+    expect(written).toBe(1_501);
+  });
+
+  it("writes each page as it arrives, so the history fills in while the load runs", async () => {
+    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+    olderService(12_000);
+    cacheNewest(10_000);
+
+    await domain.refetchOne(ctx, { fromMs: 88_500 }, { shopId: "100002" });
+
+    // Page 39 is all cached rows; each later page is its own write, the last one cut at the chosen date.
+    expect(state.batches.location).toEqual([250, 250, 250, 250, 250, 250, 1]);
+  });
+
+  it("steps back when the purge left the server fewer rows than the cache holds", async () => {
+    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+    // 600 settled rows the cache still holds are already purged on the server.
+    olderService(12_000, new Set(Array.from({ length: 600 }, (_, index) => 95_000 - index)));
+    cacheNewest(10_000);
+
+    await domain.refetchOne(ctx, { fromMs: 89_000 }, { shopId: "100002" });
+
+    // With 600 rows gone, pages 39 and 38 start below the cache's oldest row; 37 is the first that starts above it.
+    expect(state.gets.map((call) => call.params.pageIndex)).toEqual([0, 39, 38, 37, 38, 39, 40, 41]);
+    // Nothing between the cache's oldest row and the chosen date was skipped.
+    for(let createdDate = 89_000; createdDate < 90_001; createdDate++) {
+      expect(state.tables.location.has(locationKey(locationRow({ eventReferenceId: String(createdDate) })))).toBe(true);
+    }
   });
 });
 

@@ -67,13 +67,13 @@ async function syncNow(): Promise<void> {
 }
 
 /** After a successful mutation, re-read the affected rows through the domain's `refetchOne`. */
-async function afterMutation(domain: string, pk: Record<string, unknown>): Promise<void> {
-  await refreshAfterMutation(domain, pk);
+function afterMutation(domain: string, pk: Record<string, unknown>): Promise<number> {
+  return refreshAfterMutation(domain, pk);
 }
 
 /** What a page in the area reads about the area's polling. */
 export function useInventorySyncArea() {
-  /** Load a ledger's events back to `fromMs` into the table, for a date filter older than what is held. */
+  /** Load a ledger's events back to `fromMs` into the table, for a date filter older than what is held. Resolves to the rows written. */
   const loadEventsFrom = (kind: InventoryEventKind, fromMs: number) =>
     afterMutation(INVENTORY_EVENT_DOMAINS[kind === "channel" ? "channelRows" : "locationRows"], { fromMs });
 
@@ -81,5 +81,15 @@ export function useInventorySyncArea() {
   const loadLedgerBounds = (kind: InventoryEventKind, shopId: string) =>
     afterMutation(INVENTORY_EVENT_DOMAINS.bounds, { kind, shopId });
 
-  return { failingDomains, manualRefreshing, syncNow, afterMutation, loadEventsFrom, loadLedgerBounds };
+  /**
+   * True until this visit's first read of a ledger lands or fails. Rows on screen before then are the
+   * cache from an earlier visit, so nothing about them describes the OMS yet.
+   */
+  const ledgerReading = (kind: InventoryEventKind) => computed(() => {
+    const domain = INVENTORY_EVENT_DOMAINS[kind === "channel" ? "channelRows" : "locationRows"];
+
+    return !serviceState.syncedAt[domain] && !serviceState.errors[domain];
+  });
+
+  return { failingDomains, manualRefreshing, syncNow, afterMutation, loadEventsFrom, loadLedgerBounds, ledgerReading };
 }
