@@ -29,15 +29,18 @@
 
     <!-- Location list -->
     <template v-else>
-      <template v-if="standardLocations.length > 0">
-        <ion-item-divider color="light">
-          <ion-label>
-            {{ translate("Locations ({count})", { count: standardLocations.length }) }}
-          </ion-label>
-        </ion-item-divider>
+      <ion-item-divider color="light">
+        <ion-label>
+          {{ translate("{count} locations from Shopify", { count: locations.length }) }}
+        </ion-label>
+      </ion-item-divider>
 
-        <ion-list>
-          <ion-item v-for="loc in standardLocations" :key="loc.shopifyLocationId" lines="full">
+      <ion-list>
+        <template v-for="(loc, index) in orderedLocations" :key="loc.shopifyLocationId">
+          <ion-item-divider v-if="index === firstFulfillmentIndex" color="light">
+            <ion-label>{{ translate("App / fulfillment-service locations") }}</ion-label>
+          </ion-item-divider>
+          <ion-item lines="full">
             <ion-checkbox
               slot="start"
               :aria-label="loc.name"
@@ -52,7 +55,10 @@
               </p>
               {{ loc.name }}
               <p>{{ [loc.city, loc.provinceCode, loc.countryCode].filter(Boolean).join(', ') }}</p>
-              <ion-note v-if="loc.pickupEnabled" color="success">
+              <ion-note v-if="loc.isFulfillmentService" color="warning">
+                {{ loc.fulfillmentServiceName || translate("Fulfillment Service") }}
+              </ion-note>
+              <ion-note v-else-if="loc.pickupEnabled" color="success">
                 {{ translate("Pickup enabled") }}
               </ion-note>
               <ion-note v-if="isAlreadyAssociated(loc)" color="medium">
@@ -83,65 +89,8 @@
               </ion-select-option>
             </ion-select>
           </ion-item>
-        </ion-list>
-      </template>
-
-      <template v-if="fulfillmentLocations.length > 0">
-        <ion-item-divider color="light">
-          <ion-label>
-            {{ translate("App / fulfillment-service locations ({count})", { count: fulfillmentLocations.length }) }}
-          </ion-label>
-        </ion-item-divider>
-
-        <ion-list>
-          <ion-item v-for="loc in fulfillmentLocations" :key="loc.shopifyLocationId" lines="full">
-            <ion-checkbox
-              slot="start"
-              :aria-label="loc.name"
-              :checked="selectedIds.has(loc.shopifyLocationId)"
-              :disabled="!canSelectLocation(loc)"
-              @ion-change="toggleSelection(loc.shopifyLocationId, $event.detail.checked)"
-            />
-
-            <ion-label>
-              <p class="overline">
-                {{ loc.shopifyLocationId }}
-              </p>
-              {{ loc.name }}
-              <p>{{ [loc.city, loc.provinceCode, loc.countryCode].filter(Boolean).join(', ') }}</p>
-              <ion-note color="warning">
-                {{ loc.fulfillmentServiceName || translate("Fulfillment Service") }}
-              </ion-note>
-              <ion-note v-if="isAlreadyAssociated(loc)" color="medium">
-                {{ translate("Already in OMS") }}
-              </ion-note>
-              <ion-note v-else-if="loc.mappedFacilityId" color="warning">
-                {{ translate("Already in OMS") }}, {{ translate("Retry") }}
-              </ion-note>
-              <ion-note v-else-if="loc.alreadyInOms" color="medium">
-                {{ translate("Already in OMS") }}
-              </ion-note>
-            </ion-label>
-
-            <ion-select
-              v-if="!loc.alreadyInOms"
-              slot="end"
-              :aria-label="translate('Type')"
-              :value="facilityTypes[loc.shopifyLocationId]"
-              :placeholder="translate('Type')"
-              interface="popover"
-              @ion-change="facilityTypes[loc.shopifyLocationId] = $event.detail.value"
-            >
-              <ion-select-option value="RETAIL_STORE">
-                {{ translate("Retail Store") }}
-              </ion-select-option>
-              <ion-select-option value="WAREHOUSE">
-                {{ translate("Warehouse") }}
-              </ion-select-option>
-            </ion-select>
-          </ion-item>
-        </ion-list>
-      </template>
+        </template>
+      </ion-list>
     </template>
   </ion-content>
 
@@ -221,11 +170,13 @@ const selectedForAction = computed(() => [
   ...selectedForAssociationRetry.value
 ])
 
-const standardLocations = computed(() =>
-  locations.value.filter(loc => !loc.isFulfillmentService))
-
-const fulfillmentLocations = computed(() =>
-  locations.value.filter(loc => loc.isFulfillmentService))
+// Standard locations first, app / fulfillment-service locations grouped after them
+const orderedLocations = computed(() => [
+  ...locations.value.filter(loc => !loc.isFulfillmentService),
+  ...locations.value.filter(loc => loc.isFulfillmentService)
+])
+const firstFulfillmentIndex = computed(() =>
+  orderedLocations.value.findIndex(loc => loc.isFulfillmentService))
 
 async function fetchData() {
   isLoading.value = true
@@ -253,7 +204,7 @@ async function fetchData() {
       return {
         shopifyLocationId,
         name:                node.name,
-        isFulfillmentService: Boolean(node.isFulfillmentService),
+        isFulfillmentService: node.isFulfillmentService,
         fulfillmentServiceName: node.fulfillmentService?.serviceName ?? null,
         pickupEnabled:       !!node.localPickupSettingsV2?.pickupTime,
         address1:            node.address?.address1,

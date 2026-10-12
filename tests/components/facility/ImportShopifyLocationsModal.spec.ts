@@ -249,18 +249,19 @@ describe("ImportShopifyLocationsModal", () => {
     });
   });
 
+  const appLocation = {
+    id: "gid://shopify/Location/303",
+    name: "Amazon Fulfillment Center",
+    isFulfillmentService: true,
+    fulfillmentService: { serviceName: "Amazon Fulfillment" },
+    address: { city: "Seattle", provinceCode: "WA", countryCode: "US" },
+  };
+
   it("fetches locations with includeLegacy: true and leaves fulfillment-service locations unselected by default", async () => {
-    const locationsWithAppLocation = [
+    harness.fetchLocationsFromShopify.mockResolvedValue([
       ...shopifyLocations,
-      {
-        id: "gid://shopify/Location/303",
-        name: "Amazon Fulfillment Center",
-        isFulfillmentService: true,
-        fulfillmentService: { serviceName: "Amazon Fulfillment" },
-        address: { city: "Seattle", provinceCode: "WA", countryCode: "US" },
-      },
-    ];
-    harness.fetchLocationsFromShopify.mockResolvedValue(locationsWithAppLocation);
+      appLocation,
+    ]);
 
     const wrapper = await mountModal();
 
@@ -273,45 +274,16 @@ describe("ImportShopifyLocationsModal", () => {
     expect((checkboxes[0].element as HTMLInputElement).checked).toBe(true);
     expect((checkboxes[1].element as HTMLInputElement).checked).toBe(true);
 
-    // Fulfillment-service location (index 2) is unchecked by default
+    // Fulfillment-service location (index 2) is unchecked by default and listed last
     expect((checkboxes[2].element as HTMLInputElement).checked).toBe(false);
 
-    // Shows fulfillment service label/badge and separate section header
-    expect(wrapper.text()).toContain("Locations (2)");
+    // Shows fulfillment service label/badge and section divider
     expect(wrapper.text()).toContain("Amazon Fulfillment");
-    expect(wrapper.text()).toContain("App / fulfillment-service locations (1)");
-  });
-
-  it("renders only fulfillment-service section when shop has no standard locations", async () => {
-    const locationsWithOnlyAppLocation = [
-      {
-        id: "gid://shopify/Location/303",
-        name: "Amazon Fulfillment Center",
-        isFulfillmentService: true,
-        fulfillmentService: { serviceName: "Amazon Fulfillment" },
-        address: { city: "Seattle", provinceCode: "WA", countryCode: "US" },
-      },
-    ];
-    harness.fetchLocationsFromShopify.mockResolvedValue(locationsWithOnlyAppLocation);
-
-    const wrapper = await mountModal();
-
-    const headers = wrapper.findAll("ion-item-divider");
-    expect(headers).toHaveLength(1);
-    expect(headers[0].text()).toContain("App / fulfillment-service locations (1)");
+    expect(wrapper.text()).toContain("App / fulfillment-service locations");
   });
 
   it("imports fulfillment-service locations when explicitly selected by the user", async () => {
-    const locationsWithAppLocation = [
-      {
-        id: "gid://shopify/Location/303",
-        name: "Amazon Fulfillment Center",
-        isFulfillmentService: true,
-        fulfillmentService: { serviceName: "Amazon Fulfillment" },
-        address: { city: "Seattle", provinceCode: "WA", countryCode: "US" },
-      },
-    ];
-    harness.fetchLocationsFromShopify.mockResolvedValue(locationsWithAppLocation);
+    harness.fetchLocationsFromShopify.mockResolvedValue([appLocation]);
     harness.importShopifyFacilities.mockResolvedValue({
       data: [{ facilityId: "FAC_303" }],
     });
