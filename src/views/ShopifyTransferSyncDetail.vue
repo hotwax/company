@@ -27,11 +27,15 @@
             <ion-item><ion-label>{{ translate('Order date') }}<p>{{ formatDateTime(summary?.orderDate) || translate('Not available') }}</p></ion-label></ion-item>
             <ion-item><ion-label>{{ translate('Created in OMS') }}<p>{{ formatDateTime(summary?.entryDate) || translate('Not available') }}</p></ion-label></ion-item>
           </div>
+          <ion-item v-if="ownerChecked && !owner">
+            <ion-label class="ion-text-wrap">{{ translate('Not synced as a Shopify transfer') }}<p>{{ translate('This transfer has no native sync owner, so its inventory movements reach Shopify as inventory events.') }}</p></ion-label>
+          </ion-item>
         </ion-list>
         <ion-card-content class="transfer-actions">
           <ion-button fill="clear" :href="transfersUrl" target="_blank" rel="noopener noreferrer">{{ translate('Open in Transfers') }}<ion-icon slot="end" :icon="openOutline" /></ion-button>
           <ion-button fill="clear" :disabled="!shopifyUrl" :href="shopifyUrl || undefined" target="_blank" rel="noopener noreferrer">{{ translate('Open in Shopify') }}<ion-icon slot="end" :icon="openOutline" /></ion-button>
           <ion-button v-for="card in stagingCards.filter(card => card.job)" :key="card.jobName" fill="outline" :disabled="mappingBusy" @click="openJob(card)">{{ translate(card.definition.key === 'create' ? 'Creation job details' : 'Update job details') }}</ion-button>
+          <ion-button v-if="canDetach" fill="outline" color="danger" :disabled="mappingBusy || refreshing" @click="showDetach = true">{{ translate('Detach from native sync') }}</ion-button>
         </ion-card-content>
       </ion-card>
 
@@ -101,6 +105,14 @@
     <ServiceJobDetailsModal :is-open="showJob" :job-name="selectedJob?.jobName || ''"
       :allowed-parameter-names="selectedJob?.definition.key === 'update' ? ['shopId', 'configId', 'overlapMinutes'] : ['shopId', 'configId']"
       :parameter-description="selectedJob ? translate(selectedJob.definition.purpose) : ''" @close="showJob = false" @updated="refresh" />
+    <ShopifyTransferDetachModal
+      :is-open="showDetach"
+      :shop-id="id"
+      :order-id="orderId"
+      :order-name="order?.orderName"
+      @close="showDetach = false"
+      @detached="onDetached"
+    />
   </ion-page>
 </template>
 
@@ -111,10 +123,12 @@ import { checkmarkCircleOutline, openOutline, refreshOutline, warningOutline } f
 import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import ShopifyTransferDeliveryStatus from "@/components/shopify/ShopifyTransferDeliveryStatus.vue";
+import ShopifyTransferDetachModal from "@/components/shopify/ShopifyTransferDetachModal.vue";
 import ShopifyTransferMappingConflict from "@/components/shopify/ShopifyTransferMappingConflict.vue";
 import ShopifyTransferMissingMapping from "@/components/shopify/ShopifyTransferMissingMapping.vue";
 import ShopifyTransferUpdateBlocker from "@/components/shopify/ShopifyTransferUpdateBlocker.vue";
 import { serviceState } from "@common/db";
+import { type TransferDetachResult, type TransferOwner, useShopifyTransferDetach } from "@/composables/useShopifyTransferDetach";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncDomainsError as syncError, syncNow } from "@/services/appDbSync";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
@@ -169,6 +183,30 @@ async function loadSummary() {
   summary.value = undefined; summaryError.value = "";
   try {const result = await fetchTransferSyncSummary(props.id, props.orderId); if(version === summaryVersion) {summary.value = result;}}
   catch (err: any) {if(version === summaryVersion) {summaryError.value = err.message;}}
+}
+const { fetchOwner } = useShopifyTransferDetach();
+const owner = ref<TransferOwner>();
+const ownerChecked = ref(false);
+let ownerVersion = 0;
+async function loadOwner() {
+  const version = ++ownerVersion;
+  ownerChecked.value = false;
+  try {
+    const result = await fetchOwner(props.id, props.orderId);
+    if(version === ownerVersion) {owner.value = result; ownerChecked.value = true;}
+  } catch (err: any) {
+    if(version === ownerVersion) {summaryError.value = summaryError.value || err.message;}
+  }
+}
+// Only a transfer never created in Shopify can be detached without a Shopify-side cleanup.
+const canDetach = computed(() => ownerChecked.value && !!owner.value && !owner.value.shopifyInventoryTransferId);
+const showDetach = ref(false);
+function onDetached(result: TransferDetachResult & { published: boolean }) {
+  showDetach.value = false;
+  commonUtil.showToast(result.published
+    ? translate("Detached. {created} inventory events recorded, {existing} already recorded, {failed} failed.", { created: result.createdDetailCount, existing: result.existingDetailCount, failed: result.failed.length })
+    : translate("Detached from native sync."));
+  void loadOwner(); void refresh();
 }
 const { check } = useShopifyTransferUpdateCheck();
 const checks = ref<Record<string, TransferUpdateCheck>>({});
@@ -249,14 +287,14 @@ function startRuns() {
 async function refresh() {
   if(mappingBusy.value) {return;}
   refreshing.value = true; mappingReady.value = {}; mappingVersion.value++;
-  try {await Promise.all([load([{ orderId: props.orderId }], { refresh: true }), loadSummary(), recheckSelected(), syncNow()]);}
+  try {await Promise.all([load([{ orderId: props.orderId }], { refresh: true }), loadSummary(), loadOwner(), recheckSelected(), syncNow()]);}
   catch { /* Owning read helpers expose their errors. */ } finally {refreshing.value = false;}
 }
-function enter() {active.value = true; startRuns(); void load([{ orderId: props.orderId }], { refresh: true }); void loadSummary(); mappingVersion.value++;}
-watch(() => `${props.id}|${props.orderId}`, () => {mappingReady.value = {}; busyByIssue.value = {}; checks.value = {}; checkVersion++; summaryVersion++; if(active.value) {enter(); void recheckSelected();}});
+function enter() {active.value = true; startRuns(); void load([{ orderId: props.orderId }], { refresh: true }); void loadSummary(); void loadOwner(); mappingVersion.value++;}
+watch(() => `${props.id}|${props.orderId}`, () => {mappingReady.value = {}; busyByIssue.value = {}; checks.value = {}; checkVersion++; summaryVersion++; ownerVersion++; owner.value = undefined; if(active.value) {enter(); void recheckSelected();}});
 watch(jobNames, () => {if(active.value) {startRuns();}});
 onIonViewWillEnter(enter);
-onIonViewDidLeave(() => {active.value = false; checkVersion++; summaryVersion++; void deactivateSyncDomains(SYNC_OWNER);});
+onIonViewDidLeave(() => {active.value = false; checkVersion++; summaryVersion++; ownerVersion++; void deactivateSyncDomains(SYNC_OWNER);});
 const showJob = ref(false);
 const selectedJob = ref<TransferSyncJobCard>();
 function openJob(card?: TransferSyncJobCard) {if(card?.job) {selectedJob.value = card; showJob.value = true;}}
