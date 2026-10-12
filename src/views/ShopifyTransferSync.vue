@@ -88,7 +88,7 @@
                   <ion-label v-else-if="tabFailure(tab)" slot="end" color="danger">
                     {{ translate("Not loaded") }}
                   </ion-label>
-                  <ion-label v-else slot="end">{{ tab.key === 'create' ? creationOrderCount : tabCount(tab) }}</ion-label>
+                  <ion-label v-else slot="end">{{ countLabel(tab) }}</ion-label>
                 </ion-item>
                 <ion-item>
                   <ion-label class="ion-text-wrap">
@@ -437,6 +437,14 @@
               </ion-list>
             </ion-accordion>
           </ion-accordion-group>
+
+            <!-- The list holds its first transfer orders; the rest load only when asked for. -->
+            <ion-button v-if="tabHasMore(activeSegmentTab)" expand="block" fill="outline" :disabled="loadingMore" @click="loadMorePending()">
+              <ion-spinner v-if="loadingMore" name="crescent" />
+              <template v-else>
+                {{ translate("Load {count} more transfers", { count: TRANSFER_ORDER_PAGE }) }}
+              </template>
+            </ion-button>
           </template>
         </template>
       </template>
@@ -645,13 +653,14 @@ import {
 } from "@ionic/vue";
 import { checkmarkCircleOutline, closeOutline, openOutline, refreshOutline, saveOutline, swapHorizontalOutline, warningOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
-import { computed, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import ShopifyTransferDeliveryStatus from "@/components/shopify/ShopifyTransferDeliveryStatus.vue";
 import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapshot.vue";
 import { useDb } from "@common";
 import { serviceState } from "@common/db";
+import { TRANSFER_ORDER_PAGE } from "@/config/appSyncConfig";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/services/appDbSync";
 import ShopifyTransferStagingErrors from "@/components/shopify/ShopifyTransferStagingErrors.vue";
 import { useServiceJobs } from "@/composables/useServiceJobs";
@@ -718,7 +727,7 @@ function creationDeliveryLabel(orderId: string) {
 }
 const segment = computed<PendingSegment>(() => activeTab.value === "errors" ? "create" : activeTab.value);
 
-const { counts, creationOrderCount, total: pendingTotal, hydrated } = useShopifyPendingCounts(() => shopId.value);
+const { counts, orderCounts, creationOrderCount, total: pendingTotal, hydrated } = useShopifyPendingCounts(() => shopId.value);
 const { rows: primaryRows } = useShopifyPendingSegment(() => shopId.value, () => segment.value);
 // The paired segment for the combined tab; empty for every other tab.
 const { rows: pairedRows } = useShopifyPendingSegment(
@@ -739,6 +748,52 @@ const facilityNamesById = computed<Record<string, string>>(() => Object.fromEntr
 function tabCount(tab: { key: PendingSegment; also?: PendingSegment }): number {
   return (counts.value[tab.key] ?? 0) + (tab.also ? (counts.value[tab.also] ?? 0) : 0);
 }
+
+// ---------------------------------------------------------------- outstanding, a page of transfers at a time
+/** How many transfer orders each list holds. The worker reads exactly these; "Load more" raises one. */
+function firstPageLimits(): Record<PendingSegment, number> {
+  return { create: TRANSFER_ORDER_PAGE, shipment: TRANSFER_ORDER_PAGE, receipt: TRANSFER_ORDER_PAGE, cancellation: TRANSFER_ORDER_PAGE, itemChange: TRANSFER_ORDER_PAGE };
+}
+const orderLimits = reactive(firstPageLimits());
+
+/** A list that filled its limit may have more; one that fell short holds every outstanding order. */
+function segmentHasMore(segmentKey: PendingSegment): boolean {
+  return (orderCounts.value[segmentKey] ?? 0) >= orderLimits[segmentKey];
+}
+function tabHasMore(tab: { key: PendingSegment; also?: PendingSegment } | undefined): boolean {
+  if(!tab) {return false;}
+  // The raised limit is ahead of the cache until the larger read lands; until then it still has more.
+  if(loadingMore.value && loadingMoreTab === tab.key) {return true;}
+
+  return segmentHasMore(tab.key) || (!!tab.also && segmentHasMore(tab.also));
+}
+function countLabel(tab: { key: PendingSegment; also?: PendingSegment }): string {
+  const count = tab.key === "create" ? creationOrderCount.value : tabCount(tab);
+
+  return tabHasMore(tab) ? `${count}+` : String(count);
+}
+
+const activeSegmentTab = computed(() => SEGMENT_TABS.find((tab) => tab.key === activeTab.value));
+const loadingMore = ref(false);
+let loadingMoreTab: PendingSegment | undefined;
+let loadMoreBaseline: { syncedAt: number; details: unknown } | undefined;
+
+function loadMorePending() {
+  const tab = activeSegmentTab.value;
+  if(!tab || loadingMore.value) {return;}
+  orderLimits[tab.key] += TRANSFER_ORDER_PAGE;
+  if(tab.also) {orderLimits[tab.also] += TRANSFER_ORDER_PAGE;}
+  loadMoreBaseline = { syncedAt: serviceState.syncedAt.shopifyTransferSync ?? 0, details: serviceState.details?.shopifyTransferSync };
+  loadingMoreTab = tab.key;
+  loadingMore.value = true;
+  void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
+}
+
+// The larger read lands as a completed pass, or as a failure that the list's error card reports.
+watch(() => [serviceState.syncedAt.shopifyTransferSync, serviceState.details?.shopifyTransferSync], ([syncedAt, details]) => {
+  if(!loadingMore.value || !loadMoreBaseline) {return;}
+  if(Number(syncedAt ?? 0) > loadMoreBaseline.syncedAt || details !== loadMoreBaseline.details) {loadingMore.value = false;}
+});
 
 // ---------------------------------------------------------------- sync start date
 const {
@@ -1152,7 +1207,8 @@ const monitoringLoaded = computed(() => isTransferSyncMonitoringLoaded({
 function activeSyncDomains() {
   return shopId.value
     ? [
-      { name: "shopifyTransferSync", args: { shopId: shopId.value } },
+      // A plain copy: the worker receives args through postMessage, which cannot clone a reactive.
+      { name: "shopifyTransferSync", args: { shopId: shopId.value, orderLimits: { ...orderLimits } } },
       { name: "shopifyTransferDelivery", args: { shopId: shopId.value } },
       ...(activeTab.value === "errors" && stagingJobNames.value.length
         ? [{ name: "serviceJobRun", args: { jobNames: stagingJobNames.value, total: 5, batchSize: 5 } }]
@@ -1163,6 +1219,9 @@ function activeSyncDomains() {
 
 function startTransferSyncDomains() {
   viewActive.value = true;
+  // Every visit, and every shop, starts from the first page of each list.
+  Object.assign(orderLimits, firstPageLimits());
+  loadingMore.value = false;
   stagingSyncBaselineAt.value = serviceState.syncedAt.serviceJobRun ?? 0;
   void loadLaunch(shopId.value, undefined, true);
   void loadNativeSync(shopId.value);

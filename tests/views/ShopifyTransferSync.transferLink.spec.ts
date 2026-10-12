@@ -85,7 +85,7 @@ vi.mock("@/utils/shopifyTransferSync", async () => ({
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyPendingCounts: () => ({
-    counts: ref({ create: 0 }), creationOrderCount: ref(0), total: ref(0), hydrated: ref(true),
+    counts: ref({ create: 0 }), orderCounts: ref({}), creationOrderCount: ref(0), total: ref(0), hydrated: ref(true),
   }),
   useShopifyPendingSegment: () => ({ rows: ref([]), hydrated: ref(true), count: ref(0) }),
   useShopifyNativeTransferSync: () => ({

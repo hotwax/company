@@ -7,20 +7,22 @@ const state = vi.hoisted(() => ({
   pages: {} as Record<string, any[]>,
   /** Per url: an error to throw, or "hang" for a request the server never answers. */
   failures: {} as Record<string, any>,
-  signals: {} as Record<string, AbortSignal | undefined>,
-  fetched: [] as Array<{ url: string; params: any; requireComplete?: boolean }>,
+  /** Per url: answers a request left hanging by a "hang" failure. */
+  release: {} as Record<string, (rows: any[]) => void>,
+  fetched: [] as Array<{ url: string; params: any }>,
   snapshots: [] as Array<{ rows: any[]; scope: any }>,
 }));
 
 vi.mock("@common/core/workerRemoteApi", () => ({
-  pageAll: vi.fn(async ({ url, params, requireComplete, signal }: any) => {
-    state.fetched.push({ url, params, requireComplete });
-    state.signals[url] = signal;
+  // One page of the url's rows, the way the entity resource pages them.
+  workerGet: vi.fn(async (_ctx: any, url: string, params: any) => {
+    state.fetched.push({ url, params });
     const failure = state.failures[url];
-    if(failure === "hang") {return new Promise(() => undefined);}
+    if(failure === "hang") {return new Promise((resolve) => { state.release[url] = resolve; });}
     if(failure) {throw failure;}
+    const start = Number(params.pageIndex) * Number(params.pageSize);
 
-    return state.pages[url] ?? [];
+    return (state.pages[url] ?? []).slice(start, start + Number(params.pageSize));
   }),
 }));
 
@@ -51,6 +53,7 @@ describe("Shopify transfer sync worker domain", () => {
     state.failures = {};
     state.fetched = [];
     state.snapshots = [];
+    state.release = {};
     vi.useRealTimers();
   });
 
@@ -70,14 +73,64 @@ describe("Shopify transfer sync worker domain", () => {
     expect(state.fetched.every((call) => call.params.shopId === "SHOP_A")).toBe(true);
   });
 
-  // The snapshot prunes every cached row the read did not return, so a short read must fail the
-  // pass instead of pruning outstanding work.
-  it("requires every segment read to be complete before snapshotting", async () => {
+  /** `orders` transfer orders of `perOrder` creation items each, in the server's order. */
+  function createItems(orders: number, perOrder: number) {
+    return Array.from({ length: orders * perOrder }, (_, index) => ({
+      shopId: "SHOP_A", orderId: `TO${String(Math.floor(index / perOrder)).padStart(3, "0")}`, orderItemSeqId: String(index % perOrder),
+    }));
+  }
+  const CREATE = "sob/shopify/transferSync/pendingCreate";
+  const snapshotOf = (segment: string) => state.snapshots.find((snapshot) => snapshot.scope.value[1] === segment)!;
+
+  it("reads each list only as far as its first ten transfer orders, every item of each", async () => {
+    state.pages[CREATE] = createItems(300, 3);
+    const domain = await loadDomain();
+
+    await domain.sync(CTX, { shopId: "SHOP_A", batchSize: 7 });
+
+    const orders = new Set(snapshotOf("create").rows.map((row: any) => row.orderId));
+    expect([...orders]).toEqual(Array.from({ length: 10 }, (_, index) => `TO${String(index).padStart(3, "0")}`));
+    expect(snapshotOf("create").rows).toHaveLength(30);
+    // Stops at the page where the eleventh order begins, not at the end of 900 rows.
+    expect(state.fetched.filter((call) => call.url === CREATE).map((call) => call.params.pageIndex)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it("reads a list further when the page asks for more orders", async () => {
+    state.pages[CREATE] = createItems(300, 3);
+    const domain = await loadDomain();
+
+    await domain.sync(CTX, { shopId: "SHOP_A", orderLimits: { create: 20 } });
+
+    expect(new Set(snapshotOf("create").rows.map((row: any) => row.orderId)).size).toBe(20);
+    // Other lists keep the first page.
+    expect(state.fetched.filter((call) => call.url.endsWith("pendingShipment"))).toHaveLength(1);
+  });
+
+  it("sorts every read so offset pages never repeat or skip a row, and an order's rows stay together", async () => {
     const domain = await loadDomain();
 
     await domain.sync(CTX, { shopId: "SHOP_A" });
 
-    expect(state.fetched.every((call) => call.requireComplete === true)).toBe(true);
+    const orderBy = Object.fromEntries(state.fetched.map((call) => [call.url.split("/").pop(), call.params.orderByField]));
+    expect(orderBy).toEqual({
+      pendingCreate: "orderEntryDate,orderId,orderItemSeqId",
+      pendingShipment: "orderEntryDate,orderId,shipmentStatusId",
+      pendingReceipt: "orderEntryDate,orderId,receiptId",
+      pendingCancellation: "orderEntryDate,orderId,orderStatusId",
+      pendingItemChange: "orderEntryDate,orderId,orderItemChangeId",
+    });
+  });
+
+  it("keeps only finished orders when one order runs past the page backstop", async () => {
+    // Two whole orders, then one too large to finish within 40 pages.
+    state.pages[CREATE] = [...createItems(2, 5), ...Array.from({ length: 5000 }, (_, index) => ({
+      shopId: "SHOP_A", orderId: "TO_HUGE", orderItemSeqId: String(index),
+    }))];
+    const domain = await loadDomain();
+
+    await domain.sync(CTX, { shopId: "SHOP_A", batchSize: 100 });
+
+    expect(new Set(snapshotOf("create").rows.map((row: any) => row.orderId))).toEqual(new Set(["TO000", "TO001"]));
   });
 
   it("tags each row with its segment and normalises the segment's own timestamp", async () => {
@@ -194,9 +247,10 @@ describe("Shopify transfer sync worker domain", () => {
 
     expect(error.details.failedSegments.shipment.message).toContain("did not answer within 45 seconds");
     expect(error.details.loadedSegments).toHaveLength(4);
-    // The abandoned walk is told to stop, so it requests no further page in the background.
-    expect(state.signals["sob/shopify/transferSync/pendingShipment"]!.aborted).toBe(true);
-    expect(state.signals["sob/shopify/transferSync/pendingReceipt"]!.aborted).toBe(false);
+    // The abandoned walk stops: a full page answering late requests no further page in the background.
+    state.release["sob/shopify/transferSync/pendingShipment"](Array.from({ length: 100 }, (_, index) => ({ orderId: `TO${index}`, shipmentStatusId: String(index) })));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state.fetched.filter((call) => call.url.endsWith("pendingShipment"))).toHaveLength(1);
   });
 
   it("rethrows an expired session untouched, so the harness re-authenticates instead of backing off", async () => {

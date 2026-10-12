@@ -145,3 +145,10 @@ export function inventoryEventAreaDomains(shopId: string): Array<{ name: string;
     .filter((name) => name !== INVENTORY_EVENT_DOMAINS.bounds)
     .map((name) => ({ name, args: { shopId } }));
 }
+
+/**
+ * Each outstanding list holds the first N transfer orders, read whole; "Load more" raises N by this
+ * step. Reading every outstanding row instead failed on a shop with thousands of them (gorjana,
+ * 2026-10-12: 13,176 creation items and 12,823 receipts).
+ */
+export const TRANSFER_ORDER_PAGE = 10;

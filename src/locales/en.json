@@ -279,6 +279,7 @@
   "Left in SmsgSending. The sweep only picks up SmsgProduced or SmsgError, so this one needs its status reset.": "Left in SmsgSending. The sweep only picks up SmsgProduced or SmsgError, so this one needs its status reset.",
   "Live updates are off: this OMS does not report when an inventory event changes. Showing events as read at {at}; refresh to read them again.": "Live updates are off: this OMS does not report when an inventory event changes. Showing events as read at {at}; refresh to read them again.",
   "Load more": "Load more",
+  "Load {count} more transfers": "Load {count} more transfers",
   "Loading facility groups": "Loading facility groups",
   "Loading inventory events": "Loading inventory events",
   "Loading the OMS product and its current mapping": "Loading the OMS product and its current mapping",

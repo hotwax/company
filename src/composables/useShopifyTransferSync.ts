@@ -79,12 +79,22 @@ export function useShopifyPendingCounts(shopId: () => string | undefined) {
     return totals;
   });
 
+  /** Distinct transfer orders cached per segment: each list holds whole orders, up to its limit. */
+  const orderCounts = computed<Record<string, number>>(() => {
+    const wanted = String(shopId() ?? "");
+    const orders: Record<string, Set<string>> = {};
+    for(const row of records.value as any[]) {
+      if(String(row?.shopId ?? "") !== wanted || !row?.segment || !row?.orderId) {continue;}
+      (orders[row.segment] ??= new Set()).add(String(row.orderId));
+    }
+
+    return Object.fromEntries(Object.entries(orders).map(([segment, ids]) => [segment, ids.size]));
+  });
+
   return {
     counts,
-    creationOrderCount: computed(() => new Set(records.value
-      .filter((row: any) => String(row?.shopId ?? "") === String(shopId() ?? "")
-        && row?.segment === "create" && row?.orderId)
-      .map((row: any) => String(row.orderId))).size),
+    orderCounts,
+    creationOrderCount: computed(() => orderCounts.value.create ?? 0),
     hydrated,
     total: computed(() => Object.values(counts.value).reduce((sum, n) => sum + n, 0)),
   };
