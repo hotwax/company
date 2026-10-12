@@ -43,19 +43,43 @@ async function fetchOwner(shopId: string, orderId: string): Promise<TransferOwne
   return rows.find(row => String(row.shopId) === shopId && String(row.orderId) === orderId);
 }
 
-/** Receipts and transfer reservation details that the location pipeline turns into events. */
-async function fetchEventSelectors(orderId: string): Promise<TransferEventSelector[]> {
-  const reservationParams = { orderId, reasonEnumId: "INV_RES_CREATE,INV_RES_RELEASE", reasonEnumId_op: "in" };
-  const [receipts, reservations] = await Promise.all([
-    listAll(`${BASE}/receipts`, { orderId }, "Transfer receipts could not be loaded."),
-    listAll(`${BASE}/reservationDetails`, reservationParams, "Transfer reservations could not be loaded."),
-  ]);
+const RESERVATION_REASONS = ["INV_RES_CREATE", "INV_RES_RELEASE"];
 
-  return [
-    ...receipts.filter(row => String(row.orderId) === orderId && row.receiptId).map(row => ({ receiptId: String(row.receiptId) })),
-    ...reservations.filter(row => String(row.orderId) === orderId && row.inventoryItemId && row.inventoryItemDetailSeqId)
-      .map(row => ({ reservationInventoryItemId: String(row.inventoryItemId), reservationInventoryItemDetailSeqId: String(row.inventoryItemDetailSeqId) })),
-  ];
+function inventoryDetailUrl(productId: string, facilityId: string) {
+  return `oms/products/${encodeURIComponent(productId)}/facilities/${encodeURIComponent(facilityId)}/inventoryDetail`;
+}
+
+/**
+ * Receipts (at the destination) and transfer reservations (at the origin) that the location pipeline
+ * turns into events, read from the OMS inventory history one product and facility at a time.
+ */
+async function fetchEventSelectors(orderId: string): Promise<TransferEventSelector[]> {
+  const order = readable(
+    await api({ url: `oms/transferOrders/${encodeURIComponent(orderId)}`, method: "GET" }),
+    "The transfer could not be loaded."
+  )?.order;
+  if(!order?.facilityId || !order?.orderFacilityId) {throw new Error("The transfer's facilities could not be resolved.");}
+
+  const productIds = [...new Set<string>((order.items || []).map((item: any) => String(item.productId || "")).filter(Boolean))];
+  const receiptIds = new Set<string>();
+  const reservations = new Map<string, TransferEventSelector>();
+  for(const productId of productIds) {
+    const [receiptRows, reservationRows] = await Promise.all([
+      listAll(inventoryDetailUrl(productId, order.orderFacilityId), { orderId }, "Transfer receipts could not be loaded."),
+      listAll(
+        inventoryDetailUrl(productId, order.facilityId), { orderId, reasonEnumId: RESERVATION_REASONS.join(","), reasonEnumId_op: "in" },
+        "Transfer reservations could not be loaded."
+      ),
+    ]);
+    receiptRows.filter(row => String(row.orderId) === orderId && row.receiptId).forEach(row => receiptIds.add(String(row.receiptId)));
+    reservationRows.filter(row => String(row.orderId) === orderId && RESERVATION_REASONS.includes(row.reasonEnumId) && row.inventoryItemId && row.inventoryItemDetailSeqId)
+      .forEach(row => reservations.set(
+        `${row.inventoryItemId}:${row.inventoryItemDetailSeqId}`,
+        { reservationInventoryItemId: String(row.inventoryItemId), reservationInventoryItemDetailSeqId: String(row.inventoryItemDetailSeqId) }
+      ));
+  }
+
+  return [...[...receiptIds].map(receiptId => ({ receiptId })), ...reservations.values()];
 }
 
 /**

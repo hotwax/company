@@ -4357,5 +4357,7 @@
   "Transfer receipts could not be loaded.": "Transfer receipts could not be loaded.",
   "Transfer reservations could not be loaded.": "Transfer reservations could not be loaded.",
   "Native sync ownership could not be removed.": "Native sync ownership could not be removed.",
-  "The inventory event could not be recorded.": "The inventory event could not be recorded."
+  "The inventory event could not be recorded.": "The inventory event could not be recorded.",
+  "The transfer could not be loaded.": "The transfer could not be loaded.",
+  "The transfer's facilities could not be resolved.": "The transfer's facilities could not be resolved."
 }
