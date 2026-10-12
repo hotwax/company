@@ -213,6 +213,13 @@ describe("ShopifyTransferSync - outstanding lists, ten transfers at a time", () 
     serviceState.syncedAt.shopifyTransferSync = 100;
   });
 
+  it("activates the cheap delivery read before the transfer lists, so the detail page never waits behind them", async () => {
+    await mountPage();
+
+    expect(activateSyncDomains.mock.calls.at(-1)![0].map((domain: any) => domain.name).slice(0, 2))
+      .toEqual(["shopifyTransferDelivery", "shopifyTransferSync"]);
+  });
+
   it("asks the worker for the first ten transfer orders of every list", async () => {
     await mountPage();
 

@@ -1211,9 +1211,11 @@ const monitoringLoaded = computed(() => isTransferSyncMonitoringLoaded({
 function activeSyncDomains() {
   return shopId.value
     ? [
+      // Delivery first: the worker runs a screen's new reads in order, and the transfer detail page
+      // reuses this one, so behind the slow lists it held that page's delivery status for 10+ seconds.
+      { name: "shopifyTransferDelivery", args: { shopId: shopId.value } },
       // A plain copy: the worker receives args through postMessage, which cannot clone a reactive.
       { name: "shopifyTransferSync", args: { shopId: shopId.value, orderLimits: { ...orderLimits } } },
-      { name: "shopifyTransferDelivery", args: { shopId: shopId.value } },
       ...(activeTab.value === "errors" && stagingJobNames.value.length
         ? [{ name: "serviceJobRun", args: { jobNames: stagingJobNames.value, total: 5, batchSize: 5 } }]
         : []),
