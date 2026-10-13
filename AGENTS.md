@@ -108,8 +108,6 @@ server data) re-introduces exactly the load waterfalls this layer exists to remo
   record through the domain, `resyncDomain` re-snapshots it. A failed post-write refetch rejects as
   `CacheReconciliationError`: the server write is already committed, so presentation must warn and
   dismiss any retryable create/edit alert rather than misreporting a write failure or replaying it.
-  (`mutate` does the write and the reconcile in one call; Company's `appDbSync.ts` does not wire it
-  up yet. New write paths should add it there first; see the skill.)
 - **Table names** always come from `companyDb.tables` — never a string literal.
 - **Seed labels and joins:** `useSeedData()` / `seedData`, wrapped in `src/composables/useSeed.ts`.
 - **Never** import Dexie, `dbClient`, `baseDb` or the app-db registry, call `companyDb.raw()` /
