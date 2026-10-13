@@ -1,6 +1,7 @@
 import { computed, reactive, toRefs, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
 import { api, logger, useLiveEntity } from '@common'
 import { companyDb } from '@/db/companyDb';
+import { refreshRecord } from '@/services/appDbSync';
 import { clearStorage, getErrorRecords, setErrorRecords } from '@/utils/storage';
 import Papa from 'papaparse';
 
@@ -157,7 +158,7 @@ export function useDataManager() {
   };
 
   /**
-   * One import by `logId`, CACHE-FIRST and WRITE-THROUGH.
+   * One import by `logId`, CACHE-FIRST, fetched through the dataManagerLog domain on a miss.
    *
    * The counterpart to `ensureSystemMessageById`. A finished import never changes, so once cached this
    * costs nothing — which is what makes per-id enrichment viable where a shop-scoped log feed is not:
@@ -165,24 +166,18 @@ export function useDataManager() {
    */
   const ensureDataManagerLog = async (logId: string) => {
     if (!logId) return null;
+    const logs = companyDb.entity(companyDb.tables.dataManagerLogs);
     try {
-      const cached = await companyDb.entity(companyDb.tables.dataManagerLogs).get(String(logId));
+      const cached = await logs.get(String(logId));
       if (cached) return cached;
     } catch {
       // cache unavailable — fall through to the network
     }
 
     try {
-      const resp = await api({
-        url: "admin/dataManager/details",
-        method: "GET",
-        params: { logId },
-      }) as any;
-      const row = getFirstMdmLog(resp?.data);
-      if (row) {
-        await companyDb.entity(companyDb.tables.dataManagerLogs).upsertMany([row]);
-        return row;
-      }
+      // The dataManagerLog domain fetches and stores it; this side only reads.
+      await refreshRecord("dataManagerLog", { logId: String(logId) });
+      return (await logs.get(String(logId))) ?? null;
     } catch (err) {
       logger.error(`Failed to fetch DataManager log ${logId}`, err);
     }

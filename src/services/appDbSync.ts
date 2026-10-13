@@ -12,6 +12,7 @@ export const {
   syncService,
   stopAppDbSync,
   refreshAfterMutation,
+  refreshRecord,
   resyncDomain,
   resyncReferenceData,
   bootstrapState,

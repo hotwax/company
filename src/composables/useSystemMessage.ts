@@ -1,6 +1,7 @@
 import { computed, reactive, toRefs, type Ref } from 'vue';
 import { api, commonUtil, logger, useLiveEntity } from '@common'
 import { companyDb } from '@/db/companyDb';
+import { refreshRecord } from "@/services/appDbSync";
 import {
   getReferencedBulkOperationSystemMessageIds,
   getSystemMessageBulkOperationId,
@@ -186,7 +187,7 @@ export function useSystemMessage() {
   };
 
   /**
-   * One message by id, CACHE-FIRST and WRITE-THROUGH.
+   * One message by id, CACHE-FIRST, fetched through the systemMessage domain on a miss.
    *
    * `fetchSystemMessageById` only populates local state, so a caller that needed the row in IndexedDB
    * got nothing durable. This is the read path the sync screens use: try the cache, and on a miss fetch
@@ -195,17 +196,22 @@ export function useSystemMessage() {
    */
   const ensureSystemMessageById = async (systemMessageId: string) => {
     if (!systemMessageId) return null;
+    const messages = companyDb.entity(companyDb.tables.systemMessages);
     try {
-      const cached = (await companyDb.entity(companyDb.tables.systemMessages).all())
-        .find((row: any) => String(row.systemMessageId) === String(systemMessageId));
+      const cached = await messages.get(String(systemMessageId));
       if (cached) return cached;
     } catch {
       // cache unavailable — fall through to the network
     }
 
-    const fetched = await fetchSystemMessageById(systemMessageId).catch(() => null);
-    if (fetched) await companyDb.entity(companyDb.tables.systemMessages).upsertMany([fetched]);
-    return fetched;
+    try {
+      // The systemMessage domain fetches and stores it; this side only reads.
+      await refreshRecord("systemMessage", { systemMessageId: String(systemMessageId) });
+      return (await messages.get(String(systemMessageId))) ?? null;
+    } catch (err) {
+      logger.error(`Failed to fetch system message ${systemMessageId}`, err);
+      return null;
+    }
   };
 
   const fetchSystemMessages = async (params: any) => {
