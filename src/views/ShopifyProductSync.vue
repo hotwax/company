@@ -636,6 +636,7 @@ import {
   IonToggle,
   IonToolbar,
   alertController,
+  onIonViewDidLeave,
   onIonViewWillEnter,
 } from "@ionic/vue";
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
@@ -1671,6 +1672,10 @@ function whenHydrated(source: Ref<boolean> | ComputedRef<boolean>, then: () => u
 }
 
 
+
+// Ionic keeps this page mounted when the user navigates on from it, so unmount alone would leave its
+// domains polling behind a hidden page.
+onIonViewDidLeave(stopNextSyncRefreshPolling);
 
 onBeforeUnmount(() => {
   stopNextSyncRefreshPolling();
