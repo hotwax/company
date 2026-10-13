@@ -117,3 +117,32 @@ export function bulkOperationState(status: string | null | undefined): BulkOpera
 export function expectsBulkOperation(message: SystemMessage | null | undefined): boolean {
   return getSystemMessageBulkOperationId(message) !== "";
 }
+
+/** The fields Company reads from a Shopify BulkOperation, requested through `shopify/graphql`. */
+export const BULK_OPERATION_QUERY = `
+  query BulkOperation($id: ID!) {
+    node(id: $id) {
+      ... on BulkOperation {
+        id
+        status
+        errorCode
+        createdAt
+        completedAt
+        objectCount
+        rootObjectCount
+        fileSize
+        url
+        query
+      }
+    }
+  }
+`;
+
+/** The GraphQL payload out of a `shopify/graphql` answer, whichever envelope the gateway used. */
+export function getGraphqlPayload(response: any) {
+  const responseData = response?.data || response;
+  return responseData?.response?.data ||
+    responseData?.data ||
+    responseData?.response ||
+    responseData;
+}

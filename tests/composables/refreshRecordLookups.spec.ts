@@ -91,3 +91,34 @@ describe("ensureSystemMessageById", () => {
     expect(await useSystemMessage().ensureSystemMessageById("M3")).toBeNull();
   });
 });
+
+describe("fetchShopifyBulkOperation", () => {
+  const id = "gid://shopify/BulkOperation/9";
+
+  it("serves a finished operation from the db without asking the worker", async () => {
+    mocks.rows.shopifyBulkOperations = { [id]: { id, status: "COMPLETED" } };
+
+    expect(await useSystemMessage().fetchShopifyBulkOperation(id, "REMOTE")).toEqual({ id, status: "COMPLETED" });
+    expect(mocks.refreshRecord).not.toHaveBeenCalled();
+  });
+
+  it("asks the shopifyBulkOperation domain for a running or missing one, then reads the stored row", async () => {
+    mocks.rows.shopifyBulkOperations = { [id]: { id, status: "RUNNING" } };
+    mocks.refreshRecord.mockImplementation(async () => {
+      mocks.rows.shopifyBulkOperations = { [id]: { id, status: "COMPLETED", objectCount: 4 } };
+      return 1;
+    });
+
+    expect(await useSystemMessage().fetchShopifyBulkOperation(id, "REMOTE"))
+      .toEqual({ id, status: "COMPLETED", objectCount: 4 });
+    expect(mocks.refreshRecord).toHaveBeenCalledWith("shopifyBulkOperation", { id, systemMessageRemoteId: "REMOTE" });
+    expect(mocks.api).not.toHaveBeenCalled();
+    expect(mocks.upsertMany).not.toHaveBeenCalled();
+  });
+
+  it("rethrows a failed fetch, as it did before", async () => {
+    mocks.refreshRecord.mockRejectedValue(new Error("Shopify unavailable"));
+
+    await expect(useSystemMessage().fetchShopifyBulkOperation(id, "REMOTE")).rejects.toThrow("Shopify unavailable");
+  });
+});

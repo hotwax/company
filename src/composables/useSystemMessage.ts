@@ -9,25 +9,6 @@ import {
 } from "@/utils/shopifyBulkOperation";
 import { onSessionCleared } from "./sessionScope";
 
-const BULK_OPERATION_QUERY = `
-  query BulkOperation($id: ID!) {
-    node(id: $id) {
-      ... on BulkOperation {
-        id
-        status
-        errorCode
-        createdAt
-        completedAt
-        objectCount
-        rootObjectCount
-        fileSize
-        url
-        query
-      }
-    }
-  }
-`;
-
 /**
  * Messages confirmed this session to have ZERO errors.
  *
@@ -265,14 +246,6 @@ export function useSystemMessage() {
     return { systemMessageLogDetails: [], systemMessageLogDetailsCount: 0 };
   };
 
-  const getGraphqlPayload = (response: any) => {
-    const responseData = response?.data || response;
-    return responseData?.response?.data ||
-      responseData?.data ||
-      responseData?.response ||
-      responseData;
-  };
-
   /**
    * Terminal bulk-operation statuses. Once an operation reaches one of these it is immutable, so a
    * cached copy is valid forever and Shopify never needs to be asked again.
@@ -281,10 +254,10 @@ export function useSystemMessage() {
     ["COMPLETED", "FAILED", "CANCELED", "EXPIRED"].includes(String(status || "").toUpperCase());
 
   const fetchShopifyBulkOperation = async (bulkOperationId: string, systemMessageRemoteId: string) => {
+    const operations = companyDb.entity(companyDb.tables.shopifyBulkOperations);
     // Cache-first: a finished operation is immutable, so serve it locally and skip the remote call.
     try {
-      const cached = (await companyDb.entity(companyDb.tables.shopifyBulkOperations).all())
-        .find((row: any) => row.id === bulkOperationId);
+      const cached = await operations.get(bulkOperationId);
       if (cached && isTerminalBulkOperation(cached.status as string)) {
         state.currentShopifyBulkOperation = cached;
         return cached;
@@ -296,24 +269,11 @@ export function useSystemMessage() {
     state.loading = true;
     state.currentShopifyBulkOperation = {};
     try {
-      const response = await api({
-        url: "shopify/graphql",
-        method: "post",
-        data: {
-          systemMessageRemoteId,
-          queryText: BULK_OPERATION_QUERY,
-          variables: {
-            id: bulkOperationId
-          }
-        }
-      }) as any;
-
-      const graphQlPayload = getGraphqlPayload(response);
-      const payload = graphQlPayload?.node;
+      // The shopifyBulkOperation domain asks Shopify and stores it; this side only reads.
+      await refreshRecord("shopifyBulkOperation", { id: bulkOperationId, systemMessageRemoteId });
+      const payload = await operations.get(bulkOperationId);
       if (payload) {
         state.currentShopifyBulkOperation = payload;
-        // Cache it so a later visit needs no Shopify round-trip once it has finished.
-        void companyDb.entity(companyDb.tables.shopifyBulkOperations).upsertMany([{ ...payload, systemMessageRemoteId }]);
         return payload;
       }
     } catch (err) {
