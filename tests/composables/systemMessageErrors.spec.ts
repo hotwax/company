@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   api: vi.fn(),
-  errorCacheAll: vi.fn(),
-  errorCacheUpsertMany: vi.fn(),
+  refreshRecord: vi.fn(),
+  errorCacheQuery: vi.fn(),
 }));
 
 vi.mock("@common", () => ({
@@ -17,15 +17,13 @@ vi.mock("@/db/companyDb", () => ({
   companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
     entity: (table: string) => {
       if (table === "systemMessageErrors") {
-        return {
-          all: (...args: any[]) => mocks.errorCacheAll(...args),
-          upsertMany: (...args: any[]) => mocks.errorCacheUpsertMany(...args),
-        };
+        return { query: (...args: any[]) => mocks.errorCacheQuery(...args) };
       }
-      return { all: vi.fn(async () => []), upsertMany: vi.fn(async () => 0) };
+      return { get: vi.fn(async () => undefined), query: vi.fn(async () => []) };
     },
   },
 }));
+vi.mock("@/services/appDbSync", () => ({ refreshRecord: (...args: any[]) => mocks.refreshRecord(...args) }));
 
 import { clearSessionScopedState } from "@/composables/sessionScope";
 import { systemMessageMayHaveErrors, useSystemMessage } from "@/composables/useSystemMessage";
@@ -33,9 +31,8 @@ import { systemMessageMayHaveErrors, useSystemMessage } from "@/composables/useS
 beforeEach(() => {
   clearSessionScopedState();
   mocks.api.mockReset();
-  mocks.errorCacheAll.mockReset();
-  mocks.errorCacheAll.mockResolvedValue([]);
-  mocks.errorCacheUpsertMany.mockReset();
+  mocks.refreshRecord.mockReset().mockResolvedValue(0);
+  mocks.errorCacheQuery.mockReset().mockResolvedValue([]);
 });
 
 /**
@@ -81,62 +78,67 @@ describe("systemMessageMayHaveErrors", () => {
 });
 
 describe("ensureSystemMessageErrors", () => {
+  it("asks the systemMessageError domain and reads the message's stored errors, newest first", async () => {
+    const { ensureSystemMessageErrors } = useSystemMessage();
+
+    await ensureSystemMessageErrors("MSG_0");
+    expect(mocks.refreshRecord).toHaveBeenCalledWith("systemMessageError", { systemMessageId: "MSG_0" });
+    expect(mocks.errorCacheQuery).toHaveBeenCalledWith({ equals: { systemMessageId: "MSG_0" }, dateField: "errorDate" });
+    expect(mocks.api).not.toHaveBeenCalled();
+  });
+
   it("retries after a request failure instead of permanently treating it as a clean result", async () => {
-    mocks.api
+    mocks.refreshRecord
       .mockRejectedValueOnce(new Error("network unavailable"))
-      .mockResolvedValue({ data: [] });
+      .mockResolvedValue(0);
     const { ensureSystemMessageErrors } = useSystemMessage();
 
     expect(await ensureSystemMessageErrors("MSG_1")).toEqual([]);
     expect(await ensureSystemMessageErrors("MSG_1")).toEqual([]);
-    expect(mocks.api).toHaveBeenCalledTimes(2);
+    expect(mocks.refreshRecord).toHaveBeenCalledTimes(2);
 
     // The successful empty response is the point at which the session memo becomes authoritative.
     expect(await ensureSystemMessageErrors("MSG_1")).toEqual([]);
-    expect(mocks.api).toHaveBeenCalledTimes(2);
+    expect(mocks.refreshRecord).toHaveBeenCalledTimes(2);
   });
 
   it("clears confirmed-clean results with the rest of the session", async () => {
-    mocks.api.mockResolvedValue({ data: [] });
     const { ensureSystemMessageErrors } = useSystemMessage();
 
     await ensureSystemMessageErrors("MSG_2");
     await ensureSystemMessageErrors("MSG_2");
-    expect(mocks.api).toHaveBeenCalledTimes(1);
+    expect(mocks.refreshRecord).toHaveBeenCalledTimes(1);
 
     clearSessionScopedState();
 
     await ensureSystemMessageErrors("MSG_2");
-    expect(mocks.api).toHaveBeenCalledTimes(2);
+    expect(mocks.refreshRecord).toHaveBeenCalledTimes(2);
   });
 
   it("drops a confirmed-clean answer once a fresh fetch finds a retry's error", async () => {
-    const retryError = { errorText: "Shopify timed out", errorDate: 5 };
-    mocks.api.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({ data: [retryError] });
+    const retryError = { systemMessageId: "MSG_4", errorText: "Shopify timed out", errorDate: 5 };
     const { ensureSystemMessageErrors, fetchSystemMessageErrors } = useSystemMessage();
 
     expect(await ensureSystemMessageErrors("MSG_4")).toEqual([]);
+    mocks.errorCacheQuery.mockResolvedValue([retryError]);
     expect(await fetchSystemMessageErrors("MSG_4")).toEqual([retryError]);
-    // Stored rows are the projected error itself, with the message id stamped in.
-    mocks.errorCacheAll.mockResolvedValue([{ systemMessageId: "MSG_4", ...retryError }]);
 
-    expect(await ensureSystemMessageErrors("MSG_4")).toEqual([{ systemMessageId: "MSG_4", ...retryError }]);
+    expect(await ensureSystemMessageErrors("MSG_4")).toEqual([retryError]);
   });
 
   it("does not let a late empty response from the previous session restore the memo", async () => {
-    let resolveOld!: (value: any) => void;
-    const oldResponse = new Promise((resolve) => { resolveOld = resolve; });
-    mocks.api
-      .mockReturnValueOnce(oldResponse)
-      .mockResolvedValue({ data: [] });
+    let resolveOld!: (value: number) => void;
+    mocks.refreshRecord
+      .mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }))
+      .mockResolvedValue(0);
     const { ensureSystemMessageErrors } = useSystemMessage();
 
     const oldRequest = ensureSystemMessageErrors("MSG_3");
     clearSessionScopedState();
-    resolveOld({ data: [] });
+    resolveOld(0);
     await oldRequest;
 
     await ensureSystemMessageErrors("MSG_3");
-    expect(mocks.api).toHaveBeenCalledTimes(2);
+    expect(mocks.refreshRecord).toHaveBeenCalledTimes(2);
   });
 });

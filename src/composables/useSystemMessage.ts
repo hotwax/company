@@ -118,7 +118,7 @@ export function useSystemMessage() {
   };
 
   /**
-   * Errors for one message, WRITE-THROUGH to the cache (class C: on demand, never polled).
+   * Errors for one message, fetched through the systemMessageError domain (class C: on demand, never polled).
    *
    * Errors only exist for messages that failed, and only a run being inspected needs them, so
    * polling every message's errors would be almost entirely wasted requests. Fetch once, cache, and
@@ -129,24 +129,12 @@ export function useSystemMessage() {
 
     state.loading = true;
     try {
-      const response = await api({
-        url: `admin/systemMessages/${encodeURIComponent(systemMessageId)}/errors`,
-        method: "GET",
-        params: {
-          orderByField: "-errorDate",
-          pageSize: 50
-        }
-      }) as any;
-
-      // Bare array response (verified live: `[ ]` for a message with no errors).
-      const errors: any[] = Array.isArray(response?.data) ? response.data : [];
-      if (errors.length) {
-        // A retry appended an error, so an earlier "has no errors" answer is stale.
-        messagesKnownToHaveNoErrors.delete(systemMessageId);
-        // `systemMessageId` is not echoed on each row — the id is only in the URL — so stamp it in,
-        // otherwise the synthetic key cannot be built and the join has nothing to match on.
-        void companyDb.entity(companyDb.tables.systemMessageErrors).upsertMany(errors.map((error) => ({ ...error, systemMessageId })));
-      }
+      // The systemMessageError domain fetches and stores them; this side only reads.
+      await refreshRecord("systemMessageError", { systemMessageId });
+      const errors = await companyDb.entity(companyDb.tables.systemMessageErrors)
+        .query({ equals: { systemMessageId }, dateField: "errorDate" });
+      // A retry appended an error, so an earlier "has no errors" answer is stale.
+      if (errors.length) messagesKnownToHaveNoErrors.delete(systemMessageId);
       return errors;
     } catch (err) {
       logger.error(`Failed to fetch system message errors for ${systemMessageId}`, err);
@@ -165,8 +153,8 @@ export function useSystemMessage() {
     if (messagesKnownToHaveNoErrors.has(systemMessageId)) return [];
 
     try {
-      const cached = (await companyDb.entity(companyDb.tables.systemMessageErrors).all())
-        .filter((row: any) => row.systemMessageId === systemMessageId);
+      const cached = await companyDb.entity(companyDb.tables.systemMessageErrors)
+        .query({ equals: { systemMessageId }, dateField: "errorDate" });
       if (cached.length) return cached;
     } catch {
       // cache unavailable — fall through to the network
