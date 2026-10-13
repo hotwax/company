@@ -83,7 +83,7 @@ export const organizationDomain = defineSyncDomain({
     const roles = await fetchRoleRows(ctx);
     const organizations = await fetchOrganizations(ctx, roles);
 
-    const existing = await companyClient.count("organizations");
+    const existing = await companyClient.count(companyDb.tables.organizations);
     if(!options?.force && organizations.length === 0 && existing > 0) {
       console.warn("[sync] organization: server returned no usable internal organizations while the cache " +
         "is populated; refusing to prune. Use a manual resync to clear it deliberately.",);

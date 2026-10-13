@@ -73,7 +73,7 @@ Env config comes from `.env` (see `.env.example`): `VITE_OMS_TYPE` (`MOQUI`), lo
 
 ## 4. The data layer — read this before touching screen data
 
-**Load the `accxui-data-access` skill** (`.agents/skills/accxui-data-access/SKILL.md`) before reading
+**Load the `accxui-data-access` skill** ([`../../.agents/skills/accxui-data-access/SKILL.md`](../../.agents/skills/accxui-data-access/SKILL.md)) before reading
 or writing app data. It is the short, authoritative version of this section.
 
 This app has moved off "view calls store, store fetches, view renders". **Server data is read from
