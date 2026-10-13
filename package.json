@@ -7,8 +7,7 @@
   "scripts": {
     "dev": "vite",
     "serve": "vite",
-    "build": "pnpm lint:data-access && vite build",
-    "lint:data-access": "cd ../.. && eslint --config eslint.data-access.config.js apps/company/src",
+    "build": "vite build",
     "preview": "vite preview",
     "test:unit": "vitest run --no-cache",
     "typecheck": "vue-tsc -p tsconfig.json --noEmit",

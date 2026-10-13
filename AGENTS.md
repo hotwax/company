@@ -109,9 +109,8 @@ server data) re-introduces exactly the load waterfalls this layer exists to remo
   dismiss any retryable create/edit alert rather than misreporting a write failure or replaying it.
 - **Seed labels and joins:** `useSeedData()` / `seedData`, wrapped in `src/composables/useSeed.ts`.
 - **Never** import Dexie, `dbClient`, `baseDb` or the app-db registry, call `companyDb.raw()` /
-  `.get()`, or `companyDb.client()` outside `src/workers/**` and the `useDbStatus` argument. The
-  `data-access/*` lint rules enforce all of this and `pnpm build` runs them first
-  (`pnpm lint:data-access`).
+  `.get()`, or `companyDb.client()` outside `src/workers/**` and the `useDbStatus` argument. The data-access rules in the
+  root `eslint.config.js` enforce all of this; `pnpm lint` reports them.
 - **Cadence:** owned entirely by the worker. Nothing on the main thread polls.
 - The database is durable across reloads and **cleared on logout and on login** (`stopAppDbSync()`
   wipes every data table); it is *not* shared cross-tab or cross-session by design.
