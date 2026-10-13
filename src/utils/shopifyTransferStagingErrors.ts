@@ -92,6 +92,15 @@ export function transferStagingIssues(run: any, shopId: string, stager: Transfer
   const results = resultsObject(run.results);
   const runId = String(run.jobRunId ?? "");
 
+  // The stager skipped the shop by design; with nothing staged there is nothing else to read.
+  if(results?.skippedReason === "nativeTransferSyncDisabled") {
+    const skipped = issue("", "native-sync-off", `${runId}:native-sync-off`);
+    skipped.title = "Native Inventory Transfer Sync is off";
+    skipped.action = "This shop's transfers are not sent to Shopify as transfers while it is off, so the stager skipped them. Their stock changes reach Shopify as inventory updates instead.";
+
+    return [skipped];
+  }
+
   if(Array.isArray(results?.blockedOrderList)) {
     for(const blocked of results.blockedOrderList) {
       if(String(blocked?.shopId ?? "") !== shopId) {continue;}

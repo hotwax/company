@@ -12,6 +12,18 @@ import { reactive, ref } from "vue";
 
 const cards = ref<any[]>([]);
 const jobsHydrated = ref(true);
+const nativeSyncEnabled = ref<boolean | undefined>(true);
+const runsByJob: Record<string, any[]> = {};
+const summaryResult: { value: Record<string, unknown> } = { value: {} };
+/** What the native sync owner lookup does: resolve an owner (or none), or reject like a request. */
+const ownerLookup: { value: () => Promise<unknown> } = { value: async () => undefined };
+
+// Entering the view loads the summary and settings; mounting stands in for Ionic's view lifecycle.
+vi.mock("@ionic/vue", async (importOriginal) => {
+  const { onMounted } = await import("vue");
+
+  return { ...(await importOriginal<Record<string, unknown>>()), onIonViewWillEnter: onMounted, onIonViewDidLeave: () => undefined };
+});
 
 vi.mock("@common", () => ({
   commonUtil: { hasError: () => false, showToast: vi.fn(), getFeatures: () => "" },
@@ -37,7 +49,7 @@ vi.mock("@/services/appDbSync", () => ({
 
 vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobs: () => ({ jobs: ref([]), hydrated: jobsHydrated }),
-  useServiceJobRunsByJob: () => ({ runsFor: () => [], hydrated: ref(true) }),
+  useServiceJobRunsByJob: () => ({ runsFor: (jobName: string) => runsByJob[jobName] ?? [], hydrated: ref(true) }),
 }));
 
 vi.mock("@/composables/useShopify", () => ({
@@ -46,13 +58,18 @@ vi.mock("@/composables/useShopify", () => ({
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyTransferSyncJobs: () => ({ cards }),
+  useShopifyNativeTransferSync: () => ({ enabled: nativeSyncEnabled, load: vi.fn() }),
 }));
 
 vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
-  fetchTransferSyncSummary: vi.fn().mockResolvedValue({}),
+  fetchTransferSyncSummary: vi.fn(async () => summaryResult.value),
   useShopifyTransferSyncEnrichment: () => ({
     enrichment: ref({ ordersById: {} }), load: vi.fn().mockResolvedValue(undefined), loading: ref(false), error: ref(""),
   }),
+}));
+
+vi.mock("@/composables/useShopifyTransferDetach", () => ({
+  useShopifyTransferDetach: () => ({ fetchOwner: () => ownerLookup.value(), fetchEventSelectors: vi.fn(), detach: vi.fn() }),
 }));
 
 vi.mock("@/composables/useShopifyTransferUpdateCheck", () => ({
@@ -68,6 +85,7 @@ const stubs = {
   ShopifyTransferDeliveryStatus: true,
   ShopifyTransferMappingConflict: true,
   ShopifyTransferUpdateBlocker: true,
+  ShopifyTransferDetachModal: true,
 };
 
 async function mountDetail() {
@@ -81,6 +99,10 @@ describe("ShopifyTransferSyncDetail - no configured stagers", () => {
   beforeEach(() => {
     vi.resetModules();
     jobsHydrated.value = true;
+    nativeSyncEnabled.value = true;
+    summaryResult.value = {};
+    ownerLookup.value = async () => undefined;
+    for(const key of Object.keys(runsByJob)) {delete runsByJob[key];}
     // Stager cards exist but none has a job behind it: `jobNames` is empty.
     cards.value = [
       { definition: { key: "create" }, jobName: "create_job", job: undefined },
@@ -106,6 +128,98 @@ describe("ShopifyTransferSyncDetail - no configured stagers", () => {
     cards.value = [{ definition: { key: "create" }, jobName: "create_job", job: { jobName: "create_job" } }];
     const wrapper = await mountDetail();
     expect(wrapper.text()).toContain("Loading staging results");
+    wrapper.unmount();
+  });
+});
+
+describe("ShopifyTransferSyncDetail - what a stager's result says about this transfer", () => {
+  /** Both stagers configured, each with one completed run whose result is `results`. */
+  function stagersWithResult(results: unknown) {
+    cards.value = [
+      { definition: { key: "create" }, jobName: "create_job", job: { jobName: "create_job" } },
+      { definition: { key: "update" }, jobName: "update_job", job: { jobName: "update_job" } },
+    ];
+    for(const jobName of ["create_job", "update_job"]) {
+      runsByJob[jobName] = [{ jobRunId: `${jobName}_run`, startTime: 1, endTime: 2, hasError: "N", results }];
+    }
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    jobsHydrated.value = true;
+    nativeSyncEnabled.value = true;
+    summaryResult.value = {};
+    ownerLookup.value = async () => undefined;
+    for(const key of Object.keys(runsByJob)) {delete runsByJob[key];}
+  });
+
+  it("explains that native sync is off, with next steps, instead of calling the stagers' empty results unreadable", async () => {
+    stagersWithResult({});
+    nativeSyncEnabled.value = false;
+    const wrapper = await mountDetail();
+    const text = wrapper.text();
+
+    expect(text).toContain("Native Inventory Transfer Sync is off");
+    expect(text).toContain("Next steps");
+    expect(text).not.toContain("Staging results could not be read");
+    expect(text).not.toContain("Resolve issue");
+    wrapper.unmount();
+  });
+
+  it("does not list a run-wide creation result for a transfer Shopify already has", async () => {
+    stagersWithResult({});
+    summaryResult.value = { transferId: "gid://shopify/InventoryTransfer/1" };
+    const wrapper = await mountDetail();
+    const issues = wrapper.findAll("ion-radio").map((radio) => radio.text());
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain("Updates");
+    wrapper.unmount();
+  });
+
+  it("still lists both when the transfer has not reached Shopify", async () => {
+    stagersWithResult({});
+    const wrapper = await mountDetail();
+
+    expect(wrapper.findAll("ion-radio")).toHaveLength(2);
+    wrapper.unmount();
+  });
+});
+
+describe("ShopifyTransferSyncDetail - detaching from native sync", () => {
+  const detachButton = (wrapper: any) => wrapper.findAll("ion-button").find((button: any) => button.text().includes("Detach from native sync"));
+
+  beforeEach(() => {
+    vi.resetModules();
+    jobsHydrated.value = true;
+    nativeSyncEnabled.value = false;
+    summaryResult.value = {};
+    cards.value = [];
+  });
+
+  it("offers detach for an owned transfer that never reached Shopify", async () => {
+    ownerLookup.value = async () => ({ shopId: "SHOP", orderId: "ORDER_1" });
+    const wrapper = await mountDetail();
+
+    expect(detachButton(wrapper)).toBeDefined();
+    expect(wrapper.text()).toContain("use Detach from native sync above");
+    wrapper.unmount();
+  });
+
+  it("treats an OMS without the owner resource as detach unavailable, not as a failed refresh", async () => {
+    ownerLookup.value = async () => { throw Object.assign(new Error("Request failed with status code 404"), { response: { status: 404 } }); };
+    const wrapper = await mountDetail();
+
+    expect(detachButton(wrapper)).toBeUndefined();
+    expect(wrapper.text()).not.toContain("Some details could not be refreshed");
+    wrapper.unmount();
+  });
+
+  it("still reports any other owner lookup failure", async () => {
+    ownerLookup.value = async () => { throw Object.assign(new Error("Request failed with status code 500"), { response: { status: 500 } }); };
+    const wrapper = await mountDetail();
+
+    expect(wrapper.text()).toContain("Some details could not be refreshed");
     wrapper.unmount();
   });
 });

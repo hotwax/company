@@ -79,12 +79,22 @@ export function useShopifyPendingCounts(shopId: () => string | undefined) {
     return totals;
   });
 
+  /** Distinct transfer orders cached per segment: each list holds whole orders, up to its limit. */
+  const orderCounts = computed<Record<string, number>>(() => {
+    const wanted = String(shopId() ?? "");
+    const orders: Record<string, Set<string>> = {};
+    for(const row of records.value as any[]) {
+      if(String(row?.shopId ?? "") !== wanted || !row?.segment || !row?.orderId) {continue;}
+      (orders[row.segment] ??= new Set()).add(String(row.orderId));
+    }
+
+    return Object.fromEntries(Object.entries(orders).map(([segment, ids]) => [segment, ids.size]));
+  });
+
   return {
     counts,
-    creationOrderCount: computed(() => new Set(records.value
-      .filter((row: any) => String(row?.shopId ?? "") === String(shopId() ?? "")
-        && row?.segment === "create" && row?.orderId)
-      .map((row: any) => String(row.orderId))).size),
+    orderCounts,
+    creationOrderCount: computed(() => orderCounts.value.create ?? 0),
     hydrated,
     total: computed(() => Object.values(counts.value).reduce((sum, n) => sum + n, 0)),
   };
@@ -197,7 +207,8 @@ export function useShopifyTransferSyncLaunch() {
 const NATIVE_SYNC_SETTING = "SHPFY_NATIVE_TO_SYNC";
 
 export function useShopifyNativeTransferSync() {
-  const enabled = ref(true);
+  // Unknown until the server answers: a default rendered as the switch's state reads as a fact.
+  const enabled = ref<boolean | undefined>(undefined);
   const loading = ref(false);
   const saving = ref(false);
   const loadFailed = ref(false);
@@ -205,6 +216,7 @@ export function useShopifyNativeTransferSync() {
 
   async function load(shopId: string) {
     const version = ++loadVersion;
+    enabled.value = undefined;
     if(!shopId) {
       loading.value = false;
       loadFailed.value = true;
@@ -238,7 +250,7 @@ export function useShopifyNativeTransferSync() {
   }
 
   async function save(shopId: string, next: boolean): Promise<boolean> {
-    if(!shopId) { return false; }
+    if(!shopId || enabled.value === undefined) { return false; }
     saving.value = true;
     try {
       const resp: any = await api({

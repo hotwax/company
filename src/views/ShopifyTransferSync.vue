@@ -88,7 +88,7 @@
                   <ion-label v-else-if="tabFailure(tab)" slot="end" color="danger">
                     {{ translate("Not loaded") }}
                   </ion-label>
-                  <ion-label v-else slot="end">{{ tab.key === 'create' ? creationOrderCount : tabCount(tab) }}</ion-label>
+                  <ion-label v-else slot="end">{{ countLabel(tab) }}</ion-label>
                 </ion-item>
                 <ion-item>
                   <ion-label class="ion-text-wrap">
@@ -111,19 +111,23 @@
                     <p v-if="nativeSyncLoadFailed">
                       {{ translate("Not loaded") }}
                     </p>
-                    <p v-else-if="nativeSyncEnabled">
+                    <p v-else-if="nativeSyncEnabled === true">
                       {{ translate("Transfer orders sync to Shopify as inventory transfers.") }}
                     </p>
-                    <p v-else>
+                    <p v-else-if="nativeSyncEnabled === false">
                       {{ translate("Transfer orders do not sync as Shopify transfers. Their inventory changes sync as inventory updates.") }}
                     </p>
                   </ion-label>
-                  <ion-skeleton-text v-if="nativeSyncLoading" slot="end" :animated="true" class="count-skeleton" />
+                  <!-- Only the server's answer is drawn as the switch: unknown is a skeleton or a retry, never a default. -->
+                  <ion-button v-if="nativeSyncLoadFailed" slot="end" fill="outline" size="small" @click="loadNativeSync(shopId)">
+                    {{ translate("Retry") }}
+                  </ion-button>
+                  <ion-skeleton-text v-else-if="nativeSyncLoading || nativeSyncEnabled === undefined" slot="end" :animated="true" class="count-skeleton" />
                   <ion-toggle
                     v-else
                     slot="end"
                     :checked="nativeSyncEnabled"
-                    :disabled="nativeSyncSaving || nativeSyncLoadFailed"
+                    :disabled="nativeSyncSaving"
                     :aria-label="translate('Native Inventory Transfer Sync')"
                     @click.prevent="toggleNativeSync"
                   />
@@ -189,6 +193,17 @@
               </ion-list>
             </ion-card>
           </section>
+
+          <!-- Owned transfers stay listed after native sync is turned off, but nothing will send them. -->
+          <ion-card v-if="nativeSyncEnabled === false && pendingTotal">
+            <ion-item lines="none">
+              <ion-icon slot="start" :icon="warningOutline" color="warning" />
+              <ion-label class="ion-text-wrap">
+                {{ translate("Native Inventory Transfer Sync is off, so nothing below will be sent to Shopify") }}
+                <p>{{ translate("These transfers were queued while it was on. Their stock changes reach Shopify as inventory updates instead. Detach each from native sync to stop listing it, or turn native sync back on to send them all as Shopify transfers.") }}</p>
+              </ion-label>
+            </ion-item>
+          </ion-card>
 
           <!-- Four activity tabs over five resources, followed by the latest staging errors.
                Each activity row is one artifact the shop has not sent to
@@ -437,6 +452,14 @@
               </ion-list>
             </ion-accordion>
           </ion-accordion-group>
+
+            <!-- The list holds its first transfer orders; the rest load only when asked for. -->
+            <ion-button v-if="tabHasMore(activeSegmentTab)" expand="block" fill="outline" :disabled="loadingMore" @click="loadMorePending()">
+              <ion-spinner v-if="loadingMore" name="crescent" />
+              <template v-else>
+                {{ translate("Load {count} more transfers", { count: TRANSFER_ORDER_PAGE }) }}
+              </template>
+            </ion-button>
           </template>
         </template>
       </template>
@@ -645,13 +668,14 @@ import {
 } from "@ionic/vue";
 import { checkmarkCircleOutline, closeOutline, openOutline, refreshOutline, saveOutline, swapHorizontalOutline, warningOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
-import { computed, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import ShopifyTransferDeliveryStatus from "@/components/shopify/ShopifyTransferDeliveryStatus.vue";
 import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapshot.vue";
 import { useDb } from "@common";
 import { serviceState } from "@common/db";
+import { TRANSFER_ORDER_PAGE } from "@/config/appSyncConfig";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/services/appDbSync";
 import ShopifyTransferStagingErrors from "@/components/shopify/ShopifyTransferStagingErrors.vue";
 import { useServiceJobs } from "@/composables/useServiceJobs";
@@ -713,12 +737,14 @@ const activeTab = ref<TransferSyncTab>("create");
 const { logsFor: deliveryLogsFor } = useShopifyTransferDelivery(() => shopId.value);
 function creationDeliveryLabel(orderId: string) {
   const log = deliveryLogsFor("create", orderId)[0];
+  if(log) {return transferDeliveryState(log).label;}
 
-  return log ? transferDeliveryState(log).label : "Waiting for Shopify confirmation";
+  // Nothing stages while native sync is off, so nothing is waiting on Shopify.
+  return nativeSyncEnabled.value === false ? "Not sent: native sync is off" : "Waiting for Shopify confirmation";
 }
 const segment = computed<PendingSegment>(() => activeTab.value === "errors" ? "create" : activeTab.value);
 
-const { counts, creationOrderCount, total: pendingTotal, hydrated } = useShopifyPendingCounts(() => shopId.value);
+const { counts, orderCounts, creationOrderCount, total: pendingTotal, hydrated } = useShopifyPendingCounts(() => shopId.value);
 const { rows: primaryRows } = useShopifyPendingSegment(() => shopId.value, () => segment.value);
 // The paired segment for the combined tab; empty for every other tab.
 const { rows: pairedRows } = useShopifyPendingSegment(
@@ -739,6 +765,52 @@ const facilityNamesById = computed<Record<string, string>>(() => Object.fromEntr
 function tabCount(tab: { key: PendingSegment; also?: PendingSegment }): number {
   return (counts.value[tab.key] ?? 0) + (tab.also ? (counts.value[tab.also] ?? 0) : 0);
 }
+
+// ---------------------------------------------------------------- outstanding, a page of transfers at a time
+/** How many transfer orders each list holds. The worker reads exactly these; "Load more" raises one. */
+function firstPageLimits(): Record<PendingSegment, number> {
+  return { create: TRANSFER_ORDER_PAGE, shipment: TRANSFER_ORDER_PAGE, receipt: TRANSFER_ORDER_PAGE, cancellation: TRANSFER_ORDER_PAGE, itemChange: TRANSFER_ORDER_PAGE };
+}
+const orderLimits = reactive(firstPageLimits());
+
+/** A list that filled its limit may have more; one that fell short holds every outstanding order. */
+function segmentHasMore(segmentKey: PendingSegment): boolean {
+  return (orderCounts.value[segmentKey] ?? 0) >= orderLimits[segmentKey];
+}
+function tabHasMore(tab: { key: PendingSegment; also?: PendingSegment } | undefined): boolean {
+  if(!tab) {return false;}
+  // The raised limit is ahead of the cache until the larger read lands; until then it still has more.
+  if(loadingMore.value && loadingMoreTab === tab.key) {return true;}
+
+  return segmentHasMore(tab.key) || (!!tab.also && segmentHasMore(tab.also));
+}
+function countLabel(tab: { key: PendingSegment; also?: PendingSegment }): string {
+  const count = tab.key === "create" ? creationOrderCount.value : tabCount(tab);
+
+  return tabHasMore(tab) ? `${count}+` : String(count);
+}
+
+const activeSegmentTab = computed(() => SEGMENT_TABS.find((tab) => tab.key === activeTab.value));
+const loadingMore = ref(false);
+let loadingMoreTab: PendingSegment | undefined;
+let loadMoreBaseline: { syncedAt: number; details: unknown } | undefined;
+
+function loadMorePending() {
+  const tab = activeSegmentTab.value;
+  if(!tab || loadingMore.value) {return;}
+  orderLimits[tab.key] += TRANSFER_ORDER_PAGE;
+  if(tab.also) {orderLimits[tab.also] += TRANSFER_ORDER_PAGE;}
+  loadMoreBaseline = { syncedAt: serviceState.syncedAt.shopifyTransferSync ?? 0, details: serviceState.details?.shopifyTransferSync };
+  loadingMoreTab = tab.key;
+  loadingMore.value = true;
+  void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
+}
+
+// The larger read lands as a completed pass, or as a failure that the list's error card reports.
+watch(() => [serviceState.syncedAt.shopifyTransferSync, serviceState.details?.shopifyTransferSync], ([syncedAt, details]) => {
+  if(!loadingMore.value || !loadMoreBaseline) {return;}
+  if(Number(syncedAt ?? 0) > loadMoreBaseline.syncedAt || details !== loadMoreBaseline.details) {loadingMore.value = false;}
+});
 
 // ---------------------------------------------------------------- sync start date
 const {
@@ -763,7 +835,7 @@ const {
 
 async function toggleNativeSync(event: any) {
   event?.stopImmediatePropagation?.();
-  if(nativeSyncSaving.value || nativeSyncLoadFailed.value) { return; }
+  if(nativeSyncSaving.value || nativeSyncEnabled.value === undefined) { return; }
   if(!await saveNativeSync(shopId.value, !nativeSyncEnabled.value)) {
     commonUtil.showToast(translate("Native Inventory Transfer Sync could not be updated."));
   }
@@ -1152,8 +1224,11 @@ const monitoringLoaded = computed(() => isTransferSyncMonitoringLoaded({
 function activeSyncDomains() {
   return shopId.value
     ? [
-      { name: "shopifyTransferSync", args: { shopId: shopId.value } },
+      // Delivery first: the worker runs a screen's new reads in order, and the transfer detail page
+      // reuses this one, so behind the slow lists it held that page's delivery status for 10+ seconds.
       { name: "shopifyTransferDelivery", args: { shopId: shopId.value } },
+      // A plain copy: the worker receives args through postMessage, which cannot clone a reactive.
+      { name: "shopifyTransferSync", args: { shopId: shopId.value, orderLimits: { ...orderLimits } } },
       ...(activeTab.value === "errors" && stagingJobNames.value.length
         ? [{ name: "serviceJobRun", args: { jobNames: stagingJobNames.value, total: 5, batchSize: 5 } }]
         : []),
@@ -1163,6 +1238,9 @@ function activeSyncDomains() {
 
 function startTransferSyncDomains() {
   viewActive.value = true;
+  // Every visit, and every shop, starts from the first page of each list.
+  Object.assign(orderLimits, firstPageLimits());
+  loadingMore.value = false;
   stagingSyncBaselineAt.value = serviceState.syncedAt.serviceJobRun ?? 0;
   void loadLaunch(shopId.value, undefined, true);
   void loadNativeSync(shopId.value);
