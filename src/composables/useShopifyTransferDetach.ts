@@ -3,6 +3,8 @@ import { getResponseErrorMessage } from "@/utils";
 
 const BASE = "sob/shopify/transferSync";
 const PAGE_SIZE = 100;
+/** Locale key for a detach that failed with no reason from the server. */
+export const DETACH_FAILED = "The transfer could not be detached.";
 
 export interface TransferOwner {
   shopId: string;
@@ -50,9 +52,9 @@ async function detach(shopId: string, orderId: string, publishEvents: boolean): 
   try {
     response = await api({ url: `${BASE}/detach`, method: "post", data: { orderId, shopId, publishEvents } });
   } catch (err: any) {
-    throw new Error(getResponseErrorMessage(err, "The transfer could not be detached."), { cause: err });
+    throw new Error(getResponseErrorMessage(err, DETACH_FAILED), { cause: err });
   }
-  if(commonUtil.hasError(response)) {throw new Error(getResponseErrorMessage(response, "The transfer could not be detached."));}
+  if(commonUtil.hasError(response)) {throw new Error(getResponseErrorMessage(response, DETACH_FAILED));}
 
   const data = response?.data ?? response;
 

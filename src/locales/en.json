@@ -4368,6 +4368,7 @@
   "Optional. Sends this transfer's receipts and reservations to Shopify as inventory adjustments. Only use it if Shopify has not already counted these movements, or Shopify will double-count them until the next inventory reset.": "Optional. Sends this transfer's receipts and reservations to Shopify as inventory adjustments. Only use it if Shopify has not already counted these movements, or Shopify will double-count them until the next inventory reset.",
   "Detach": "Detach",
   "The transfer could not be detached.": "The transfer could not be detached.",
+  "The transfer could not be detached: {reason}": "The transfer could not be detached: {reason}",
   "Not synced as a Shopify transfer": "Not synced as a Shopify transfer",
   "This transfer has no native sync owner, so its inventory movements reach Shopify as inventory events.": "This transfer has no native sync owner, so its inventory movements reach Shopify as inventory events.",
   "Detached. {created} inventory events recorded, {existing} already recorded.": "Detached. {created} inventory events recorded, {existing} already recorded.",
