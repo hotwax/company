@@ -124,10 +124,12 @@
                   {{ domain.count }} {{ translate("records") }}
                   <template v-if="domain.syncedAt">, {{ translate("synced") }} {{ formatSyncTime(domain.syncedAt) }}</template>
                   <template v-else-if="domain.syncClass === 'A'">, {{ translate("live while in use") }}</template>
+                  <!-- Class C never runs a pass of its own: rows arrive when a screen asks for a record. -->
+                  <template v-else-if="domain.syncClass === 'C'">, {{ translate("fetched when opened") }}</template>
                   <template v-else>, {{ translate("not synced yet") }}</template>
                 </p>
               </ion-label>
-              <ion-button slot="end" fill="clear" :disabled="!!refreshing" @click="refreshDomain(domain.name)">
+              <ion-button v-if="domain.syncClass !== 'C'" slot="end" fill="clear" :disabled="!!refreshing" @click="refreshDomain(domain.name)">
                 <ion-spinner v-if="refreshing === domain.name" name="dots" />
                 <ion-icon v-else slot="icon-only" :icon="syncOutline" />
               </ion-button>
