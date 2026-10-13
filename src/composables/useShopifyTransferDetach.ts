@@ -1,4 +1,5 @@
 import { api, commonUtil } from "@common";
+import { getResponseErrorMessage } from "@/utils";
 
 const BASE = "sob/shopify/transferSync";
 const PAGE_SIZE = 100;
@@ -9,15 +10,11 @@ export interface TransferOwner {
   shopifyInventoryTransferId?: string;
 }
 
-/** One event source for the location inventory pipeline: a receipt or a transfer reservation detail. */
-export type TransferEventSelector = { receiptId: string } |
-  { reservationInventoryItemId: string; reservationInventoryItemDetailSeqId: string };
-
 export interface TransferDetachResult {
-  attempted: number;
+  deletedLineCount: number;
+  replayedEventCount: number;
   createdDetailCount: number;
   existingDetailCount: number;
-  failed: { selector: TransferEventSelector; message: string }[];
 }
 
 function readable(response: any, message: string): any {
@@ -43,68 +40,31 @@ async function fetchOwner(shopId: string, orderId: string): Promise<TransferOwne
   return rows.find(row => String(row.shopId) === shopId && String(row.orderId) === orderId);
 }
 
-const RESERVATION_REASONS = ["INV_RES_CREATE", "INV_RES_RELEASE"];
-
-function inventoryDetailUrl(productId: string, facilityId: string) {
-  return `oms/products/${encodeURIComponent(productId)}/facilities/${encodeURIComponent(facilityId)}/inventoryDetail`;
-}
-
 /**
- * Receipts (at the destination) and transfer reservations (at the origin) that the location pipeline
- * turns into events, read from the OMS inventory history one product and facility at a time.
- */
-async function fetchEventSelectors(orderId: string): Promise<TransferEventSelector[]> {
-  const order = readable(
-    await api({ url: `oms/transferOrders/${encodeURIComponent(orderId)}`, method: "GET" }),
-    "The transfer could not be loaded."
-  )?.order;
-  if(!order?.facilityId || !order?.orderFacilityId) {throw new Error("The transfer's facilities could not be resolved.");}
-
-  const productIds = [...new Set<string>((order.items || []).map((item: any) => String(item.productId || "")).filter(Boolean))];
-  const receiptIds = new Set<string>();
-  const reservations = new Map<string, TransferEventSelector>();
-  for(const productId of productIds) {
-    const [receiptRows, reservationRows] = await Promise.all([
-      listAll(inventoryDetailUrl(productId, order.orderFacilityId), { orderId }, "Transfer receipts could not be loaded."),
-      listAll(
-        inventoryDetailUrl(productId, order.facilityId), { orderId, reasonEnumId: RESERVATION_REASONS.join(","), reasonEnumId_op: "in" },
-        "Transfer reservations could not be loaded."
-      ),
-    ]);
-    receiptRows.filter(row => String(row.orderId) === orderId && row.receiptId).forEach(row => receiptIds.add(String(row.receiptId)));
-    reservationRows.filter(row => String(row.orderId) === orderId && RESERVATION_REASONS.includes(row.reasonEnumId) && row.inventoryItemId && row.inventoryItemDetailSeqId)
-      .forEach(row => reservations.set(
-        `${row.inventoryItemId}:${row.inventoryItemDetailSeqId}`,
-        { reservationInventoryItemId: String(row.inventoryItemId), reservationInventoryItemDetailSeqId: String(row.inventoryItemDetailSeqId) }
-      ));
-  }
-
-  return [...[...receiptIds].map(receiptId => ({ receiptId })), ...reservations.values()];
-}
-
-/**
- * Deletes the owner row, then optionally posts each event source so the movements the native sync
- * suppressed are recorded as location inventory events. Selectors are read before the delete.
+ * Detaches the order in one server call: the connector deletes its transfer lines and owner row and,
+ * with publishEvents, records the receipts and reservations native sync suppressed, all in one
+ * transaction. It refuses an order that already exists in Shopify, or one now owned by another shop.
  */
 async function detach(shopId: string, orderId: string, publishEvents: boolean): Promise<TransferDetachResult> {
-  const selectors = publishEvents ? await fetchEventSelectors(orderId) : [];
-  readable(await api({ url: `${BASE}/owners`, method: "delete", data: { shopId, orderId } }), "Native sync ownership could not be removed.");
-
-  const result: TransferDetachResult = { attempted: selectors.length, createdDetailCount: 0, existingDetailCount: 0, failed: [] };
-  for(const selector of selectors) {
-    try {
-      const posted = readable(await api({ url: `${BASE}/inventoryEvents`, method: "post", data: selector }), "The inventory event could not be recorded.");
-      result.createdDetailCount += Number(posted?.createdDetailCount ?? 0);
-      result.existingDetailCount += Number(posted?.existingDetailCount ?? 0);
-    } catch (err: any) {
-      result.failed.push({ selector, message: err?.message || String(err) });
-    }
+  let response: any;
+  try {
+    response = await api({ url: `${BASE}/detach`, method: "post", data: { orderId, shopId, publishEvents } });
+  } catch (err: any) {
+    throw new Error(getResponseErrorMessage(err, "The transfer could not be detached."), { cause: err });
   }
+  if(commonUtil.hasError(response)) {throw new Error(getResponseErrorMessage(response, "The transfer could not be detached."));}
 
-  return result;
+  const data = response?.data ?? response;
+
+  return {
+    deletedLineCount: Number(data?.deletedLineCount ?? 0),
+    replayedEventCount: Number(data?.replayedEventCount ?? 0),
+    createdDetailCount: Number(data?.createdDetailCount ?? 0),
+    existingDetailCount: Number(data?.existingDetailCount ?? 0),
+  };
 }
 
 /** Detaching a transfer order from native Shopify transfer sync. */
 export function useShopifyTransferDetach() {
-  return { fetchOwner, fetchEventSelectors, detach };
+  return { fetchOwner, detach };
 }

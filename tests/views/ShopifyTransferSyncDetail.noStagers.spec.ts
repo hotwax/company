@@ -69,7 +69,7 @@ vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
 }));
 
 vi.mock("@/composables/useShopifyTransferDetach", () => ({
-  useShopifyTransferDetach: () => ({ fetchOwner: () => ownerLookup.value(), fetchEventSelectors: vi.fn(), detach: vi.fn() }),
+  useShopifyTransferDetach: () => ({ fetchOwner: () => ownerLookup.value(), detach: vi.fn() }),
 }));
 
 vi.mock("@/composables/useShopifyTransferUpdateCheck", () => ({
