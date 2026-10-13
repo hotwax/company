@@ -81,32 +81,36 @@ the app database (IndexedDB, one per OMS instance); a single web worker is the o
 fetches synced domains.** Getting this wrong (adding an `onMounted` fetch, adding a Pinia store for
 server data) re-introduces exactly the load waterfalls this layer exists to remove.
 
-### 4.1 The rule — two patterns, nothing else
+### 4.1 The rule — two read patterns, one writer per table
 
 ```
                       main thread                              │        worker thread
  view ── useLiveEntity(companyDb.tables.x) ──▶ live query      │  sync domains (appSyncDomains)
    │                                              ▲            │        │  fetch via workerRemoteApi
-   │ mutation (composable)                        │ live emit  │        ▼
-   └── api() POST/PUT ──▶ refreshAfterMutation ───┼────────────┼──▶ companyDb.entity(...) writes
+   │ composable                                   │ live emit  │        ▼
+   ├── refreshRecord(domain, pk) ─────────────────┼────────────┼──▶ refetchOne ──▶ companyDb.entity(...) writes
+   └── api() POST/PUT ──▶ refreshAfterMutation ───┼────────────┼──▶ refetchOne / sync
                           / resyncDomain          │            │
 ```
 
 | You want… | Use | Where |
 | --- | --- | --- |
 | Rows that stay current **on screen** | `useLiveEntity<any>(companyDb.tables.x, options)` | components, views, composables — during `setup` |
-| An answer **now**, or a **write** | `companyDb.entity(companyDb.tables.x).get / query / all / upsertMany …` | anywhere: stores, services, utils, composables, workers |
+| An answer **now** | `companyDb.entity(companyDb.tables.x).get / query / all / first / count` | anywhere: stores, services, utils, composables, workers |
+| A record the db is **missing** | `refreshRecord(domain, pk)` from `@/services/appDbSync`, then read it back | composables, stores |
+| To **change** server data | `api()` then `refreshAfterMutation(domain, pk)` / `resyncDomain(domain)` | composables, stores |
 
-- **Reads on screen:** `useLiveEntity` returns `{ records, first, count, hydrated, error }` and
-  re-renders on every write to the table, including writes made in the worker thread.
-- **One-shot reads and writes:** `companyDb.entity(...)` — cache-first lookups, write-through after
-  a fetch, and every worker domain's writes.
-- **Table names** always come from `companyDb.tables` — never a string literal.
-- **Writes after a server mutation:** the owning composable calls `api()`, then
-  `refreshAfterMutation(domain, pk)` (re-reads that one record) or `resyncDomain(domain)`
-  (re-snapshots the domain). Never hand-patch rows. A failed post-write refetch rejects as
+- **Every table has one writer: its sync domain** (`src/workers/**`). App code never calls
+  `upsertMany` / `snapshotReplace` / `put` / `remove` on the app db; the build's lint rejects it. A
+  record fetched only on request gets a class C domain with a `refetchOne` (see
+  `systemMessageErrorDomain.ts`, `shopifyBulkOperationDomain.ts`).
+- **Writes after a server mutation:** never hand-patch rows. `refreshAfterMutation` re-reads that
+  record through the domain, `resyncDomain` re-snapshots it. A failed post-write refetch rejects as
   `CacheReconciliationError`: the server write is already committed, so presentation must warn and
   dismiss any retryable create/edit alert rather than misreporting a write failure or replaying it.
+  (`mutate` does the write and the reconcile in one call; Company's `appDbSync.ts` does not wire it
+  up yet. New write paths should add it there first; see the skill.)
+- **Table names** always come from `companyDb.tables` — never a string literal.
 - **Seed labels and joins:** `useSeedData()` / `seedData`, wrapped in `src/composables/useSeed.ts`.
 - **Never** import Dexie, `dbClient`, `baseDb` or the app-db registry, call `companyDb.raw()` /
   `.get()`, or `companyDb.client()` outside `src/workers/**` and the `useDbStatus` argument. The data-access rules
@@ -115,6 +119,8 @@ server data) re-introduces exactly the load waterfalls this layer exists to remo
 - **Cadence:** owned entirely by the worker. Nothing on the main thread polls.
 - The database is durable across reloads and **cleared on logout and on login** (`stopAppDbSync()`
   wipes every data table); it is *not* shared cross-tab or cross-session by design.
+- Adding a table or a domain: **load the `accxui-app-db-setup` skill**
+  ([`../../.agents/skills/accxui-app-db-setup/SKILL.md`](../../.agents/skills/accxui-app-db-setup/SKILL.md)).
 
 ### 4.2 Three sync classes
 
@@ -125,8 +131,8 @@ disagree, and the card lists Company's domains even when the worker is not up.
 | Class | Character | When it syncs | Examples |
 | --- | --- | --- | --- |
 | **B** | reference / config, whole-set | **once per login**, then only on mutation. Never on an interval, never per page load. | product stores and all-store shipping methods, carriers and their shipment methods/facilities, facilities, facility groups, service jobs, permissions, statuses, enums, all type tables, Shopify shops/locations/type mappings |
-| **A** | live, append-mostly | polled on a cadence *while a view that needs it is open* | `dataManagerLog`, `systemMessage`, both Shopify inventory ledgers |
-| **C** | on-demand, parent-scoped | fetched when a parent record asks for it | `shopifyBulkOperation`, `shopifyInventoryItems` (inventory event products, from Shopify) |
+| **A** | live, append-mostly | polled on a cadence *while a view that needs it is open* | `dataManagerLog`, `systemMessage`, both Shopify inventory ledgers, `shopifyInventoryItems` (inventory event products, from Shopify) |
+| **C** | on-demand, one record at a time | fetched when a screen asks (`refreshRecord`), never polled; Settings shows it as "fetched when opened" | `systemMessageError`, `shopifyBulkOperation` |
 
 One app-lifetime worker, started by `appDbSync`, runs every class. Class B seeds once per login;
 class A domains are polled only while a view has activated them through
