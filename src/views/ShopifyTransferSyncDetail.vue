@@ -233,7 +233,7 @@ const showDetach = ref(false);
 function onDetached(result: TransferDetachResult & { published: boolean }) {
   showDetach.value = false;
   commonUtil.showToast(result.published
-    ? translate("Detached. {created} inventory events recorded, {existing} already recorded, {failed} failed.", { created: result.createdDetailCount, existing: result.existingDetailCount, failed: result.failed.length })
+    ? translate("Detached. {created} inventory events recorded, {existing} already recorded.", { created: result.createdDetailCount, existing: result.existingDetailCount })
     : translate("Detached from native sync."));
   void loadOwner(); void refresh();
 }

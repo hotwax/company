@@ -4368,15 +4368,10 @@
   "Optional. Sends this transfer's receipts and reservations to Shopify as inventory adjustments. Only use it if Shopify has not already counted these movements, or Shopify will double-count them until the next inventory reset.": "Optional. Sends this transfer's receipts and reservations to Shopify as inventory adjustments. Only use it if Shopify has not already counted these movements, or Shopify will double-count them until the next inventory reset.",
   "Detach": "Detach",
   "The transfer could not be detached.": "The transfer could not be detached.",
+  "The transfer could not be detached: {reason}": "The transfer could not be detached: {reason}",
   "Not synced as a Shopify transfer": "Not synced as a Shopify transfer",
   "This transfer has no native sync owner, so its inventory movements reach Shopify as inventory events.": "This transfer has no native sync owner, so its inventory movements reach Shopify as inventory events.",
-  "Detached. {created} inventory events recorded, {existing} already recorded, {failed} failed.": "Detached. {created} inventory events recorded, {existing} already recorded, {failed} failed.",
+  "Detached. {created} inventory events recorded, {existing} already recorded.": "Detached. {created} inventory events recorded, {existing} already recorded.",
   "Detached from native sync.": "Detached from native sync.",
-  "Native sync ownership could not be loaded.": "Native sync ownership could not be loaded.",
-  "Transfer receipts could not be loaded.": "Transfer receipts could not be loaded.",
-  "Transfer reservations could not be loaded.": "Transfer reservations could not be loaded.",
-  "Native sync ownership could not be removed.": "Native sync ownership could not be removed.",
-  "The inventory event could not be recorded.": "The inventory event could not be recorded.",
-  "The transfer could not be loaded.": "The transfer could not be loaded.",
-  "The transfer's facilities could not be resolved.": "The transfer's facilities could not be resolved."
+  "Native sync ownership could not be loaded.": "Native sync ownership could not be loaded."
 }

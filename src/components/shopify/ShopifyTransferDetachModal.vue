@@ -75,7 +75,7 @@ import {
 } from "@ionic/vue";
 import { closeOutline, warningOutline } from "ionicons/icons";
 import { ref } from "vue";
-import { type TransferDetachResult, useShopifyTransferDetach } from "@/composables/useShopifyTransferDetach";
+import { DETACH_FAILED, type TransferDetachResult, useShopifyTransferDetach } from "@/composables/useShopifyTransferDetach";
 
 const props = defineProps<{ isOpen: boolean; shopId: string; orderId: string; orderName?: string }>();
 const emit = defineEmits<{
@@ -102,7 +102,11 @@ async function detach() {
     const result = await detachTransfer(props.shopId, props.orderId, publishEvents.value);
     emit("detached", { ...result, published: publishEvents.value });
   } catch (err: any) {
-    error.value = err?.message ? translate(err.message) : translate("The transfer could not be detached.");
+    // The connector's refusal is server text: an interpolation value, never a translation key.
+    const reason = err?.message;
+    error.value = reason && reason !== DETACH_FAILED
+      ? translate("The transfer could not be detached: {reason}", { reason })
+      : translate(DETACH_FAILED);
   } finally {
     saving.value = false;
   }
