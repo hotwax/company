@@ -1,7 +1,8 @@
-import accxuiConfig from "../../eslint.config.js"
+import { dbConfig } from "../../eslint.config.js"
 
+// The local-database rules (`dbConfig` in the root eslint.config.js). The build runs this lint first.
 export default [
-  ...accxuiConfig,
+  ...dbConfig,
   {
     // An app-local Dexie store outside the app database, so the data-access rules do not apply.
     files: ["src/utils/storage.ts"],
