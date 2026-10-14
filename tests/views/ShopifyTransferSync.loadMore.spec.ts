@@ -30,7 +30,7 @@ vi.mock("@common", () => ({
   translate: (k: string, v: Record<string, any> = {}) =>
     Object.entries(v).reduce((m, [key, val]) => m.replace(`{${key}}`, String(val)), k),
   buildAppUrl: () => null,
-  useDb: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
+  useLiveEntity: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
 }));
 
 const activateSyncDomains = vi.hoisted(() => vi.fn());
