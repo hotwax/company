@@ -695,8 +695,10 @@ import {
   useShopifyShop,
   useShopifyShopMutations,
   useShopifyShops,
+  shopifyAccessStateFor,
   type ShopifyProductSyncProductSearchResult,
 } from "@/composables/useShopify";
+import { useSystemMessageRemotes } from "@/composables/useSystemMessage";
 import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 import { getProductSyncFsmState, type ProductSyncFsmActionId } from "@/utils/shopifyProductSyncFsm";
 import { useStatuses } from "@/composables/useSeed";
@@ -778,7 +780,24 @@ const BULK_OPERATION_POLL_JOB_NAME = "poll_ShopifyBulkOperationResult";
 const {
   runState: spineRunState,
   pendingRequests: spinePendingRequests,
+  hydrated: spineHydrated,
 } = useShopifyProductSyncRunState(() => props.id);
+
+/**
+ * Resolves once the run state and the shop's remotes have loaded. Decisions made before that read
+ * every row as missing: no runs means the wizard, no last-sync date means counting every product.
+ */
+function whenSpineLoaded(): Promise<void> {
+  if(spineHydrated.value) {return Promise.resolve();}
+
+  return new Promise((resolve) => {
+    const stop = watch(spineHydrated, (ready) => {
+      if(!ready) {return;}
+      stop();
+      resolve();
+    });
+  });
+}
 const { logs: recentMdmLogs } = useRecentDataManagerLogs(
   PRODUCT_SYNC_MDM_CONFIG_ID,
   PRODUCT_SYNC_ERROR_LOG_LIMIT,
@@ -991,15 +1010,9 @@ const selectedIdentifierLabel = computed(() => {
 const productStoreHasLinkedProducts = computed(() => {
   return relatedShops.value.some((relatedShop: any) => relatedShop.shopId !== props.id);
 });
-const shopifyAccessState = computed(() => {
-  return setupState.value.shopifyAccessState || {
-    systemMessageRemoteId: "",
-    accessScopeEnumId: "",
-    hasWriteAccess: false,
-    status: "unavailable",
-    label: "Unavailable"
-  };
-});
+// Live from the shop's remotes, so a changed access scope shows without reloading the wizard.
+const { remotes: systemMessageRemotes } = useSystemMessageRemotes();
+const shopifyAccessState = computed(() => shopifyAccessStateFor(systemMessageRemotes.value, { shopId: props.id, shop: shop.value }));
 const hasShopifyWriteAccess = computed(() => {
   return !!shopifyAccessState.value.hasWriteAccess;
 });
@@ -1686,7 +1699,7 @@ async function loadWizard() {
   loadErrorMessage.value = "";
   try {
     assertShopifyShopsLoaded();
-
+    await whenSpineLoaded();
 
     // No product-store fetch: `selectedProductStore` is a cached read, and the one field the wizard
     // needed from the detail route (`productIdentifierEnumId`) is now projected onto the cached row.
@@ -1698,7 +1711,9 @@ async function loadWizard() {
     setupState.value = await fetchSetupState({
       shopId: props.id,
       shop: shop.value,
-      productStore: selectedProductStore.value
+      productStore: selectedProductStore.value,
+      syncRunState: spineRunState.value,
+      shopifyAccessState: shopifyAccessState.value
     });
     assertBackendDataAvailable(setupState.value, translate("Product sync setup is unavailable."));
 
@@ -1859,6 +1874,7 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
  * `allSettled`, not `all`: one Shopify hiccup must not blank the other two numbers.
  */
 async function loadLiveDashboardCounts() {
+  await whenSpineLoaded();
   const payload = {
     shopId: props.id,
     systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
@@ -1885,7 +1901,8 @@ async function loadBulkOperationMonitoringJobs() {
 async function loadSelectedShopSystemMessageRemoteId() {
   selectedShopSystemMessageRemoteId.value = await fetchShopSystemMessageRemoteId({
     shopId: props.id,
-    shop: shop.value
+    shop: shop.value,
+    remotes: systemMessageRemotes.value
   });
 }
 

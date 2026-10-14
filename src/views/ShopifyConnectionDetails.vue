@@ -579,12 +579,13 @@ import {
   useShopifyShopMutations,
   useShopifyShopQueries,
   useShopifyShops,
-  fetchShopifyAccessState,
+  shopifyAccessStateFor,
   updateShopifyRemote,
   useShopifyAccessScopes,
 } from "@/composables/useShopify";
 import { refreshAfterMutation } from "@/services/appDbSync";
 import { useProductStores } from "@/composables/useProductStores";
+import { useSystemMessageRemotes } from "@/composables/useSystemMessage";
 import { useTypedEnums } from "@/composables/useSeed";
 
 /** Enum type behind SystemMessageRemote.accessScopeEnumId: SHOP_NO / SHOP_READ / SHOP_RW access. */
@@ -637,13 +638,6 @@ const productSyncMigrationEligibility = ref({
   minimumComponentRelease: "",
   isEligible: false
 });
-const shopifyAccessState = ref({
-  systemMessageRemoteId: "",
-  accessScopeEnumId: "",
-  hasWriteAccess: false,
-  status: "unavailable",
-  label: "Unavailable"
-});
 const legacyProductSyncState = ref({
   legacySystemMessageTypes: [] as any[],
   legacyServiceJobs: [] as any[],
@@ -653,6 +647,9 @@ const legacyProductSyncState = ref({
 const { shops: cachedShops } = useShopifyShops();
 const { record: shopRecord } = useShopifyShop(props.id);
 const shop = computed<any>(() => shopRecord.value ?? {});
+// Live from the shop's remotes, so a changed access scope shows without reopening the page.
+const { remotes: systemMessageRemotes } = useSystemMessageRemotes();
+const shopifyAccessState = computed(() => shopifyAccessStateFor(systemMessageRemotes.value, { shopId: props.id, shop: shop.value }));
 const selectedShopId = computed(() => String(shop.value.shopId || "").trim());
 /**
  * Order sync state, LIVE from the cache — the same shape the deleted `shopifyOrderSync` store fed
@@ -1030,13 +1027,6 @@ async function loadProductsInventorySummary() {
     minimumComponentRelease: "",
     isEligible: false
   };
-  shopifyAccessState.value = {
-    systemMessageRemoteId: "",
-    accessScopeEnumId: "",
-    hasWriteAccess: false,
-    status: "unavailable",
-    label: "Unavailable"
-  };
   legacyProductSyncState.value = {
     legacySystemMessageTypes: [],
     legacyServiceJobs: [],
@@ -1051,9 +1041,8 @@ async function loadProductsInventorySummary() {
     return;
   }
 
-  const [eligibilityResult, accessStateResult, legacyTeardownStateResult] = await Promise.allSettled([
+  const [eligibilityResult, legacyTeardownStateResult] = await Promise.allSettled([
     fetchEligibility(),
-    fetchShopifyAccessState({ shopId: props.id, shop: shop.value }),
     fetchLegacyTeardownState({ shopId: props.id, shop: shop.value })
   ]);
 
@@ -1061,12 +1050,6 @@ async function loadProductsInventorySummary() {
     productSyncMigrationEligibility.value = eligibilityResult.value;
   } else {
     logger.warn("Failed to load product sync migration eligibility", eligibilityResult.reason);
-  }
-
-  if (accessStateResult.status === "fulfilled") {
-    shopifyAccessState.value = accessStateResult.value;
-  } else {
-    logger.warn("Failed to resolve Shopify access scope", accessStateResult.reason);
   }
 
   if (legacyTeardownStateResult.status === "fulfilled") {

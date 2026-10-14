@@ -2693,8 +2693,7 @@ const escapeShopifyQueryValue = (value: string) => String(value).replace(/(["\\]
  *
  * The ONE part of the old product-sync dashboard that is genuinely a request: only Shopify knows what
  * changed on its side. `lastSyncedAt` comes from the cached run state, so the caller supplies it
- * rather than this re-deriving it with another round trip (the store version fell back to a whole
- * `fetchProductUpdateSyncRunState` when the date was missing).
+ * rather than this re-deriving it with another round trip.
  *
  * Returns 0 rather than throwing when there is no remote or no prior sync — a count is a display
  * value and a failure to obtain it must not take a page down.
@@ -5873,15 +5872,6 @@ export interface ShopifyShopProductCount {
   lastSyncedAt?: string;
 }
 
-export interface ShopifyProductUpdateSyncRunState {
-  latestSystemMessage?: any;
-  latestConfirmedSystemMessage?: any;
-  latestConsumedSystemMessage?: any;
-  lastSyncedAt?: string;
-  systemMessageRemoteId: string;
-  systemMessages?: any[];
-}
-
 export interface ShopifyRunningBulkOperation {
   id: string;
   status: string;
@@ -6358,13 +6348,40 @@ async function fetchShopRemoteCandidates(payload: any) {
   return sortShopRemoteCandidates(getShopRemoteCandidates(response?.systemMessageRemoteList || [], payload));
 }
 
+/** A shop's remotes out of a remote list, best access first. Screens pass their live remote rows. */
+export function shopRemoteCandidatesFor(remotes: any[], payload: any) {
+  return sortShopRemoteCandidates(getShopRemoteCandidates(remotes, payload));
+}
+
+/** The Shopify access a shop has, from its best remote — "unavailable" while it has none. */
+export function shopifyAccessStateFor(remotes: any[], payload: any): ShopifyProductSyncAccessState {
+  const [candidate] = shopRemoteCandidatesFor(remotes, payload);
+  if(!candidate) {
+    return {
+      systemMessageRemoteId: "",
+      accessScopeEnumId: "",
+      hasWriteAccess: false,
+      status: "unavailable",
+      label: "Unavailable"
+    };
+  }
+
+  return getShopifyAccessStateFromCandidate(candidate);
+}
+
+/**
+ * The remote a shop's product sync runs on: the first candidate with product-sync history on the
+ * server. A screen passes its live remote rows as `remotes`; without them the stored list is read.
+ */
 export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any> => {
   const shopifyShopId = payload.shopifyShopId || payload.shop?.shopifyShopId;
   if(!shopifyShopId) {
     throw new Error("Shopify shop id is required to resolve SystemMessageRemote.remoteId.");
   }
 
-  const candidates = await fetchShopRemoteCandidates(payload);
+  const candidates = Array.isArray(payload.remotes)
+    ? shopRemoteCandidatesFor(payload.remotes, payload)
+    : await fetchShopRemoteCandidates(payload);
   if(!candidates.length) {
     throw new Error(`No SystemMessageRemote found with remoteId ${shopifyShopId}.`);
   }
@@ -6412,26 +6429,6 @@ export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any>
   if(firstValid) {return firstValid;}
 
   return candidates[0].systemMessageRemoteId;
-};
-
-export const fetchShopifyAccessState = async (payload: any): Promise<ShopifyProductSyncAccessState> => {
-  const shopifyShopId = payload.shopifyShopId || payload.shop?.shopifyShopId;
-  if(!shopifyShopId) {
-    throw new Error("Shopify shop id is required to resolve Shopify access scope.");
-  }
-
-  const candidates = await fetchShopRemoteCandidates(payload);
-  if(!candidates.length) {
-    return {
-      systemMessageRemoteId: "",
-      accessScopeEnumId: "",
-      hasWriteAccess: false,
-      status: "unavailable",
-      label: "Unavailable"
-    };
-  }
-
-  return getShopifyAccessStateFromCandidate(candidates[0]);
 };
 
 
@@ -6493,34 +6490,27 @@ function getLatestSystemMessage(systemMessages: any[]) {
   }, undefined);
 }
 
-export const fetchProductUpdateSyncRunState = async (payload: any): Promise<ShopifyProductUpdateSyncRunState> => {
-  const systemMessageRemoteId = typeof payload === "string" ? payload : resolveSystemMessageRemoteId(payload);
-  const shopId = payload.shopId || payload.shop?.shopId;
+/**
+ * This shop's product-sync messages as the server's history document joins them, newest first.
+ *
+ * Only for what the live spine cannot answer yet: its rows land per shop, so mid-hydration a table
+ * holding OTHER shops' runs is "loaded" while this shop's are not. Observed live on a cold profile —
+ * a shop with months of sync history read as never synced and dropped into the first-time wizard.
+ * So an empty spine is confirmed here, which costs a request only for shops that truly have no runs.
+ */
+async function fetchServerProductSyncMessages(shopId: string, pageSize: number): Promise<any[]> {
   if(!shopId) {
     throw new Error("Shop ID is required to find product update sync system messages.");
   }
 
-  const systemMessageId = payload.systemMessageId;
-  const pageSize = systemMessageId ? 1 : 100;
-
-  // CACHE-FIRST — see `cachedSyncMessageHistory`; the DataDocument is only asked when the cache
-  // cannot answer.
-  const cachedHistory = await cachedSyncMessageHistory({
-    shopId,
-    systemMessageId,
-    systemMessageTypeId: "BulkQueryShopifyProductUpdates",
-    pageSize,
-  });
-
-  const systemMessages = cachedHistory ?? getEntityValueList(
+  return getEntityValueList(
     await requestBackend<any>({
       url: "oms/dataDocumentView",
       method: "post",
       data: {
         dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
         customParametersMap: {
-          systemMessageId,
-          systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+          systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
           remoteInternalId: shopId,
           remoteInternalIdType: "HOTWAX_SHOP_ID",
           orderByField: "-lastUpdatedStamp"
@@ -6531,116 +6521,23 @@ export const fetchProductUpdateSyncRunState = async (payload: any): Promise<Shop
     }),
     "Product sync system message history",
   );
-
-  const confirmedMessages = systemMessages.filter((systemMessage: any) => systemMessage.statusId === "SmsgConfirmed" || systemMessage.statusId === "SmsgConsumed");
-  const consumedMessages = systemMessages.filter((systemMessage: any) => {
-    const statusId = String(systemMessage.statusId || "").toLowerCase();
-    const isConsumed = statusId === "smsgconsumed" || statusId === "consumed" || statusId === "smsgconfirmed" || statusId === "confirmed";
-
-    return isConsumed && systemMessage.logId;
-  });
-  const latestConfirmedSystemMessage = getLatestSystemMessage(confirmedMessages);
-  const latestConsumedSystemMessage = getLatestSystemMessage(consumedMessages);
-  const latestSystemMessage = getLatestSystemMessage(systemMessages);
-
-
-  return {
-    latestSystemMessage,
-    latestConfirmedSystemMessage,
-    latestConsumedSystemMessage,
-    lastSyncedAt: getTimestampDate(latestConsumedSystemMessage?.initDate),
-    systemMessageRemoteId,
-    systemMessages
-  };
-};
+}
 
 /**
- * Local reproduction of `dataDocumentId: SYSTEM_MESSAGE_DATA_MANAGER_LOG`.
+ * When this shop last synced products: the caller's live date, else the server's.
  *
- * That DataDocument is a server-side join of SystemMessage ⋈ DataManagerLog, scoped by message type
- * and by the REMOTE's internal id (the shop id, `remoteInternalIdType: HOTWAX_SHOP_ID`). Every input
- * is already cached: messages and logs are class-A domains, and the shop→remote link lives on the
- * cached remote as `internalId`. So the document is DERIVED here rather than requested — it was the
- * largest cluster of calls on the product-sync page.
- *
- * Returns `null` when the cache cannot answer (no remote resolved, or nothing cached yet), which
- * callers treat as "fall back to the server" rather than "no results" — the distinction matters,
- * because an empty array is a legitimate answer.
+ * Counting with no date counts every product in the shop, so an empty live date — the last import
+ * outside the stored window, or not stored yet — is confirmed with the server first.
  */
-async function cachedSyncMessageHistory(query: {
-  shopId: string;
-  systemMessageTypeId: string;
-  systemMessageId?: string;
-  statusId?: string;
-  pageSize?: number;
-}): Promise<any[] | null> {
-  try {
-    const remotes = await companyDb.entity(companyDb.tables.systemMessageRemotes).all();
-    const remoteIds = new Set(remotes
-      .filter((remote: any) => String(remote?.internalId ?? "") === String(query.shopId))
-      .map((remote: any) => String(remote.systemMessageRemoteId)),);
-    if(!remoteIds.size) {return null;}
+async function resolveLastSyncedAt(payload: any) {
+  const live = payload.lastSyncedAt || payload.syncRunState?.lastSyncedAt;
+  if(live) {return live;}
 
-    const messages = await companyDb.entity(companyDb.tables.systemMessages).all();
-    if(!messages.length) {return null;}
+  const messages = await fetchServerProductSyncMessages(String(payload.shopId || payload.shop?.shopId || ""), 100);
+  const consumed = messages.filter((systemMessage: any) =>
+    CONSUMED_STATUSES.has(String(systemMessage.statusId || "").toLowerCase()) && systemMessage.logId);
 
-    const logs = await companyDb.entity(companyDb.tables.dataManagerLogs).all();
-    const logByMessageId = new Map<string, any>();
-    for(const log of logs) {
-      const key = String(log?.systemMessageId ?? "");
-      if(key && !logByMessageId.has(key)) {logByMessageId.set(key, log);}
-    }
-
-    let rows = messages.filter((message: any) =>
-      remoteIds.has(String(message?.systemMessageRemoteId)) &&
-      String(message?.systemMessageTypeId) === query.systemMessageTypeId);
-
-    /**
-     * ⚠️ An EMPTY scoped result is "cannot answer", not "no runs".
-     *
-     * The message table hydrates per (remote, type), so mid-hydration it can hold SOME shops' rows
-     * while this shop's have not landed yet. Observed live on a cold profile: the first-ever visit to
-     * the product sync page read the cache after another remote's tick had committed, got zero rows
-     * for THIS shop, concluded `hasLinkedOmsProducts: false`, and dropped a shop with months of sync
-     * history into the first-time wizard — a reload "fixed" it, which is the signature of a
-     * hydration race. Deferring to the server document costs one request only for shops that
-     * genuinely have no runs (the real wizard case), and is correct for everyone else.
-     */
-    if(!rows.length) {return null;}
-
-    if(query.systemMessageId) {
-      rows = rows.filter((message: any) => String(message.systemMessageId) === String(query.systemMessageId));
-    }
-    if(query.statusId) {
-      rows = rows.filter((message: any) => String(message.statusId) === query.statusId);
-    }
-
-    // The document orders by `-lastUpdatedStamp`; messages carry none (verified live), so
-    // `processedDate` then `initDate` is the equivalent recency signal.
-    rows.sort((a: any, b: any) =>
-      Number(b.processedDate ?? b.initDate ?? 0) - Number(a.processedDate ?? a.initDate ?? 0));
-
-    // `logId` is the field callers test to decide whether a message actually imported anything.
-    const joined = rows.map((message: any) => {
-      const log = logByMessageId.get(String(message.systemMessageId));
-      if(!log) {return { ...message };}
-
-      return {
-        ...message,
-        logId: log.logId,
-        totalRecordCount: log.totalRecordCount,
-        failedRecordCount: log.failedRecordCount,
-        successRecordCount: log.successRecordCount,
-        finishDateTime: log.finishDateTime,
-      };
-    });
-
-    return query.pageSize ? joined.slice(0, query.pageSize) : joined;
-  } catch (error) {
-    logger.warn("Cached sync message history unavailable; falling back to the server", error);
-
-    return null;
-  }
+  return getTimestampDate(getLatestSystemMessage(consumed)?.initDate);
 }
 
 export const fetchLiveCatalogCounts = async (payload: any): Promise<ShopifyProductSyncReviewStats> => {
@@ -6703,19 +6600,21 @@ export const fetchRunningBulkOperation = async (payload: any): Promise<ShopifyRu
   }
 }
 
+/**
+ * The wizard's starting point. `syncRunState` and `shopifyAccessState` are the page's live reads,
+ * taken once its tables have loaded; a shop with no stored runs is confirmed with the server before
+ * it is treated as never synced.
+ */
 export const fetchSetupState = async (payload: any): Promise<ShopifyProductSyncSetupState> => {
-  const [syncRunState, shopifyAccessState] = await Promise.all([
-    fetchProductUpdateSyncRunState(payload),
-    fetchShopifyAccessState(payload).catch(() => ({
-      systemMessageRemoteId: "",
-      accessScopeEnumId: "",
-      hasWriteAccess: false,
-      status: "unavailable",
-      label: "Unavailable"
-    } as ShopifyProductSyncAccessState))
-  ]);
-
-  const hasLinkedOmsProducts = !!syncRunState.latestSystemMessage;
+  const shopifyAccessState: ShopifyProductSyncAccessState = payload.shopifyAccessState ?? {
+    systemMessageRemoteId: "",
+    accessScopeEnumId: "",
+    hasWriteAccess: false,
+    status: "unavailable",
+    label: "Unavailable"
+  };
+  const hasLinkedOmsProducts = !!payload.syncRunState?.latestSystemMessage ||
+    (await fetchServerProductSyncMessages(String(payload.shopId || payload.shop?.shopId || ""), 1)).length > 0;
 
   return validateSetupState({
     hasLinkedOmsProducts,
@@ -6733,8 +6632,7 @@ export const fetchShopifyShopProductCount = async (payload: any): Promise<Shopif
     throw new Error("Shopify systemMessageRemoteId is required to fetch unsynced product update counts.");
   }
 
-  const lastSyncedAt = payload.lastSyncedAt || payload.syncRunState?.lastSyncedAt ||
-    (await fetchProductUpdateSyncRunState(payload)).lastSyncedAt;
+  const lastSyncedAt = await resolveLastSyncedAt(payload);
   const response = await requestBackend<ShopifyGraphqlResponse>({
     url: "shopify/graphql",
     method: "post",
@@ -6761,8 +6659,7 @@ export const fetchUnsyncedProductUpdates = async (payload: any): Promise<Shopify
     throw new Error("Shopify systemMessageRemoteId is required to fetch unsynced product updates.");
   }
 
-  const lastSyncedAt = payload.lastSyncedAt || payload.syncRunState?.lastSyncedAt ||
-    (await fetchProductUpdateSyncRunState(payload)).lastSyncedAt;
+  const lastSyncedAt = await resolveLastSyncedAt(payload);
   const response = await requestBackend<ShopifyGraphqlResponse>({
     url: "shopify/graphql",
     method: "post",
