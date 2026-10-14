@@ -49,21 +49,6 @@ export function getReferencedBulkOperationSystemMessageIds(systemMessage: any) {
     });
 }
 
-export function getSystemMessageCandidateIds(systemMessage: any, relatedSystemMessages: any[] = []) {
-  const candidateIds = [
-    systemMessage?.systemMessageId,
-    ...getReferencedBulkOperationSystemMessageIds(systemMessage),
-    ...relatedSystemMessages.flatMap((relatedSystemMessage) => [
-      relatedSystemMessage?.systemMessageId,
-      ...getReferencedBulkOperationSystemMessageIds(relatedSystemMessage)
-    ])
-  ];
-
-  return candidateIds
-    .map((candidate) => String(candidate || "").trim())
-    .filter((candidate, index, list) => candidate && list.indexOf(candidate) === index);
-}
-
 /** The states a Shopify bulk operation moves through, mapped to our progress vocabulary. */
 export type BulkOperationState = "pending" | "active" | "completed" | "failed";
 

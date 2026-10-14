@@ -2,11 +2,7 @@ import { computed, reactive, toRefs, type Ref } from 'vue';
 import { api, commonUtil, logger, useLiveEntity } from '@common'
 import { companyDb } from '@/db/companyDb';
 import { refreshRecord } from "@/services/appDbSync";
-import {
-  getReferencedBulkOperationSystemMessageIds,
-  getSystemMessageBulkOperationId,
-  getSystemMessageCandidateIds
-} from "@/utils/shopifyBulkOperation";
+import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 import { onSessionCleared } from "./sessionScope";
 
 /**
@@ -46,64 +42,10 @@ export function systemMessageMayHaveErrors(systemMessage: any): boolean {
 export const isTerminalBulkOperation = (status: string | undefined) =>
   ["COMPLETED", "FAILED", "CANCELED", "EXPIRED"].includes(String(status || "").toUpperCase());
 
-/**
- * A Shopify bulk operation, as this app reads it.
- *
- * Fields mirror `shopifyBulkOperations` entity schema; every one is optional because
- * the value legitimately starts as `{}` before a run has one, and `isStatusUnavailable` is the
- * synthetic marker set when Shopify cannot be reached (rendered as "status unavailable", not as a
- * failure).
- */
-export interface ShopifyBulkOperationLike {
-  id?: string;
-  status?: string;
-  errorCode?: string;
-  systemMessageRemoteId?: string;
-  objectCount?: number | string;
-  rootObjectCount?: number | string;
-  fileSize?: number | string;
-  url?: string;
-  query?: string;
-  createdAt?: string | number;
-  completedAt?: string | number;
-  /** Set when the operation exists but Shopify could not be asked for its current state. */
-  isStatusUnavailable?: boolean;
-  [key: string]: unknown;
-}
-
 export function useSystemMessage() {
   const state = reactive({
-    currentSystemMessage: {} as Record<string, any>,
-    currentShopifyBulkOperation: {} as Record<string, any>,
     loading: false
   });
-
-  const fetchSystemMessageById = async (systemMessageId: string) => {
-    state.loading = true;
-    state.currentSystemMessage = {};
-    try {
-      const response = await api({
-        url: "admin/systemMessages",
-        method: "GET",
-        params: {
-          systemMessageId: encodeURIComponent(systemMessageId),
-          pageSize: 1
-        }
-      }) as any;
-
-      if (response?.data?.systemMessages?.length) {
-        const systemMessage = response.data.systemMessages[0];
-        state.currentSystemMessage = systemMessage;
-        return systemMessage;
-      }
-    } catch (err) {
-      logger.error(`Failed to fetch system message ${systemMessageId}`, err);
-      throw err;
-    } finally {
-      state.loading = false;
-    }
-    return null;
-  };
 
   /**
    * Ask the systemMessageError domain (class C: on demand, never polled) for one message's errors.
@@ -242,130 +184,6 @@ export function useSystemMessage() {
     }
   };
 
-  const getBulkOperationSource = async (systemMessage: any, visitedSystemMessageIds = new Set<string>()): Promise<{
-    bulkOperationId: string;
-    systemMessage: any;
-    relatedSystemMessages: any[];
-    relatedSystemMessageIds: string[];
-  }> => {
-    const systemMessageId = String(systemMessage?.systemMessageId || "");
-    if (systemMessageId) visitedSystemMessageIds.add(systemMessageId);
-
-    const bulkOperationId = getSystemMessageBulkOperationId(systemMessage);
-    if (bulkOperationId) {
-      return {
-        bulkOperationId,
-        systemMessage,
-        relatedSystemMessages: [],
-        relatedSystemMessageIds: getSystemMessageCandidateIds(systemMessage)
-      };
-    }
-
-    const referencedSystemMessageIds = getReferencedBulkOperationSystemMessageIds(systemMessage)
-      .filter((referencedSystemMessageId) => !visitedSystemMessageIds.has(referencedSystemMessageId));
-    if (!referencedSystemMessageIds.length) {
-      return {
-        bulkOperationId: "",
-        systemMessage,
-        relatedSystemMessages: [],
-        relatedSystemMessageIds: getSystemMessageCandidateIds(systemMessage)
-      };
-    }
-
-    for (const referencedSystemMessageId of referencedSystemMessageIds) {
-      const referencedSystemMessage = await fetchSystemMessageById(referencedSystemMessageId);
-      if (!referencedSystemMessage) continue;
-
-      const referencedSource = await getBulkOperationSource(referencedSystemMessage, visitedSystemMessageIds);
-      if (referencedSource.bulkOperationId) {
-        const relatedSystemMessages = [referencedSystemMessage, ...referencedSource.relatedSystemMessages];
-        return {
-          ...referencedSource,
-          relatedSystemMessages,
-          relatedSystemMessageIds: getSystemMessageCandidateIds(systemMessage, relatedSystemMessages)
-        };
-      }
-    }
-
-    return {
-      bulkOperationId: "",
-      systemMessage,
-      relatedSystemMessages: [],
-      relatedSystemMessageIds: getSystemMessageCandidateIds(systemMessage)
-    };
-  };
-
-  /**
-   * The two reads below answer `fetchShopifyBulkOperationBySystemMessageId` with values, because its
-   * one caller (the product sync history page) still copies them into its rows. They go when that
-   * page reads the tables live.
-   */
-  const readSystemMessageErrors = async (systemMessageId: string) => {
-    const errors = companyDb.entity(companyDb.tables.systemMessageErrors);
-    const query = { equals: { systemMessageId }, dateField: "errorDate" };
-    const stored = await errors.query(query).catch(() => []);
-    if (stored.length) return stored;
-    try {
-      await requestSystemMessageErrors(systemMessageId);
-    } catch {
-      // A failed request is not proof that the message has no errors; a later read asks again.
-      return [];
-    }
-    return errors.query(query);
-  };
-
-  const readShopifyBulkOperation = async (bulkOperationId: string, systemMessageRemoteId: string) => {
-    const operations = companyDb.entity(companyDb.tables.shopifyBulkOperations);
-    const stored = await operations.get(bulkOperationId).catch(() => undefined);
-    if (stored && isTerminalBulkOperation(stored.status as string)) return stored;
-    await requestShopifyBulkOperation(bulkOperationId, systemMessageRemoteId);
-    return (await operations.get(bulkOperationId)) ?? null;
-  };
-
-  /**
-   * A Shopify bulk operation as this app handles it.
-   *
-   * Mirrors `shopifyBulkOperations` entity schema, plus `isStatusUnavailable` — the
-   * synthetic marker set when Shopify cannot be reached for a run, which callers render as "status
-   * unavailable" rather than as a failure.
-   *
-   * Typed rather than left as the inferred `{}`: every consumer reads `.status`/`.objectCount` off
-   * this, and `{}` made all eleven of those reads type errors in `ShopifyProductSyncHistory.vue`
-   * while still compiling everywhere the value was passed through untyped.
-   */
-  const fetchShopifyBulkOperationBySystemMessageId = async (systemMessageId: string, systemMessageData?: any) => {
-    const systemMessage = systemMessageData || await fetchSystemMessageById(systemMessageId);
-    // Cache-first, and skipped entirely for a message whose status rules errors out — see
-    // `systemMessageMayHaveErrors`. This was an unconditional request per row.
-    const systemMessageErrors = systemMessageMayHaveErrors(systemMessage)
-      ? await readSystemMessageErrors(systemMessageId)
-      : [];
-    
-    if (systemMessageData) state.currentSystemMessage = systemMessageData;
-
-    let shopifyBulkOperation: ShopifyBulkOperationLike = {};
-    const bulkOperationSource = await getBulkOperationSource(systemMessage);
-    const systemMessageRemoteId = bulkOperationSource.systemMessage?.systemMessageRemoteId || systemMessage?.systemMessageRemoteId;
-    if (systemMessage && bulkOperationSource.bulkOperationId && systemMessageRemoteId) {
-      try {
-        const result = await readShopifyBulkOperation(bulkOperationSource.bulkOperationId, systemMessageRemoteId);
-        shopifyBulkOperation = result || { isStatusUnavailable: true };
-      } catch (err) {
-        shopifyBulkOperation = { isStatusUnavailable: true };
-      }
-    } else {
-      state.currentShopifyBulkOperation = {};
-    }
-    
-    return {
-      systemMessage: systemMessage || state.currentSystemMessage,
-      systemMessageErrors,
-      shopifyBulkOperation: shopifyBulkOperation || state.currentShopifyBulkOperation,
-      bulkOperationId: bulkOperationSource.bulkOperationId,
-      relatedSystemMessageIds: bulkOperationSource.relatedSystemMessageIds
-    };
-  };
-
   /**
    * Re-attempt delivery of a message that has already been produced.
    *
@@ -434,7 +252,6 @@ export function useSystemMessage() {
 
   return {
     ...toRefs(state),
-    fetchSystemMessageById,
     requestSystemMessage,
     refreshSystemMessageErrors,
     requestSystemMessageErrors,
@@ -442,7 +259,6 @@ export function useSystemMessage() {
     resetSystemMessageError,
     forceSystemMessageStatus,
     requestShopifyBulkOperation,
-    fetchShopifyBulkOperationBySystemMessageId,
     fetchSystemMessageLogDetailsPage,
     fetchSystemMessages,
     fetchSystemMessagesPage

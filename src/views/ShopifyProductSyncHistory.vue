@@ -77,7 +77,7 @@
 
       <shopify-product-sync-history-view
         v-else
-        :runs="historyRuns"
+        :runs="displayedRuns"
         @download-raw-file="downloadRawShopifyFile"
         @download-failed-records-file="downloadFailedRecordsFile"
       />
@@ -121,10 +121,11 @@ import {
   IonTitle,
   IonToolbar
 } from "@ionic/vue";
-import { commonUtil, logger, translate } from '@common'
+import { commonUtil, logger, translate, useLiveEntity } from '@common'
 import { computed, defineProps, reactive, ref, watch } from "vue";
 import ShopifyProductSyncHistoryView from "@/components/shopify-product-sync/ShopifyProductSyncHistoryView.vue";
-import { useSystemMessage } from "@/composables/useSystemMessage";
+import { companyDb } from "@/db/companyDb";
+import { isTerminalBulkOperation, systemMessageMayHaveErrors, useSystemMessage } from "@/composables/useSystemMessage";
 import { useShopifySyncContext, useShopifyShop } from "@/composables/useShopify";
 import { useStatuses } from "@/composables/useSeed";
 import { useDataManager } from "@/composables/useDataManager";
@@ -139,11 +140,14 @@ import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 
 import { getRawShopifyFileName } from "@/utils/shopifyProductSyncWizard";
 const props = defineProps(["id"]);
-const { fetchShopifyBulkOperationBySystemMessageId, fetchSystemMessageLogDetailsPage } = useSystemMessage();
+const { fetchSystemMessageLogDetailsPage, requestShopifyBulkOperation, requestSystemMessageErrors } = useSystemMessage();
 const { downloadDataManagerFile, fetchLogDetails } = useDataManager();
 
 const PAGE_SIZE = 25;
 const PRODUCT_SYNC_MDM_CONFIG_ID = "SYNC_SHOPIFY_PRODUCT";
+const PRODUCT_SYNC_MESSAGE_TYPE_ID = "BulkQueryShopifyProductUpdates";
+/** Runs whose missing detail is requested at once, as the page's paging used to bound it. */
+const DETAIL_REQUESTS_IN_FLIGHT = 3;
 
 const isLoading = ref(true);
 const isLoadingMore = ref(false);
@@ -183,8 +187,11 @@ interface ShopifyProductSyncHistoryRun {
   mdmLogConfigId: string;
   mdmLogFileName: string;
   loading?: boolean;
+  /** The message as the history page returned it: what the run shows until a stored copy is read. */
+  serverMessage?: any;
 }
 
+/** The runs the server's history pages returned, in page order. Their detail is joined below. */
 const historyRuns = ref<ShopifyProductSyncHistoryRun[]>([]);
 const filters = reactive({
   statusId: "",
@@ -248,6 +255,10 @@ async function loadHistory() {
     }
 
     historyRuns.value = [];
+    // A reloaded list asks again for what is still missing or unfinished; stored, finished detail asks nothing.
+    requestedRunIds.clear();
+    detailQueue.length = 0;
+    settledRunIds.value = new Set();
     pageIndex.value = 0;
     reversePageIndex.value = -1;
     backendHistoryCount.value = 0;
@@ -289,7 +300,6 @@ async function fetchHistoryPage(loadToken = historyLoadToken) {
 
   const nextRuns = systemMessages.map(getInitialHistoryRun);
   historyRuns.value = historyRuns.value.concat(nextRuns);
-  loadRunDetails(nextRuns, systemMessages, loadToken);
 }
 
 async function fetchNextSystemMessagesResponse(loadToken = historyLoadToken) {
@@ -353,7 +363,7 @@ function getSystemMessageParams() {
   const payload: any = {
     dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
     customParametersMap: {
-      systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+      systemMessageTypeId: PRODUCT_SYNC_MESSAGE_TYPE_ID,
       remoteInternalId: props.id,
       remoteInternalIdType: "HOTWAX_SHOP_ID",
       orderByField: getSystemMessageOrderByField()
@@ -449,67 +459,110 @@ function getInitialHistoryRun(msg: any) {
     mdmErrorLogContentId: msg.errorLogContentId || "",
     mdmLogConfigId: msg.configId || PRODUCT_SYNC_MDM_CONFIG_ID,
     mdmLogFileName: msg.fileName || msg.logFileName || msg.configDescription || "",
-    loading: !!bulkOperationId
+    serverMessage: msg
   };
 }
 
-async function loadRunDetails(runs: ShopifyProductSyncHistoryRun[], systemMessages: any[], loadToken = historyLoadToken) {
-  const chunkSize = 3;
-  const currentMessages = [...systemMessages];
+// ---------------------------------------------------------------------------------------------
+// Run detail — joined live from the stored message, its errors and its Shopify bulk operation, so a
+// run still in flight when the page opened shows its result once the worker stores it.
+// ---------------------------------------------------------------------------------------------
 
-  for (let i = 0; i < runs.length; i += chunkSize) {
-    if (isStaleHistoryLoad(loadToken)) return;
+const { records: storedMessages } = useLiveEntity<any>(companyDb.tables.systemMessages, {
+  equals: { systemMessageTypeId: PRODUCT_SYNC_MESSAGE_TYPE_ID },
+});
+const { records: storedErrors, hydrated: errorsHydrated } = useLiveEntity<any>(companyDb.tables.systemMessageErrors);
+const { records: storedOperations, hydrated: operationsHydrated } = useLiveEntity<any>(companyDb.tables.shopifyBulkOperations);
 
-    const chunk = runs.slice(i, i + chunkSize);
-
-    await Promise.all(chunk.map((run) => hydrateRunDetails(run, currentMessages, loadToken)));
+const messagesById = computed(() => new Map(storedMessages.value.map((message: any) => [String(message.systemMessageId), message])));
+const operationsById = computed(() => new Map(storedOperations.value.map((operation: any) => [String(operation.id), operation])));
+const errorsByMessageId = computed(() => {
+  const byMessage = new Map<string, any[]>();
+  for (const error of storedErrors.value) {
+    const systemMessageId = String(error?.systemMessageId ?? "");
+    if (systemMessageId) byMessage.set(systemMessageId, [...(byMessage.get(systemMessageId) ?? []), error]);
   }
-}
+  return byMessage;
+});
 
-async function hydrateRunDetails(run: ShopifyProductSyncHistoryRun, systemMessages: any[], loadToken = historyLoadToken) {
-  const msg = systemMessages.find((message: any) => message.systemMessageId === run.id);
+/** Runs whose missing detail has been asked for and answered (or failed), or needed none: their spinner stops. */
+const settledRunIds = ref(new Set<string>());
 
-  if (!getSystemMessageBulkOperationId(msg)) {
-    updateHistoryRun(run.id, { loading: false });
-    return;
-  }
+const displayedRuns = computed<ShopifyProductSyncHistoryRun[]>(() => historyRuns.value.map((run) => {
+  if (!run.bulkOperationId) return run;
 
-  try {
-    const {
-      systemMessage,
-      systemMessageErrors = [],
-      shopifyBulkOperation,
-      bulkOperationId
-    } = await fetchShopifyBulkOperationBySystemMessageId(run.id, msg);
+  const message = messagesById.value.get(run.id) ?? run.serverMessage;
+  const operation: any = operationsById.value.get(run.bulkOperationId);
+  const errors = systemMessageMayHaveErrors(message) ? errorsByMessageId.value.get(run.id) ?? [] : [];
+  const isSkipped = operation?.status === "COMPLETED" && Number(operation?.objectCount || 0) === 0;
+  const mdmStatus = run.mdmStatus === "pending" && isSkipped ? "skipped" : run.mdmStatus;
 
-    if (isStaleHistoryLoad(loadToken)) return;
+  return {
+    ...run,
+    systemMessageStatusId: message?.statusId || run.systemMessageStatusId,
+    systemMessageStatus: getStatusLabel(message?.statusId),
+    systemMessageStatusColor: getStatusColor(message?.statusId),
+    systemMessageMessageText: String(message?.messageText || run.systemMessageMessageText || "").trim(),
+    systemMessageErrorText: getSystemMessageErrorText(errors),
+    bulkOperationId: operation?.id || run.bulkOperationId,
+    bulkOperationStatus: operation?.status || run.bulkOperationStatus,
+    bulkOperationStatusLabel: operation?.status ? getStatusLabel(operation.status) : run.bulkOperationStatusLabel,
+    bulkOperationStatusColor: operation?.status ? getStatusColor(operation.status) : run.bulkOperationStatusColor,
+    queryContent: operation?.query || run.queryContent,
+    objectCount: Number(operation?.objectCount || 0),
+    rootObjectCount: Number(operation?.rootObjectCount || 0),
+    mdmStatus,
+    mdmStatusLabel: getStatusLabel(mdmStatus),
+    mdmStatusColor: getStatusColor(mdmStatus),
+    loading: !settledRunIds.value.has(run.id),
+  };
+}));
 
-    const isSkipped = shopifyBulkOperation?.status === "COMPLETED" && Number(shopifyBulkOperation?.objectCount || 0) === 0;
-    const mdmStatus = run.mdmStatus === "pending" && isSkipped ? "skipped" : run.mdmStatus;
+/** Runs already queued for their missing detail, so a re-render or a reload of the list asks nothing. */
+const requestedRunIds = new Set<string>();
+const detailQueue: ShopifyProductSyncHistoryRun[] = [];
+let detailRequestsInFlight = 0;
 
-    updateHistoryRun(run.id, {
-      systemMessageStatusId: systemMessage?.statusId || run.systemMessageStatusId,
-      systemMessageStatus: getStatusLabel(systemMessage?.statusId),
-      systemMessageStatusColor: getStatusColor(systemMessage?.statusId),
-      systemMessageMessageText: String(systemMessage?.messageText || run.systemMessageMessageText || "").trim(),
-      systemMessageErrorText: getSystemMessageErrorText(systemMessageErrors),
-      bulkOperationId: shopifyBulkOperation?.id || bulkOperationId || run.bulkOperationId,
-      bulkOperationStatus: shopifyBulkOperation?.status || run.bulkOperationStatus,
-      bulkOperationStatusLabel: shopifyBulkOperation?.status ? getStatusLabel(shopifyBulkOperation.status) : run.bulkOperationStatusLabel,
-      bulkOperationStatusColor: shopifyBulkOperation?.status ? getStatusColor(shopifyBulkOperation.status) : run.bulkOperationStatusColor,
-      queryContent: shopifyBulkOperation?.query || run.queryContent,
-      objectCount: Number(shopifyBulkOperation?.objectCount || 0),
-      rootObjectCount: Number(shopifyBulkOperation?.rootObjectCount || 0),
-      mdmStatus,
-      mdmStatusLabel: getStatusLabel(mdmStatus),
-      mdmStatusColor: getStatusColor(mdmStatus),
-      loading: false
+function drainDetailQueue() {
+  while (detailRequestsInFlight < DETAIL_REQUESTS_IN_FLIGHT && detailQueue.length) {
+    const run = detailQueue.shift()!;
+    detailRequestsInFlight++;
+    void requestRunDetail(run).finally(() => {
+      detailRequestsInFlight--;
+      settledRunIds.value = new Set(settledRunIds.value).add(run.id);
+      drainDetailQueue();
     });
-  } catch (error) {
-    logger.error(`Failed to hydrate product sync history run ${run.id}`, error);
-    if (!isStaleHistoryLoad(loadToken)) updateHistoryRun(run.id, { loading: false });
   }
 }
+
+/** Ask for what the stored rows lack: the errors of a message that may have some, and an unfinished operation. */
+async function requestRunDetail(run: ShopifyProductSyncHistoryRun) {
+  const message = messagesById.value.get(run.id) ?? run.serverMessage;
+  const operation: any = operationsById.value.get(run.bulkOperationId);
+  const systemMessageRemoteId = message?.systemMessageRemoteId;
+
+  await Promise.all([
+    systemMessageMayHaveErrors(message) && !errorsByMessageId.value.get(run.id)?.length
+      ? requestSystemMessageErrors(run.id).catch(() => undefined)
+      : undefined,
+    systemMessageRemoteId && !isTerminalBulkOperation(operation?.status)
+      ? requestShopifyBulkOperation(run.bulkOperationId, systemMessageRemoteId).catch((error) => {
+        logger.error(`Failed to load the Shopify bulk operation for product sync history run ${run.id}`, error);
+      })
+      : undefined,
+  ]);
+}
+
+// Before a table's first read every row looks missing; deciding then would request them all.
+watch([historyRuns, errorsHydrated, operationsHydrated], ([runs, errorsReady, operationsReady]) => {
+  if (!errorsReady || !operationsReady) return;
+  for (const run of runs) {
+    if (!run.bulkOperationId || requestedRunIds.has(run.id)) continue;
+    requestedRunIds.add(run.id);
+    detailQueue.push(run);
+  }
+  drainDetailQueue();
+}, { immediate: true });
 
 function getSystemMessageErrorText(systemMessageErrors: any[]) {
   const errors = Array.isArray(systemMessageErrors) ? systemMessageErrors : [];
@@ -567,6 +620,7 @@ function getStatusLabel(status: string) {
   return status;
 }
 
+/** Keeps a file's details fetched on download, so a second download does not ask again. */
 function updateHistoryRun(runId: string, updates: Partial<ShopifyProductSyncHistoryRun>) {
   const runIndex = historyRuns.value.findIndex((run) => run.id === runId);
   if (runIndex === -1) return;
