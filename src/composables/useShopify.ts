@@ -136,6 +136,20 @@ export function useShopifyShops() {
   return { shops: records, records, hydrated };
 }
 
+/** Every cached inventory channel, across shops; screens narrow by shop and effective dates. */
+export function useInventoryChannels() {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.inventoryChannels);
+
+  return { channels: records, records, hydrated };
+}
+
+/** The cached Moqui data feeds (the inventory event feeds among them). */
+export function useDataFeeds() {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.dataFeeds);
+
+  return { feeds: records, records, hydrated };
+}
+
 export const SHOPIFY_INVENTORY_EVENT_FEED_ID = "ShopifyInventoryChannelEventFeed";
 export const SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID = "ShopifyShopLocationInventoryEventFeed";
 export const SHOPIFY_INVENTORY_EVENT_FEED_MANUAL = "DTFDTP_MAN_PULL";

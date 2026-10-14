@@ -361,6 +361,12 @@ export function useSystemMessageErrors(systemMessageId?: string | (() => string 
   return { errors: records, errorText, hydrated };
 }
 
+/** Every cached Shopify bulk operation. */
+export function useShopifyBulkOperations() {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyBulkOperations);
+  return { bulkOperations: records, records, hydrated };
+}
+
 /** A cached Shopify bulk operation by its gid. */
 export function useShopifyBulkOperationRecord(bulkOperationId: string | undefined) {
   const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyBulkOperations, () => bulkOperationId ? { equals: { id: bulkOperationId } } : { filter: () => false });
