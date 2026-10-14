@@ -95,6 +95,7 @@ vi.mock("@/services/inventorySyncArea", () => ({
 vi.mock("@/composables/useFacilities", () => ({
   useFacilityTypes: () => ({ facilityTypes: ref([]) }),
   useFacilities: () => ({ facilities: ref([]), hydrated: ref(true) }),
+  useGroupFacilities: () => ({ records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated }),
   useFacilityGroupMutations: (facilityGroupId: string) => ({
     saveMembers: (...args: any[]) => harness.saveFacilityGroupMembers(facilityGroupId, ...args),
   }),
@@ -133,6 +134,9 @@ vi.mock("@/composables/useSystemMessage", () => ({
 }));
 
 vi.mock("@/composables/useShopify", () => ({
+  useShopifyShops: () => ({ shops: cachedShops, records: cachedShops, hydrated: ref(true) }),
+  useInventoryChannels: () => ({ channels: cachedChannels, records: cachedChannels, hydrated: ref(true) }),
+  useDataFeeds: () => ({ feeds: cachedDataFeeds, records: cachedDataFeeds, hydrated: ref(true) }),
   useInventoryEventSources: () => ({
     sources: ref(new Map()),
     resolve: vi.fn(),

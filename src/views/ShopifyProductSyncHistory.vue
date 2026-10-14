@@ -121,11 +121,17 @@ import {
   IonTitle,
   IonToolbar
 } from "@ionic/vue";
-import { commonUtil, logger, translate, useLiveEntity } from '@common'
+import { commonUtil, logger, translate } from '@common'
 import { computed, defineProps, reactive, ref, watch } from "vue";
 import ShopifyProductSyncHistoryView from "@/components/shopify-product-sync/ShopifyProductSyncHistoryView.vue";
-import { companyDb } from "@/db/companyDb";
-import { isTerminalBulkOperation, systemMessageMayHaveErrors, useSystemMessage } from "@/composables/useSystemMessage";
+import {
+  isTerminalBulkOperation,
+  systemMessageMayHaveErrors,
+  useShopifyBulkOperations,
+  useSystemMessage,
+  useSystemMessageErrors,
+  useSystemMessages,
+} from "@/composables/useSystemMessage";
 import { useShopifySyncContext, useShopifyShop } from "@/composables/useShopify";
 import { useStatuses } from "@/composables/useSeed";
 import { useDataManager } from "@/composables/useDataManager";
@@ -468,11 +474,9 @@ function getInitialHistoryRun(msg: any) {
 // run still in flight when the page opened shows its result once the worker stores it.
 // ---------------------------------------------------------------------------------------------
 
-const { records: storedMessages } = useLiveEntity<any>(companyDb.tables.systemMessages, {
-  equals: { systemMessageTypeId: PRODUCT_SYNC_MESSAGE_TYPE_ID },
-});
-const { records: storedErrors, hydrated: errorsHydrated } = useLiveEntity<any>(companyDb.tables.systemMessageErrors);
-const { records: storedOperations, hydrated: operationsHydrated } = useLiveEntity<any>(companyDb.tables.shopifyBulkOperations);
+const { records: storedMessages } = useSystemMessages(undefined, { systemMessageTypeId: PRODUCT_SYNC_MESSAGE_TYPE_ID });
+const { errors: storedErrors, hydrated: errorsHydrated } = useSystemMessageErrors();
+const { records: storedOperations, hydrated: operationsHydrated } = useShopifyBulkOperations();
 
 const messagesById = computed(() => new Map(storedMessages.value.map((message: any) => [String(message.systemMessageId), message])));
 const operationsById = computed(() => new Map(storedOperations.value.map((operation: any) => [String(operation.id), operation])));

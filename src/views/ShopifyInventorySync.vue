@@ -585,8 +585,7 @@
 </template>
 
 <script setup lang="ts">
-import { commonUtil, logger, translate, useLiveEntity } from "@common";
-import { companyDb } from "@/db/companyDb";
+import { commonUtil, logger, translate } from "@common";
 import { isEffectiveNow, serviceState } from "@common/db";
 import {
   IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
@@ -618,7 +617,7 @@ import InventoryResetImportResult from "@/components/shopify/InventoryResetImpor
 import InventoryRunDetails from "@/components/shopify/InventoryRunDetails.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
 import { useEffectiveNow } from "@/composables/useEffectiveNow";
-import { useFacilityGroupMutations, useFacilityTypes } from "@/composables/useFacilities";
+import { useFacilityGroupMutations, useFacilityTypes, useGroupFacilities } from "@/composables/useFacilities";
 import { type InventoryEventRow, useInventoryEvents } from "@/composables/useInventoryEvents";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import {
@@ -640,8 +639,11 @@ import {
   setInventoryEventDocumentAttachedForFeed,
   updateShopifyInventoryEventFeedType,
   updateShopifyLocationInventoryEventFeedType,
+  useDataFeeds,
+  useInventoryChannels,
   useInventoryEventDocuments,
   useShopifyShopMutations,
+  useShopifyShops,
   useShopifySyncContext,
 } from "@/composables/useShopify";
 import { INVENTORY_EVENT_DOMAINS, inventoryEventAreaDomains } from "@/config/appSyncConfig";
@@ -691,11 +693,11 @@ const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
 
 const syncContext = useShopifySyncContext(() => props.id);
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
-const { records: cachedDataFeeds, hydrated: dataFeedsHydrated } = useLiveEntity<any>(companyDb.tables.dataFeeds);
-const { records: allInventoryChannels, hydrated: inventoryChannelsHydrated } = useLiveEntity<any>(companyDb.tables.inventoryChannels);
+const { records: cachedDataFeeds, hydrated: dataFeedsHydrated } = useDataFeeds();
+const { records: allInventoryChannels, hydrated: inventoryChannelsHydrated } = useInventoryChannels();
 // Class B, so a local read. The two scoped inventory-history mounts need a facilityId, and the ledger
 // carries a facility GROUP because the event is aggregate; these are the candidates to search.
-const { records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated } = useLiveEntity<any>(companyDb.tables.groupFacilities);
+const { records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated } = useGroupFacilities();
 /**
  * A membership crossing its `fromDate` or `thruDate` while the page is open has to re-trigger the
  * computeds that read it. `Date.now()` is a snapshot, so an expired facility stayed in the channel's
@@ -735,7 +737,7 @@ const inventoryChannels = computed(() => allInventoryChannels.value.filter((chan
  * Shops by id, for naming a channel's target and for this connection's own push gate. Cached table,
  * so no request per row and no extra fetch for the toggle below.
  */
-const { records: allShopifyShops, hydrated: shopsHydrated } = useLiveEntity<any>(companyDb.tables.shopifyShops);
+const { records: allShopifyShops, hydrated: shopsHydrated } = useShopifyShops();
 const shopsById = computed<Record<string, any>>(() =>
   allShopifyShops.value.reduce((map: Record<string, any>, shop: any) => {
     map[String(shop.shopId)] = shop;

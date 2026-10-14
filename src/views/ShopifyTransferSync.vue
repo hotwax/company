@@ -650,11 +650,10 @@ import { useRouter } from "vue-router";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import ShopifyTransferDeliveryStatus from "@/components/shopify/ShopifyTransferDeliveryStatus.vue";
 import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapshot.vue";
-import { useLiveEntity } from "@common";
-import { companyDb } from "@/db/companyDb";
 import { serviceState } from "@common/db";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/services/appDbSync";
 import ShopifyTransferStagingErrors from "@/components/shopify/ShopifyTransferStagingErrors.vue";
+import { useFacilities } from "@/composables/useFacilities";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
 import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
@@ -730,7 +729,7 @@ const { rows: pairedRows } = useShopifyPendingSegment(
 const segmentRows = computed<any[]>(() => [...primaryRows.value, ...pairedRows.value]
   .sort((a: any, b: any) => Number(a?.occurredAt ?? 0) - Number(b?.occurredAt ?? 0)));
 
-const { records: facilities } = useLiveEntity<any>(companyDb.tables.facilities);
+const { records: facilities } = useFacilities();
 const facilityNamesById = computed<Record<string, string>>(() => Object.fromEntries(
   facilities.value
     .filter((facility: any) => facility?.facilityId)

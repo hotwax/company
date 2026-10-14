@@ -105,8 +105,7 @@
 </template>
 
 <script setup lang="ts">
-import { commonUtil, translate, useLiveEntity, useProducts } from "@common";
-import { companyDb } from "@/db/companyDb";
+import { commonUtil, translate, useProducts } from "@common";
 import { IonAccordion, IonAccordionGroup, IonBackButton, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonNote, IonPage, IonRadio, IonRadioGroup, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter } from "@ionic/vue";
 import { checkmarkCircleOutline, openOutline, refreshOutline, warningOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
@@ -117,6 +116,7 @@ import ShopifyTransferMissingMapping from "@/components/shopify/ShopifyTransferM
 import ShopifyTransferUpdateBlocker from "@/components/shopify/ShopifyTransferUpdateBlocker.vue";
 import { serviceState } from "@common/db";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncDomainsError as syncError, syncNow } from "@/services/appDbSync";
+import { useFacilities } from "@/composables/useFacilities";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
 import { type TransferSyncJobCard, useShopifyTransferSyncJobs } from "@/composables/useShopifyTransferSync";
@@ -159,7 +159,7 @@ watch(issueEntries, entries => {
 const { enrichment, load, loading: orderLoading, error: orderError } = useShopifyTransferSyncEnrichment();
 const order = computed(() => enrichment.value.ordersById[props.orderId]);
 const { products, resolve } = useProducts();
-const { records: facilities } = useLiveEntity<any>(companyDb.tables.facilities);
+const { records: facilities } = useFacilities();
 function facilityName(id?: string) {return facilities.value.find(row => row.facilityId === id)?.facilityName || id || translate("Not available");}
 const transfersUrl = computed(() => transfersAppOrderUrl(props.orderId));
 const summary = ref<Awaited<ReturnType<typeof fetchTransferSyncSummary>>>();
