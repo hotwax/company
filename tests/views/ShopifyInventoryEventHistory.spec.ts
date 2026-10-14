@@ -16,6 +16,8 @@ const serviceJobs = ref<any[]>([]);
 const bounds = ref<any[]>([]);
 const ledgerHydrated = ref(true);
 const areaFailures = ref<Record<string, string>>({});
+const ledgerReading = ref(false);
+const manualRefreshing = ref(false);
 const routeQuery = ref<Record<string, string>>({});
 
 const harness = vi.hoisted(() => ({ replace: vi.fn(), resolveSources: vi.fn(), syncNow: vi.fn(), loadEventsFrom: vi.fn(), loadLedgerBounds: vi.fn(), ledgerOptions: undefined as any }));
@@ -59,8 +61,9 @@ vi.mock("@common", () => ({
 
 vi.mock("@/services/inventorySyncArea", () => ({
   useInventorySyncArea: () => ({
-    ready: ref(true), error: ref(""), failingDomains: areaFailures, busy: ref(false), manualRefreshing: ref(false),
+    ready: ref(true), error: ref(""), failingDomains: areaFailures, busy: ref(false), manualRefreshing,
     syncNow: harness.syncNow, afterMutation: vi.fn(), loadEventsFrom: harness.loadEventsFrom, loadLedgerBounds: harness.loadLedgerBounds,
+    ledgerReading: () => ledgerReading,
   }),
 }));
 
@@ -146,6 +149,8 @@ beforeEach(() => {
   harness.loadEventsFrom.mockReset();
   harness.loadLedgerBounds.mockReset().mockResolvedValue(1);
   ledgerHydrated.value = true;
+  ledgerReading.value = false;
+  manualRefreshing.value = false;
   areaFailures.value = {};
   routeQuery.value = {};
   harness.replace.mockReset();
@@ -185,7 +190,7 @@ describe("ShopifyInventoryEventHistory - never claims empty over unreadable data
   });
 
   it.each([
-    { stamp: undefined, says: "Live updates are off" },
+    { stamp: undefined, says: "Shopify connector is older than v4.4.0" },
     { stamp: 1_000, says: "kept current with every event and batch" },
   ])("shows the rows either way, and says whether they are live (stamp $stamp)", async ({ stamp, says }) => {
     locationDetails.value = [locationRow({ detailLastUpdatedStamp: stamp })];
@@ -391,11 +396,120 @@ describe("ShopifyInventoryEventHistory - date pickers", () => {
     expect(harness.loadEventsFrom).not.toHaveBeenCalled();
   });
 
+  it("loads a To date older than the cache from the server's oldest row, with no From date", async () => {
+    routeQuery.value = { to: "2026-09-23" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    await mountHistory("location");
+
+    expect(harness.loadEventsFrom).toHaveBeenCalledWith("location", Date.parse("2026-09-22T13:00:00"));
+  });
+
+  it("loads from the To date's own day while the server's oldest row is still unknown", async () => {
+    routeQuery.value = { to: "2026-09-23" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    await mountHistory("location");
+
+    expect(harness.loadEventsFrom).toHaveBeenCalledWith("location", Date.parse("2026-09-23T00:00:00"));
+  });
+
+  it("loads everything up to a To date the cache already reaches, back to the server's oldest row", async () => {
+    routeQuery.value = { to: "2026-09-26" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    await mountHistory("location");
+
+    // Not only when To is older than the cache: the first batch pulls the cache past To mid-load.
+    expect(harness.loadEventsFrom).toHaveBeenCalledWith("location", Date.parse("2026-09-22T13:00:00"));
+  });
+
+  it("says the list starts at the cache when no date asks for older events", async () => {
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    const wrapper = await mountHistory("location");
+
+    expect(harness.loadEventsFrom).not.toHaveBeenCalled();
+    expect(wrapper.text()).toMatch(/Showing events since .*\. The OMS has events back to .*; choose an earlier From or To date to load them\./);
+  });
+
+  it("runs a progress bar while older events load, then drops it and the coverage note once the range is reached", async () => {
+    let finish!: (written: number) => void;
+    harness.loadEventsFrom.mockReturnValue(new Promise<number>((resolve) => { finish = resolve; }));
+    routeQuery.value = { from: "2026-09-23" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    const wrapper = await mountHistory("location");
+
+    expect(wrapper.findComponent({ name: "IonProgressBar" }).exists()).toBe(true);
+    expect(wrapper.text()).toContain("Loading events back to");
+    // Rows already on screen stay; the bar is what says more are coming.
+    expect(rows(wrapper)).toHaveLength(1);
+
+    // A page lands mid-load: the list and the progress line move with it.
+    locationDetails.value = [...locationDetails.value, locationRow({ eventReferenceId: "OLDER", createdDate: Date.parse("2026-09-24T09:00:00") })];
+    await flushPromises();
+    expect(rows(wrapper)).toHaveLength(2);
+    expect(wrapper.text()).toMatch(/2 shown so far, back to .*Sep 24/);
+
+    finish(0);
+    await flushPromises();
+
+    expect(wrapper.findComponent({ name: "IonProgressBar" }).exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Only events since");
+    expect(wrapper.text()).not.toContain("Showing events since");
+  });
+
+  it("says a From range is only partly loaded when the load could not reach it", async () => {
+    harness.loadEventsFrom.mockRejectedValue(new Error("boom"));
+    routeQuery.value = { from: "2026-09-23" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    const wrapper = await mountHistory("location");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("the rest of this range has not been read from the OMS.");
+  });
+
   it("says nothing about purging when the OMS has no purge job for this ledger", async () => {
     locationDetails.value = [locationRow()];
     const wrapper = await mountHistory("location");
 
     expect(wrapper.text()).not.toContain("The purge job");
+  });
+});
+
+describe("ShopifyInventoryEventHistory - how current the list is", () => {
+  it("shows the cache as loading, not as an OMS without live updates, until this visit's first read lands", async () => {
+    ledgerReading.value = true;
+    // Rows an earlier visit cached from an older connector: no update stamps.
+    locationDetails.value = [locationRow()];
+    const wrapper = await mountHistory("location");
+
+    expect(wrapper.text()).toContain("Reading the newest events from the OMS.");
+    expect(wrapper.findComponent({ name: "IonProgressBar" }).exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("older than v4.4.0");
+
+    ledgerReading.value = false;
+    await flushPromises();
+
+    expect(wrapper.findComponent({ name: "IonProgressBar" }).exists()).toBe(false);
+    expect(wrapper.text()).toContain("This OMS's Shopify connector is older than v4.4.0");
+  });
+
+  it("says nothing about the connector when the rows carry update stamps", async () => {
+    locationDetails.value = [locationRow({ detailLastUpdatedStamp: 1_000_000 })];
+    const wrapper = await mountHistory("location");
+
+    expect(wrapper.text()).not.toContain("older than v4.4.0");
+    expect(wrapper.findComponent({ name: "IonProgressBar" }).exists()).toBe(false);
+  });
+
+  it("runs the progress bar during a manual refresh", async () => {
+    manualRefreshing.value = true;
+    locationDetails.value = [locationRow({ detailLastUpdatedStamp: 1_000_000 })];
+    const wrapper = await mountHistory("location");
+
+    expect(wrapper.text()).toContain("Refreshing events from the OMS.");
   });
 });
 

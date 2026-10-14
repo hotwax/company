@@ -36,12 +36,35 @@ describe("useShopifyNativeTransferSync", () => {
     expect(api.mock.calls[0][0].params).toEqual({ shopId: "SHOP_1", settingTypeEnumId: "SHPFY_NATIVE_TO_SYNC", pageSize: 1 });
   });
 
-  it("flags a failed read instead of reporting the default", async () => {
+  it("flags a failed read and leaves the state unknown, instead of reporting a default", async () => {
     api.mockRejectedValueOnce(new Error("timeout"));
     const sync = useShopifyNativeTransferSync();
+    expect(sync.enabled.value).toBeUndefined();
     await sync.load("SHOP_1");
 
     expect(sync.loadFailed.value).toBe(true);
+    expect(sync.enabled.value).toBeUndefined();
+  });
+
+  it("forgets the previous shop's state while the next shop's loads", async () => {
+    let finish!: (response: unknown) => void;
+    api.mockResolvedValueOnce(settingRows("false")).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const sync = useShopifyNativeTransferSync();
+    await sync.load("SHOP_1");
+    expect(sync.enabled.value).toBe(false);
+
+    const next = sync.load("SHOP_2");
+    expect(sync.enabled.value).toBeUndefined();
+    finish(settingRows("true"));
+    await next;
+    expect(sync.enabled.value).toBe(true);
+  });
+
+  it("refuses to write while the current state is unknown", async () => {
+    const sync = useShopifyNativeTransferSync();
+
+    expect(await sync.save("SHOP_1", false)).toBe(false);
+    expect(api).not.toHaveBeenCalled();
   });
 
   it.each([null, {}, { data: null }, { data: { error: "Denied" } }])("rejects an invalid read envelope %j", async (response) => {
@@ -68,16 +91,20 @@ describe("useShopifyNativeTransferSync", () => {
   });
 
   it.each([null, {}, { data: null }])("does not confirm an empty write response %j", async (response) => {
-    api.mockResolvedValueOnce(response);
+    api.mockResolvedValueOnce(settingRows("true")).mockResolvedValueOnce(response);
     const sync = useShopifyNativeTransferSync();
+    await sync.load("SHOP_1");
 
     expect(await sync.save("SHOP_1", false)).toBe(false);
     expect(sync.enabled.value).toBe(true);
   });
 
   it("stores the boolean as a string and updates state only on success", async () => {
-    api.mockResolvedValueOnce({ data: {} });
+    api.mockResolvedValueOnce(settingRows("true"));
     const sync = useShopifyNativeTransferSync();
+    await sync.load("SHOP_1");
+    api.mockReset();
+    api.mockResolvedValueOnce({ data: {} });
 
     expect(await sync.save("SHOP_1", false)).toBe(true);
     expect(api.mock.calls[0][0]).toMatchObject({

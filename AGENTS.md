@@ -143,12 +143,12 @@ inventory event domains under its own owner for as long as the user is under
 area that needs more domains activates `[...its own, ...inventoryEventAreaDomains(shopId)]`, since the
 worker holds one active set. [`inventoryEventDomains.ts`](src/workers/domains/inventoryEventDomains.ts)
 polls each ledger's newest 500, then its `detailLastUpdatedStamp` and `systemMessageLastUpdatedStamp`
-cursors (needs the connector release with those aliases; older ones get the window only), re-reads
+cursors (needs connector v4.4.0+, which has those aliases; older ones get the window only, re-read every minute), re-reads
 unsettled messages by id, and names products through Shopify's `nodes` query (`shopify/graphql`, two
 requests of 100 per tick, backing off on budget). The cache is a window, not the ledger:
 `inventoryEventBounds`, asked once per history page load and never polled, records where the server's
-copy starts (and drops cached rows the purge already removed), the history's calendars start there, and an older From date loads that range through the
-rows domain's `refetchOne`. Sync failures render through `SyncStatusButton` in the
+copy starts (and drops cached rows the purge already removed), the history's calendars start there, and a From or To date older than the cache loads that range through the
+rows domain's `refetchOne` (on the older service, starting behind the cached rows, which it cannot range over). Sync failures render through `SyncStatusButton` in the
 toolbar, never as a banner.
 
 ### 4.3 Layer map

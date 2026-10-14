@@ -122,17 +122,26 @@
           <ion-item lines="none">
             <ion-label class="ion-text-wrap">
               {{ kind === "channel" ? translate("Channel inventory events") : translate("Location inventory events") }}
-              <p v-if="liveUpdates">
-                {{ translate("Events for this connection, kept current with every event and batch that has changed since. The newest 500 load first; an older From date loads the rest.") }}
+              <!-- Until this visit's first read lands, the rows are an earlier visit's cache and say nothing about the OMS. -->
+              <p v-if="reading || liveUpdates">
+                {{ translate("Events for this connection, kept current with every event and batch that has changed since. The newest 500 load first; a From date older than those, or any To date, loads the rest.") }}
               </p>
               <p v-else>
-                {{ translate("Live updates are off: this OMS does not report when an inventory event changes. Showing events as read at {at}; refresh to read them again.", { at: formatDateTime(loadedAt) }) }}
+                {{ translate("This OMS's Shopify connector is older than v4.4.0 and does not report which events changed, so only the newest 500 are re-read, every minute. Older events show as last read at {at}.", { at: formatDateTime(loadedAt) }) }}
+              </p>
+              <p v-if="coverageNote">
+                {{ coverageNote }}
               </p>
             </ion-label>
           </ion-item>
           <ion-badge color="medium">
             {{ translate("{count} shown", { count: visibleEvents.length }) }}
           </ion-badge>
+        </div>
+
+        <div v-if="fetchingNote" class="history-fetching" role="status">
+          <ion-progress-bar type="indeterminate" />
+          <ion-note>{{ fetchingNote }}</ion-note>
         </div>
 
         <div v-if="visibleEvents.length" ref="eventScrollerRef" class="event-scroller" @scroll.passive="onEventScroll">
@@ -240,7 +249,7 @@ import { DxpShopifyImg, translate } from "@common";
 import {
   IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle,
   IonCardTitle, IonContent, IonDatetime, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonNote, IonPage,
-  IonPopover, IonSearchbar, IonSelect, IonSelectOption, IonSkeletonText, IonSpinner, IonText, IonThumbnail, IonTitle,
+  IonPopover, IonProgressBar, IonSearchbar, IonSelect, IonSelectOption, IonSkeletonText, IonSpinner, IonText, IonThumbnail, IonTitle,
   IonToolbar,
 } from "@ionic/vue";
 import { closeCircleOutline, refreshOutline, timeOutline } from "ionicons/icons";
@@ -271,7 +280,8 @@ const props = defineProps<{ id: string; kind: InventoryEventKind }>();
 const route = useRoute();
 const router = useRouter();
 const syncContext = useShopifySyncContext(() => props.id);
-const { failingDomains, manualRefreshing, syncNow, loadEventsFrom, loadLedgerBounds } = useInventorySyncArea();
+const { failingDomains, manualRefreshing, syncNow, loadEventsFrom, loadLedgerBounds, ledgerReading } = useInventorySyncArea();
+const reading = ledgerReading(props.kind);
 const {
   events, hydrated, liveUpdates, loadedAt, oldestEventAt, serverOldestAt, retention, locationOptions, eventTypeOptions, sourceArtifactFor, resolveSources,
 } = useInventoryEvents(() => props.id, props.kind);
@@ -351,25 +361,98 @@ const calendarBounds = computed(() => {
 watch(() => props.id, (shopId) => { loadLedgerBounds(props.kind, shopId).catch(() => undefined); }, { immediate: true });
 
 /**
- * A date filter older than the cache loads that range from the server first. An unset From with a set
- * To asks for everything up to To, so it reaches back to the server's oldest. Until the rows land, the
- * loading card stands in for the empty one.
+ * A date range reaching past the cache loads it from the server first. A From date older than the cache
+ * starts the range. A To date with no From asks for everything up to To, so it runs back to the server's
+ * oldest row; before that is known, a To date older than the cache starts at its own day. Until the rows
+ * land, the progress bar runs and the loading card stands in for the empty one.
  */
-const loadingOlder = ref(false);
-watch([() => filters.from, () => filters.to, oldestEventAt, serverOldestAt], async ([from, to, cachedOldest, serverOldest]) => {
-  const requested = from ? DateTime.fromISO(from).startOf("day").toMillis() : to ? serverOldest : undefined;
-  if(requested === undefined || loadingOlder.value || cachedOldest === undefined || requested >= cachedOldest) {return;}
+const loadingFrom = ref<number>();
+const loadingOlder = computed(() => loadingFrom.value !== undefined);
+/** The oldest start a load confirmed: a pass that found nothing more between it and the cache. */
+const loadedBackTo = ref<number>();
+let lastAttempt = "";
+
+function startOfDay(isoDate: string): number {
+  return DateTime.fromISO(isoDate).startOf("day").toMillis();
+}
+
+function requestedStart(cachedOldest: number, serverOldest: number | undefined): number | undefined {
+  if(filters.from) {return startOfDay(filters.from);}
+  if(!filters.to) {return undefined;}
+  // Not "older than the cache" alone: the first batch pulls the cache past To and would end the load half way.
+  if(serverOldest !== undefined) {return serverOldest;}
+
+  return DateTime.fromISO(filters.to).endOf("day").toMillis() < cachedOldest ? startOfDay(filters.to) : undefined;
+}
+
+async function loadRequestedRange(): Promise<void> {
+  const cachedOldest = oldestEventAt.value;
+  const serverOldest = serverOldestAt.value;
+  if(loadingOlder.value || cachedOldest === undefined) {return;}
   // The cache already reaches the server's oldest row: there is nothing older to load.
   if(serverOldest !== undefined && cachedOldest <= serverOldest) {return;}
-  loadingOlder.value = true;
+  const requested = requestedStart(cachedOldest, serverOldest);
+  if(requested === undefined || requested >= cachedOldest) {return;}
+  const target = Math.max(requested, serverOldest ?? requested);
+  if(loadedBackTo.value !== undefined && loadedBackTo.value <= target) {return;}
+  // A load capped short of the target moves the cache's oldest row, which keys the next pass; the same
+  // key again means the last pass already answered it.
+  const attempt = `${target}|${cachedOldest}`;
+  if(attempt === lastAttempt) {return;}
+  lastAttempt = attempt;
+  loadingFrom.value = target;
   try {
-    await loadEventsFrom(props.kind, Math.max(requested, serverOldest ?? requested));
+    const written = await loadEventsFrom(props.kind, target);
+    if(!written) {loadedBackTo.value = Math.min(target, loadedBackTo.value ?? target);}
   } catch {
-    // The failed domain is reported by the toolbar's sync status.
+    // The failed domain is reported by the toolbar's sync status. The attempt stays spent, so it is
+    // not retried in a loop; choosing a date again clears it.
   } finally {
-    loadingOlder.value = false;
+    loadingFrom.value = undefined;
   }
-}, { immediate: true });
+  // Filters chosen while it ran were skipped above.
+  void loadRequestedRange();
+}
+
+// A reused view following its route to another shop starts that shop's loads afresh.
+watch(() => props.id, () => {
+  loadedBackTo.value = undefined;
+  lastAttempt = "";
+});
+watch([() => filters.from, () => filters.to], () => { lastAttempt = ""; });
+watch([() => filters.from, () => filters.to, oldestEventAt, serverOldestAt], () => { void loadRequestedRange(); }, { immediate: true });
+
+/** What the OMS is being asked for right now, so a filtered list is never mistaken for the whole answer. */
+const fetchingNote = computed(() => {
+  if(loadingFrom.value !== undefined) {
+    // Rows land a page at a time, so the cache's oldest row is how far the load has come.
+    const reached = oldestEventAt.value;
+
+    return reached === undefined || reached <= loadingFrom.value
+      ? translate("Loading events back to {date} from the OMS. The list fills in as they arrive.", { date: formatDateTime(loadingFrom.value) })
+      : translate("Loading events back to {date} from the OMS; {count} shown so far, back to {reached}.", {
+        date: formatDateTime(loadingFrom.value), count: visibleEvents.value.length, reached: formatDateTime(reached),
+      });
+  }
+  if(reading.value) {return translate("Reading the newest events from the OMS.");}
+  if(manualRefreshing.value) {return translate("Refreshing events from the OMS.");}
+
+  return "";
+});
+
+/** The list covers the cache, not the ledger: say so whenever the range on screen starts before it. */
+const coverageNote = computed(() => {
+  const cachedOldest = oldestEventAt.value;
+  const serverOldest = serverOldestAt.value;
+  if(loadingOlder.value || reading.value || cachedOldest === undefined || serverOldest === undefined || serverOldest >= cachedOldest) {return "";}
+  const rangeStart = filters.from ? startOfDay(filters.from) : serverOldest;
+  if(rangeStart >= cachedOldest || (loadedBackTo.value !== undefined && loadedBackTo.value <= rangeStart)) {return "";}
+  const values = { loaded: formatDateTime(cachedOldest), oldest: formatDateTime(serverOldest) };
+
+  return filters.from || filters.to
+    ? translate("Only events since {loaded} have loaded; the rest of this range has not been read from the OMS.", values)
+    : translate("Showing events since {loaded}. The OMS has events back to {oldest}; choose an earlier From or To date to load them.", values);
+});
 
 /** The purge job is OMS-wide, not per shop. */
 const purgeNote = computed(() => {
@@ -495,6 +578,12 @@ function openEventFromBatch(event: InventoryEventRow) {
 
 .history-page > ion-card {
   margin-block: 0;
+}
+
+.history-fetching {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-2xs);
 }
 
 .kpi-grid {

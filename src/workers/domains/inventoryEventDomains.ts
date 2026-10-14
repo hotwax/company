@@ -12,13 +12,15 @@ import { type InventoryEventKind, effectiveMessageOf, isUnsettledMessage } from 
  * Class A for as long as the user is in a shop's inventory sync pages (`src/services/inventorySyncArea.ts`).
  * Both ledgers share the pollers: the rows poller reads the newest 500, then rows whose
  * `detailLastUpdatedStamp` moved; the message poller reads rows whose joined
- * `systemMessageLastUpdatedStamp` moved. An OMS without the cursor aliases still gets its window stored,
- * just not re-polled until a manual refresh; the page says live updates are off.
+ * `systemMessageLastUpdatedStamp` moved. An OMS without the cursor aliases (connector before v4.4.0)
+ * has its window re-read every minute instead; the page says only the newest events stay current.
  */
 
 const RECENT_WINDOW = 500;
 const PAGE_SIZE = 250;
 const POLL_INTERVAL_MS = 10_000;
+/** The older location service loads the shop's whole ledger per request, so its window is re-read less often. */
+const WINDOW_ONLY_REFRESH_MS = 60_000;
 /** A row committed late by a transaction that started early carries a stamp older than the cursor. */
 const CURSOR_OVERLAP_MS = 60_000;
 /** A backfill's backstop: 40 pages of 250, past any ledger the five-day purge leaves. */
@@ -87,8 +89,8 @@ function ledgerRowsOf(response: any, label: string): Array<Record<string, any>> 
   throw new Error(`[sync] ${label}: unexpected response shape.`);
 }
 
-/** `kind|shopId` whose window came back with no update stamps: re-read only on a manual refresh. */
-const windowOnlyLedgers = new Set<string>();
+/** `kind|shopId` whose window came back with no update stamps, and when that window was last read. */
+const windowOnlyLedgers = new Map<string, number>();
 
 /** An overlapped cursor read returns cached rows every quiet tick; rewriting them re-renders every list. */
 async function changedRows(ledger: LedgerDefinition, rows: Array<Record<string, any>>): Promise<Array<Record<string, any>>> {
@@ -132,23 +134,52 @@ async function serverOldestAt(ctx: SyncContext, ledger: LedgerDefinition, shopId
 }
 
 /**
- * The shop's events from `fromMs` up to `beforeMs`, newest first. The entity list takes the range; the
- * older service has none, so it is paged newest first until a page reaches back past `fromMs`.
+ * Stores the shop's events from `fromMs` up to `beforeMs`, newest first, a page at a time, so the history
+ * fills in as they arrive; resolves to the rows written. The entity list takes the range; the older
+ * service has none, so it is paged newest first until a page reaches back past `fromMs`.
  */
-async function rowsSince(ctx: SyncContext, ledger: LedgerDefinition, shopId: string, fromMs: number, beforeMs?: number) {
+async function loadRowsSince(ctx: SyncContext, ledger: LedgerDefinition, shopId: string, fromMs: number, beforeMs?: number, cachedCount = 0) {
   const range = { shopId, createdDate_from: fromMs, ...(beforeMs === undefined ? {} : { createdDate_thru: beforeMs }), orderByField: "-createdDate" };
-  const rows: Array<Record<string, any>> = [];
-  for(let pageIndex = 0; pageIndex < BACKFILL_MAX_PAGES; pageIndex++) {
-    const page = await workerGet(ctx, ledger.endpoint, { ...range, pageSize: PAGE_SIZE, pageIndex });
+  const read = (pageIndex: number) => workerGet(ctx, ledger.endpoint, { ...range, pageSize: PAGE_SIZE, pageIndex });
+  const newestOf = (page: any) => toMillis(ledgerRowsOf(page, ledger.endpoint)[0]?.createdDate) ?? 0;
+  let pageIndex = 0;
+  let page = await read(pageIndex);
+  let requests = 1;
+  // The older service has no range and pages from the newest row, so a ledger longer than the cap never
+  // reached past the cached rows. Jump behind them, stepping back while the landed page starts past the
+  // cache's oldest row: the purge can drop settled rows the cache still holds, so the count can overshoot.
+  if(!Array.isArray(page) && page?.hasMore && beforeMs !== undefined) {
+    for(let target = Math.floor(cachedCount / PAGE_SIZE) - 1; target > 0 && requests < BACKFILL_MAX_PAGES; target--) {
+      const landed = await read(target);
+      requests++;
+      if(newestOf(landed) >= beforeMs) {
+        page = landed;
+        pageIndex = target;
+        break;
+      }
+    }
+  }
+  // Only rows the cache does not reach yet, so a load that writes nothing has reached `fromMs`.
+  const uncached = (row: Record<string, any>) => {
+    const createdAt = toMillis(row.createdDate) ?? 0;
+
+    return createdAt >= fromMs && (beforeMs === undefined || createdAt < beforeMs);
+  };
+  let written = 0;
+  for(;;) {
     const pageRows = ledgerRowsOf(page, ledger.endpoint);
-    rows.push(...pageRows);
+    // Each page continues the cache's run downward, so writing it now leaves no gap behind it.
+    const fresh = pageRows.filter(uncached);
+    if(fresh.length) {written += await ledger.entity.upsertMany(fresh);}
     const more = Array.isArray(page)
       ? pageRows.length === PAGE_SIZE
       : page.hasMore && (toMillis(pageRows[pageRows.length - 1]?.createdDate) ?? 0) >= fromMs;
-    if(!more) {break;}
+    if(!more || requests >= BACKFILL_MAX_PAGES) {break;}
+    page = await read(++pageIndex);
+    requests++;
   }
 
-  return rows.filter((row) => (toMillis(row.createdDate) ?? 0) >= fromMs);
+  return written;
 }
 
 function cursorRead(
@@ -182,8 +213,9 @@ function ledgerDomains(ledger: LedgerDefinition): SyncDomain[] {
       // An unscoped list would pull every shop's ledger into this shop's cache.
       if(!shopId) {return 0;}
       const windowKey = `${ledger.kind}|${shopId}`;
-      if(windowOnlyLedgers.has(windowKey) && !options?.force) {return 0;}
-      const cursor = windowOnlyLedgers.has(windowKey)
+      const windowReadAt = windowOnlyLedgers.get(windowKey);
+      if(windowReadAt !== undefined && !options?.force && Date.now() - windowReadAt < WINDOW_ONLY_REFRESH_MS) {return 0;}
+      const cursor = windowReadAt !== undefined
         ? undefined
         : await ledger.entity.newestCursor("detailLastUpdatedStamp", { field: "shopId", value: shopId });
       let changed: Array<Record<string, any>>;
@@ -192,7 +224,7 @@ function ledgerDomains(ledger: LedgerDefinition): SyncDomain[] {
           shopId, orderByField: "-createdDate", pageSize: RECENT_WINDOW, pageIndex: 0,
         }), ledger.endpoint);
         const stamped = rows.some((row) => toMillis(row?.detailLastUpdatedStamp) !== undefined);
-        if(rows.length && !stamped) {windowOnlyLedgers.add(windowKey);} else {windowOnlyLedgers.delete(windowKey);}
+        if(rows.length && !stamped) {windowOnlyLedgers.set(windowKey, Date.now());} else {windowOnlyLedgers.delete(windowKey);}
         changed = rows;
       } else {
         changed = await changedRows(ledger, await cursorRead(ctx, ledger, shopId, "detailLastUpdatedStamp", cursor));
@@ -205,11 +237,11 @@ function ledgerDomains(ledger: LedgerDefinition): SyncDomain[] {
       const shopId = shopOf(args);
       const fromMs = Number(pk?.fromMs);
       if(!shopId || !Number.isFinite(fromMs)) {return 0;}
-      const cachedOldest = oldestCachedAt(await scopedRows(ledger, shopId));
+      const cached = await scopedRows(ledger, shopId);
+      const cachedOldest = oldestCachedAt(cached);
       if(cachedOldest !== undefined && fromMs >= cachedOldest) {return 0;}
-      const rows = await rowsSince(ctx, ledger, shopId, fromMs, cachedOldest);
 
-      return rows.length ? ledger.entity.upsertMany(rows) : 0;
+      return loadRowsSince(ctx, ledger, shopId, fromMs, cachedOldest, cached.length);
     },
   });
 

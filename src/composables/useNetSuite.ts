@@ -182,7 +182,7 @@ export function useNetSuite(integrationTypeId?: any) {
    * configuration rather than reference data — so there is no resync to follow.
    */
   async function updateSftpConfig(payload: any) {
-    const resp: any = await api({ url: "updateSftp", method: "post", data: payload });
+    const resp: any = await api({ url: "netsuite/sftpConfig", method: "post", data: payload });
     if (commonUtil.hasError(resp)) throw resp;
     return resp;
   }

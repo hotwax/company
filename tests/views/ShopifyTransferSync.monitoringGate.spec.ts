@@ -74,6 +74,7 @@ vi.mock("@/composables/useServiceJobs", () => ({
 vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyPendingCounts: () => ({
     counts: ref({}),
+    orderCounts: ref({}),
     creationOrderCount: ref(0),
     // Fixed at 0 so `monitoringLoaded` can only go true through `liveSyncCompleted`, not the
     // row-count branch -- that is the branch this file exists to cover.

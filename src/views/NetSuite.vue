@@ -405,12 +405,12 @@ function closeSftpModal() {
 async function saveSftpConfig() {
   try {
     const payload = {
-      guid: sftpFormData.value.guid,
-      server: sftpFormData.value.server,
-      userId: sftpFormData.value.userId,
+      hostName: sftpFormData.value.server,
+      userName: sftpFormData.value.userId,
       port: sftpFormData.value.port,
       hostKey: sftpFormData.value.hostKey,
-      defaultDirectory: sftpFormData.value.defaultDirectory
+      defaultDirectory: sftpFormData.value.defaultDirectory,
+      secretId: sftpFormData.value.guid
     };
 
     const resp = await updateSftpConfig(payload);
