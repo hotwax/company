@@ -1,7 +1,7 @@
 import { computed, reactive, toRefs, type Ref } from 'vue';
 import { api, commonUtil, logger, useLiveEntity } from '@common'
 import { companyDb } from '@/db/companyDb';
-import { refreshRecord } from "@/services/appDbSync";
+import { refreshAfterMutation } from "@/services/appDbSync";
 import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 import { onSessionCleared } from "./sessionScope";
 
@@ -61,7 +61,7 @@ export function useSystemMessage() {
 
     state.loading = true;
     try {
-      const written = await refreshRecord("systemMessageError", { systemMessageId });
+      const written = await refreshAfterMutation("systemMessageError", { systemMessageId });
       if (written) {
         // A retry appended an error, so an earlier "has no errors" answer is stale.
         messagesKnownToHaveNoErrors.delete(systemMessageId);
@@ -96,7 +96,7 @@ export function useSystemMessage() {
   const requestSystemMessage = async (systemMessageId: string) => {
     if (!systemMessageId) return;
     try {
-      await refreshRecord("systemMessage", { systemMessageId: String(systemMessageId) });
+      await refreshAfterMutation("systemMessage", { systemMessageId: String(systemMessageId) });
     } catch (err) {
       logger.error(`Failed to fetch system message ${systemMessageId}`, err);
     }
@@ -175,7 +175,7 @@ export function useSystemMessage() {
   const requestShopifyBulkOperation = async (bulkOperationId: string, systemMessageRemoteId: string) => {
     state.loading = true;
     try {
-      await refreshRecord("shopifyBulkOperation", { id: bulkOperationId, systemMessageRemoteId });
+      await refreshAfterMutation("shopifyBulkOperation", { id: bulkOperationId, systemMessageRemoteId });
     } catch (err) {
       logger.error(`Failed to fetch Shopify Bulk Operation ${bulkOperationId}`, err);
       throw err;

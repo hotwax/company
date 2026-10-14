@@ -25,7 +25,7 @@ vi.mock("@common", () => ({
   useLiveEntity: (table: string) => live.tables[table],
 }));
 vi.mock("@/db/companyDb", () => ({ companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) } }));
-vi.mock("@/services/appDbSync", () => ({ refreshRecord: vi.fn() }));
+vi.mock("@/services/appDbSync", () => ({ refreshAfterMutation: vi.fn() }));
 vi.mock("@/composables/useSystemMessage", async (importOriginal) => ({
   ...(await importOriginal<any>()),
   useSystemMessage: () => ({

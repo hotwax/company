@@ -7,7 +7,7 @@ const bulkOperationEntity = companyDb.entity(companyDb.tables.shopifyBulkOperati
 
 /**
  * Shopify BulkOperation — class C: fetched for one operation when a run is inspected
- * (`refreshRecord`), never polled.
+ * (`refreshAfterMutation`), never polled.
  *
  * Shopify is reached through the shop's SystemMessageRemote, so `systemMessageRemoteId` travels in
  * the pk next to the key `id`. It is stored on the row too, which is how the cached row says which

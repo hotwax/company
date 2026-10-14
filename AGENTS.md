@@ -88,7 +88,7 @@ server data) re-introduces exactly the load waterfalls this layer exists to remo
  view ── useLiveEntity(companyDb.tables.x) ──▶ live query      │  sync domains (appSyncDomains)
    │                                              ▲            │        │  fetch via workerRemoteApi
    │ composable                                   │ live emit  │        ▼
-   ├── refreshRecord(domain, pk) ─────────────────┼────────────┼──▶ refetchOne ──▶ companyDb.entity(...) writes
+   ├── refreshAfterMutation(domain, pk) ──────────┼────────────┼──▶ refetchOne ──▶ companyDb.entity(...) writes
    └── api() POST/PUT ──▶ refreshAfterMutation ───┼────────────┼──▶ refetchOne / sync
                           / resyncDomain          │            │
 ```
@@ -97,7 +97,7 @@ server data) re-introduces exactly the load waterfalls this layer exists to remo
 | --- | --- | --- |
 | Rows that stay current **on screen** | `useLiveEntity<any>(companyDb.tables.x, options)` | components, views, composables — during `setup` |
 | An answer **now** | `companyDb.entity(companyDb.tables.x).get / query / all / first / count` | anywhere: stores, services, utils, composables, workers |
-| A record the db is **missing** | `refreshRecord(domain, pk)` from `@/services/appDbSync`, then read it back | composables, stores |
+| A record the db is **missing** | `refreshAfterMutation(domain, pk)` from `@/services/appDbSync`, then read it back | composables, stores |
 | To **change** server data | `api()` then `refreshAfterMutation(domain, pk)` / `resyncDomain(domain)` | composables, stores |
 
 - **Every table has one writer: its sync domain** (`src/workers/**`). App code never calls
@@ -130,7 +130,7 @@ disagree, and the card lists Company's domains even when the worker is not up.
 | --- | --- | --- | --- |
 | **B** | reference / config, whole-set | **once per login**, then only on mutation. Never on an interval, never per page load. | product stores and all-store shipping methods, carriers and their shipment methods/facilities, facilities, facility groups, service jobs, permissions, statuses, enums, all type tables, Shopify shops/locations/type mappings |
 | **A** | live, append-mostly | polled on a cadence *while a view that needs it is open* | `dataManagerLog`, `systemMessage`, both Shopify inventory ledgers, `shopifyInventoryItems` (inventory event products, from Shopify) |
-| **C** | on-demand, one record at a time | fetched when a screen asks (`refreshRecord`), never polled; Settings shows it as "fetched when opened" | `systemMessageError`, `shopifyBulkOperation` |
+| **C** | on-demand, one record at a time | fetched when a screen asks (`refreshAfterMutation`), never polled; Settings shows it as "fetched when opened" | `systemMessageError`, `shopifyBulkOperation` |
 
 One app-lifetime worker, started by `appDbSync`, runs every class. Class B seeds once per login;
 class A domains are polled only while a view has activated them through

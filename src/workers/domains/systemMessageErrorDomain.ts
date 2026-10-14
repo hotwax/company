@@ -5,7 +5,7 @@ import { workerGet } from "@common/core/workerRemoteApi";
 const errorEntity = companyDb.entity(companyDb.tables.systemMessageErrors);
 
 /**
- * SystemMessageError — class C: fetched for one message when it is inspected (`refreshRecord`),
+ * SystemMessageError — class C: fetched for one message when it is inspected (`refreshAfterMutation`),
  * never polled. Only failed messages have errors, so polling every message's errors would be almost
  * entirely wasted requests.
  *

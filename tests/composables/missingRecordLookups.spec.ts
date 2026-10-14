@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   api: vi.fn(),
-  refreshRecord: vi.fn(),
+  refreshAfterMutation: vi.fn(),
   rows: {} as Record<string, Record<string, any>>,
   upsertMany: vi.fn(),
 }));
@@ -14,7 +14,7 @@ vi.mock("@common", () => ({
   translate: (value: string) => value,
   useLiveEntity: () => ({ records: { value: [] }, hydrated: { value: true } }),
 }));
-vi.mock("@/services/appDbSync", () => ({ refreshRecord: (...args: any[]) => mocks.refreshRecord(...args) }));
+vi.mock("@/services/appDbSync", () => ({ refreshAfterMutation: (...args: any[]) => mocks.refreshAfterMutation(...args) }));
 vi.mock("@/utils/storage", () => ({ clearStorage: vi.fn(), getErrorRecords: vi.fn(), setErrorRecords: vi.fn() }));
 vi.mock("@/db/companyDb", () => ({
   companyDb: {
@@ -33,7 +33,7 @@ import { useSystemMessage } from "@/composables/useSystemMessage";
 
 beforeEach(() => {
   mocks.api.mockReset();
-  mocks.refreshRecord.mockReset().mockResolvedValue(1);
+  mocks.refreshAfterMutation.mockReset().mockResolvedValue(1);
   mocks.upsertMany.mockReset();
   mocks.rows = {};
 });
@@ -41,18 +41,18 @@ beforeEach(() => {
 describe("requestDataManagerLog", () => {
   it("asks the dataManagerLog domain for the log, and stores nothing itself", async () => {
     expect(await useDataManager().requestDataManagerLog("L2")).toBeUndefined();
-    expect(mocks.refreshRecord).toHaveBeenCalledWith("dataManagerLog", { logId: "L2" });
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("dataManagerLog", { logId: "L2" });
     expect(mocks.api).not.toHaveBeenCalled();
     expect(mocks.upsertMany).not.toHaveBeenCalled();
   });
 
   it("asks nothing without a log id", async () => {
     await useDataManager().requestDataManagerLog("");
-    expect(mocks.refreshRecord).not.toHaveBeenCalled();
+    expect(mocks.refreshAfterMutation).not.toHaveBeenCalled();
   });
 
   it("swallows a failed refresh, so a fire-and-forget caller cannot reject", async () => {
-    mocks.refreshRecord.mockRejectedValue(new Error("offline"));
+    mocks.refreshAfterMutation.mockRejectedValue(new Error("offline"));
 
     await expect(useDataManager().requestDataManagerLog("L3")).resolves.toBeUndefined();
   });
@@ -61,13 +61,13 @@ describe("requestDataManagerLog", () => {
 describe("requestSystemMessage", () => {
   it("asks the systemMessage domain for the message, and stores nothing itself", async () => {
     expect(await useSystemMessage().requestSystemMessage("M2")).toBeUndefined();
-    expect(mocks.refreshRecord).toHaveBeenCalledWith("systemMessage", { systemMessageId: "M2" });
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("systemMessage", { systemMessageId: "M2" });
     expect(mocks.api).not.toHaveBeenCalled();
     expect(mocks.upsertMany).not.toHaveBeenCalled();
   });
 
   it("swallows a failed refresh, so a fire-and-forget caller cannot reject", async () => {
-    mocks.refreshRecord.mockRejectedValue(new Error("offline"));
+    mocks.refreshAfterMutation.mockRejectedValue(new Error("offline"));
 
     await expect(useSystemMessage().requestSystemMessage("M3")).resolves.toBeUndefined();
   });
@@ -78,13 +78,13 @@ describe("requestShopifyBulkOperation", () => {
 
   it("asks the shopifyBulkOperation domain for the operation, and stores nothing itself", async () => {
     expect(await useSystemMessage().requestShopifyBulkOperation(id, "REMOTE")).toBeUndefined();
-    expect(mocks.refreshRecord).toHaveBeenCalledWith("shopifyBulkOperation", { id, systemMessageRemoteId: "REMOTE" });
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("shopifyBulkOperation", { id, systemMessageRemoteId: "REMOTE" });
     expect(mocks.api).not.toHaveBeenCalled();
     expect(mocks.upsertMany).not.toHaveBeenCalled();
   });
 
   it("rethrows a failed fetch, which screens show as status unavailable", async () => {
-    mocks.refreshRecord.mockRejectedValue(new Error("Shopify unavailable"));
+    mocks.refreshAfterMutation.mockRejectedValue(new Error("Shopify unavailable"));
 
     await expect(useSystemMessage().requestShopifyBulkOperation(id, "REMOTE")).rejects.toThrow("Shopify unavailable");
   });

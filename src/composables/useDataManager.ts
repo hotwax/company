@@ -1,7 +1,7 @@
 import { computed, reactive, toRefs, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
 import { api, logger, useLiveEntity } from '@common'
 import { companyDb } from '@/db/companyDb';
-import { refreshRecord } from '@/services/appDbSync';
+import { refreshAfterMutation } from '@/services/appDbSync';
 import { clearStorage, getErrorRecords, setErrorRecords } from '@/utils/storage';
 import Papa from 'papaparse';
 
@@ -168,7 +168,7 @@ export function useDataManager() {
   const requestDataManagerLog = async (logId: string) => {
     if (!logId) return;
     try {
-      await refreshRecord("dataManagerLog", { logId: String(logId) });
+      await refreshAfterMutation("dataManagerLog", { logId: String(logId) });
     } catch (err) {
       logger.error(`Failed to fetch DataManager log ${logId}`, err);
     }
