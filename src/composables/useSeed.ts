@@ -21,11 +21,10 @@ function byDescription(a: any, b: any): number {
 
 // --- framework seed tables ------------------------------------------------------------------
 //
-// Thin wrappers over the framework's `useSeedData`, which keeps one live read per seed table for
-// the session. They keep the shapes templates already index into; the lookups themselves live in
-// `@common/db`.
-
-const seed = useSeedData();
+// Thin wrappers over the framework's `useSeedData`, which shares one live read per seed table with
+// every component below the first caller in a tree, closed when that component unmounts. They keep
+// the shapes templates already index into; the lookups themselves live in `@common/db`. Each wrapper
+// calls `useSeedData()` itself, so like it they only work during setup.
 
 /**
  * `useLiveEntity`'s `hydrated`, for a seed table read through `useSeedData`: its first read has landed,
@@ -48,6 +47,7 @@ function descriptionMap(rows: any[], idField: string): Record<string, string> {
 // --- statuses -------------------------------------------------------------------------------
 
 export function useStatuses() {
+  const seed = useSeedData();
   const statuses = computed(() => seed.statuses());
 
   /** statusId → description, the map templates index into. */
@@ -66,6 +66,7 @@ export function useStatuses() {
 
 /** The generic enumeration catalog (id → description). */
 export function useEnums() {
+  const seed = useSeedData();
   const enums = computed(() => seed.enums());
   const enumItems = computed<Record<string, string>>(() => descriptionMap(enums.value, "enumId"));
   return { enums, enumItems };
@@ -79,6 +80,7 @@ export function useEnums() {
  * without adding a domain.
  */
 export function useTypedEnums(enumTypeId: string) {
+  const seed = useSeedData();
   const values = computed(() => [...seed.enumsByType(enumTypeId)].sort(byDescription));
   const enumItems = computed<Record<string, string>>(() => descriptionMap(values.value, "enumId"));
   const labelFor = (enumId: string | undefined) =>
@@ -89,12 +91,14 @@ export function useTypedEnums(enumTypeId: string) {
 
 /** Enum types (id → description). */
 export function useEnumTypes() {
+  const seed = useSeedData();
   return { enumTypes: computed(() => [...seed.enumTypes()].sort(byDescription)) };
 }
 
 // --- geographic boundaries ------------------------------------------------------------------
 
 export function useGeos() {
+  const seed = useSeedData();
   const geos = computed(() => seed.geos());
   const byId = computed<Record<string, any>>(() =>
     geos.value.reduce((map: Record<string, any>, row: any) => {
@@ -187,10 +191,12 @@ export function useCurrencies() {
 }
 
 export function useShipmentMethodTypes() {
+  const seed = useSeedData();
   return { shipmentMethodTypes: computed(() => [...seed.shipmentMethodTypes()].sort(byDescription)) };
 }
 
 export function usePaymentMethodTypes() {
+  const seed = useSeedData();
   const paymentMethodTypes = computed(() => [...seed.paymentMethodTypes()].sort(byDescription));
   const hydrated = seedHydrated(() => seed.getPaymentMethodTypes(), () => paymentMethodTypes.value);
   return { paymentMethodTypes, hydrated };
@@ -211,6 +217,7 @@ export async function createPaymentMethodType(payload: { paymentMethodTypeId: st
 }
 
 export function useRoleTypes() {
+  const seed = useSeedData();
   const roleTypes = computed(() => [...seed.roleTypes()].sort(byDescription));
   /** roleTypeId → description, matching the map the party-role templates index. */
   const descriptionById = computed<Record<string, string>>(() => descriptionMap(roleTypes.value, "roleTypeId"));

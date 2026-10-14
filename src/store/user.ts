@@ -444,8 +444,8 @@ export const useUserStore = defineStore("user", {
          * rather than the retired util store. The old code also fetched roles here and never read
          * them — dropped with the store.
          */
-        const { useSeedData } = await import("@common/db")
-        const cachedStores = await useSeedData().getProductStores().catch(() => [])
+        const { loadSeedData } = await import("@common/db")
+        const cachedStores = await loadSeedData(["productStores"]).then((seed) => seed.getProductStores()).catch(() => [])
 
         if(!commonUtil.hasError(resp)) {
           const now = Date.now()
