@@ -70,10 +70,13 @@ vi.mock("@/composables/useSeed", () => ({
 
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
-    ensureSystemMessageById: vi.fn().mockResolvedValue(null),
-    ensureSystemMessageErrors: vi.fn().mockResolvedValue([]),
+    requestSystemMessage: vi.fn().mockResolvedValue(undefined),
+    requestSystemMessageErrors: vi.fn().mockResolvedValue(undefined),
+    refreshSystemMessageErrors: vi.fn().mockResolvedValue(undefined),
     resendSystemMessage: vi.fn(),
   }),
+  useSystemMessageRecord: () => ({ record: ref(undefined), hydrated: ref(true) }),
+  useSystemMessageErrors: () => ({ errors: ref([]), errorText: ref(""), hydrated: ref(true) }),
 }));
 
 vi.mock("@/composables/useShopify", () => ({

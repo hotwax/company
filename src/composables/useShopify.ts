@@ -2168,8 +2168,9 @@ export function useShopifySyncMessages(
  *   1. `syncRuns` says which runs this shop has and which import each became. It is the only
  *      shop-scoped source of that pairing, so it decides membership.
  *   2. The full SystemMessage and DataManagerLog come from their own cached tables.
- *   3. Anything still missing is fetched by id, written to the cache, and returned — so a miss
- *      resolves once and never again (terminal records are immutable).
+ *   3. Anything still missing once those tables have loaded is requested by id from its domain, and
+ *      appears through the live read when stored — so a miss resolves once and never again
+ *      (terminal records are immutable).
  *
  * Step 3 exists because the worker's enrichment is bounded per tick: a screen opened seconds after a
  * new run appears would otherwise render a hole. It is deduplicated and bounded here too, so a run
@@ -2180,14 +2181,14 @@ export function useShopifySyncRuns(
   systemMessageTypeIds: readonly string[],
   options: { limit?: number; hydrateMax?: number } = {},
 ) {
-  const { ensureSystemMessageById } = useSystemMessage();
-  const { ensureDataManagerLog } = useDataManager();
+  const { requestSystemMessage } = useSystemMessage();
+  const { requestDataManagerLog } = useDataManager();
 
   // `records`, not `rows`: `shopId` is renamed from the document's `remoteInternalId` and so exists
   // only after projection. Filtering `records` by it compares against undefined and matches nothing.
   const { records: runRows, hydrated } = useLiveEntity<any>(companyDb.tables.syncRuns, { dateField: "initDate" });
-  const { records: messages } = useLiveEntity<any>(companyDb.tables.systemMessages, { dateField: "initDate" });
-  const { records: logs } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, { dateField: "createdDate" });
+  const { records: messages, hydrated: messagesHydrated } = useLiveEntity<any>(companyDb.tables.systemMessages, { dateField: "initDate" });
+  const { records: logs, hydrated: logsHydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, { dateField: "createdDate" });
 
   const wantedTypes = computed(() => new Set(systemMessageTypeIds.map(String)));
 
@@ -2230,7 +2231,9 @@ export function useShopifySyncRuns(
   /** Attempted ids, so a genuinely absent record is not re-requested on every render. */
   const attempted = new Set<string>();
 
-  watch(runs, (current) => {
+  watch([runs, messagesHydrated, logsHydrated], ([current, messagesReady, logsReady]) => {
+    // Before a table's first read every row looks missing; deciding then would request them all.
+    if(!messagesReady || !logsReady) {return;}
     const limit = options.hydrateMax ?? 5;
     let budget = limit;
 
@@ -2241,14 +2244,14 @@ export function useShopifySyncRuns(
       if(messageId && !run.systemMessage && !attempted.has(`m:${messageId}`)) {
         attempted.add(`m:${messageId}`);
         budget -= 1;
-        void ensureSystemMessageById(messageId);
+        void requestSystemMessage(messageId);
       }
 
       const logId = String(run.logId ?? "");
       if(logId && !run.mdmLog && !attempted.has(`l:${logId}`)) {
         attempted.add(`l:${logId}`);
         budget -= 1;
-        void ensureDataManagerLog(logId);
+        void requestDataManagerLog(logId);
       }
     }
   }, { immediate: true });
@@ -2893,11 +2896,11 @@ export function productSyncExtraDomains(intervalMs: number, jobNames: readonly s
  * result of a fetch cascade.
  *
  * Two pieces stay ON DEMAND (class C) because they only matter for a run being inspected: the
- * message's ERRORS and the Shopify BULK OPERATION. `fetchSyncRun` primes both once; each writes
- * through to the cache, after which they are read reactively like everything else.
+ * message's ERRORS and the Shopify BULK OPERATION. `fetchSyncRun` requests whichever the live rows
+ * lack; each domain stores what it fetches, after which they are read reactively like everything else.
  */
 export function useShopifyProductSyncRun() {
-  const { ensureSystemMessageById, ensureSystemMessageErrors, fetchShopifyBulkOperation } = useSystemMessage();
+  const { requestSystemMessage, requestSystemMessageErrors, requestShopifyBulkOperation } = useSystemMessage();
   const { labelFor } = useStatuses();
 
   /** Which run is displayed. Set by `fetchSyncRun`; everything below derives from it. */
@@ -2907,10 +2910,10 @@ export function useShopifyProductSyncRun() {
 
   // One live subscription per table. Whole-table reads because the lookup key is reactive, and
   // re-subscribing on every id change would churn subscriptions for no gain at these volumes.
-  const { records: messages } = useLiveEntity<any>(companyDb.tables.systemMessages, { dateField: "initDate" });
-  const { records: bulkOperations } = useLiveEntity<any>(companyDb.tables.shopifyBulkOperations);
+  const { records: messages, hydrated: messagesHydrated } = useLiveEntity<any>(companyDb.tables.systemMessages, { dateField: "initDate" });
+  const { records: bulkOperations, hydrated: bulkOperationsHydrated } = useLiveEntity<any>(companyDb.tables.shopifyBulkOperations);
   const { records: mdmLogs } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, { dateField: "createdDate" });
-  const { records: messageErrors } = useLiveEntity<any>(companyDb.tables.systemMessageErrors, { dateField: "errorDate" });
+  const { records: messageErrors, hydrated: messageErrorsHydrated } = useLiveEntity<any>(companyDb.tables.systemMessageErrors, { dateField: "errorDate" });
 
   /**
    * Status → colour, by string matching rather than a status-id map, because the three sources speak
@@ -3056,7 +3059,7 @@ export function useShopifyProductSyncRun() {
   });
 
   /**
-   * Point this composable at a run and prime the two on-demand pieces.
+   * Point this composable at a run and request what its live rows lack.
    *
    * Callers do NOT need to call this again to see progress — `currentSyncRun` keeps updating from the
    * cache on its own. It returns the derived run so existing `await fetchSyncRun(id)` sites keep
@@ -3069,22 +3072,28 @@ export function useShopifyProductSyncRun() {
     targetMessageId.value = id;
     loading.value = true;
     try {
-      // An exact deep link can target a run outside the current shop spine window. Hydrate that one
-      // message by id before joining its bulk operation and import; this is cache-first and uses the
-      // same existing SystemMessage read contract as spine enrichment.
-      const ensuredMessage = systemMessage.value ?? systemMessageData ??
-        await ensureSystemMessageById(id).catch(() => null);
+      // Decide from loaded tables only: before its first read every row looks missing.
+      const loaded = () => messagesHydrated.value && messageErrorsHydrated.value && bulkOperationsHydrated.value;
+      if(!loaded()) {
+        await new Promise<void>((resolve) => {
+          const stop = watch(loaded, (ready) => { if(ready) { stop(); resolve(); } });
+        });
+      }
+      if(targetMessageId.value !== id) {return currentSyncRun.value;}
 
-      // Cached after the first look, so this is a no-op on revisit.
-      await ensureSystemMessageErrors(id);
+      // An exact deep link can target a run outside the current shop spine window: request that one
+      // message by id, the same way spine enrichment does.
+      if(!systemMessage.value && !systemMessageData) {await requestSystemMessage(id);}
 
-      // Cache-first inside `fetchShopifyBulkOperation`, which short-circuits once the operation is
-      // terminal (immutable), so a finished run never hits Shopify again.
-      const message = systemMessage.value ?? ensuredMessage;
+      // Stored after the first look, so this asks nothing on revisit.
+      if(!systemMessageErrors.value.length) {await requestSystemMessageErrors(id).catch(() => undefined);}
+
+      // Only when it is not stored yet: once a run has an operation, opening it does not ask Shopify.
+      const message = systemMessage.value ?? systemMessageData;
       const operationId = getSystemMessageBulkOperationId(message);
       const remoteId = message?.systemMessageRemoteId;
       if(operationId && remoteId && !bulkOperation.value) {
-        await fetchShopifyBulkOperation(operationId, remoteId).catch(() => undefined);
+        await requestShopifyBulkOperation(operationId, remoteId).catch(() => undefined);
       }
 
       return currentSyncRun.value;

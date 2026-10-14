@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { computed, ref } from "vue";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { computed, nextTick, ref } from "vue";
 
 const SPINE_ROWS = [
   // shop 10010, newest, imported nothing.
@@ -15,6 +15,8 @@ const SPINE_ROWS = [
 
 const MESSAGES = [{ systemMessageId: "M227136", statusId: "SmsgConsumed", messageText: "mutation { … }" }];
 const LOGS = [{ logId: "M101074", configId: "SYNC_SHOPIFY_PRODUCT", systemMessageId: "M227136", statusId: "DmlsFinished", totalRecordCount: 1 }];
+/** Every live read's `hydrated`: false until the tables' first read lands. */
+const tablesLoaded = ref(true);
 
 vi.mock("@common", () => ({
   api: vi.fn(),
@@ -29,7 +31,7 @@ vi.mock("@common", () => ({
       records: ref(records),
       first: ref(records[0]),
       count: ref(records.length),
-      hydrated: ref(true),
+      hydrated: tablesLoaded,
       error: ref(null),
     };
   }),
@@ -38,14 +40,14 @@ vi.mock("@common", () => ({
 const hydrate = vi.hoisted(() => ({ messages: [] as string[], logs: [] as string[] }));
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
-    ensureSystemMessageById: vi.fn(async (id: string) => { hydrate.messages.push(id); return null; }),
-    ensureSystemMessageErrors: vi.fn(),
-    fetchShopifyBulkOperation: vi.fn(),
+    requestSystemMessage: vi.fn(async (id: string) => { hydrate.messages.push(id); }),
+    requestSystemMessageErrors: vi.fn(),
+    requestShopifyBulkOperation: vi.fn(),
   }),
 }));
 vi.mock("@/composables/useDataManager", () => ({
   useDataManager: () => ({
-    ensureDataManagerLog: vi.fn(async (id: string) => { hydrate.logs.push(id); return null; }),
+    requestDataManagerLog: vi.fn(async (id: string) => { hydrate.logs.push(id); }),
   }),
   useRecentDataManagerLogs: () => ({ logs: { value: [] }, totalFailedRecords: { value: 0 }, hydrated: { value: true } }),
 }));
@@ -151,5 +153,47 @@ describe("useShopifySyncRuns — detail join", () => {
     expect(run).toBeTruthy();
     expect(run.systemMessage).toBeNull();
     expect(run.mdmLog).toBeNull();
+  });
+});
+
+/**
+ * L1 unit — a run's missing message or import is requested from its domain, and nothing else is.
+ *
+ * Before a table's first read lands every row looks missing, so deciding then would request every
+ * run's records on every page load, whether stored or not.
+ */
+describe("useShopifySyncRuns — requesting missing detail", () => {
+  beforeEach(() => {
+    tablesLoaded.value = true;
+    hydrate.messages.length = 0;
+    hydrate.logs.length = 0;
+  });
+
+  it("requests nothing before the tables have loaded, then only the records they lack", async () => {
+    tablesLoaded.value = false;
+    useShopifySyncRuns(ctxFor(() => "10010"), PRODUCT);
+    await nextTick();
+
+    expect(hydrate.messages).toEqual([]);
+    expect(hydrate.logs).toEqual([]);
+
+    tablesLoaded.value = true;
+    await nextTick();
+
+    // M227136's message and import are stored, so only the two newer runs' messages are asked for.
+    expect(hydrate.messages).toEqual(["M228405", "M228397"]);
+    expect(hydrate.logs).toEqual([]);
+  });
+
+  it("asks once per record, however often the rows re-render", async () => {
+    const { records } = useShopifySyncRuns(ctxFor(() => "10010"), PRODUCT);
+    await nextTick();
+    tablesLoaded.value = false;
+    await nextTick();
+    tablesLoaded.value = true;
+    await nextTick();
+
+    expect(records.value).toHaveLength(3);
+    expect(hydrate.messages).toEqual(["M228405", "M228397"]);
   });
 });

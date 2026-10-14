@@ -38,87 +38,54 @@ beforeEach(() => {
   mocks.rows = {};
 });
 
-describe("ensureDataManagerLog", () => {
-  it("serves a cached log without asking the worker", async () => {
-    mocks.rows.dataManagerLogs = { L1: { logId: "L1" } };
-
-    expect(await useDataManager().ensureDataManagerLog("L1")).toEqual({ logId: "L1" });
-    expect(mocks.refreshRecord).not.toHaveBeenCalled();
-  });
-
-  it("asks the dataManagerLog domain on a miss, then reads the stored row", async () => {
-    mocks.refreshRecord.mockImplementation(async () => {
-      mocks.rows.dataManagerLogs = { L2: { logId: "L2", statusId: "DmlsFinished" } };
-      return 1;
-    });
-
-    expect(await useDataManager().ensureDataManagerLog("L2")).toEqual({ logId: "L2", statusId: "DmlsFinished" });
+describe("requestDataManagerLog", () => {
+  it("asks the dataManagerLog domain for the log, and stores nothing itself", async () => {
+    expect(await useDataManager().requestDataManagerLog("L2")).toBeUndefined();
     expect(mocks.refreshRecord).toHaveBeenCalledWith("dataManagerLog", { logId: "L2" });
     expect(mocks.api).not.toHaveBeenCalled();
     expect(mocks.upsertMany).not.toHaveBeenCalled();
   });
 
-  it("resolves null when the refresh fails", async () => {
-    mocks.refreshRecord.mockRejectedValue(new Error("offline"));
-
-    expect(await useDataManager().ensureDataManagerLog("L3")).toBeNull();
-  });
-});
-
-describe("ensureSystemMessageById", () => {
-  it("serves a cached message without asking the worker", async () => {
-    mocks.rows.systemMessages = { M1: { systemMessageId: "M1" } };
-
-    expect(await useSystemMessage().ensureSystemMessageById("M1")).toEqual({ systemMessageId: "M1" });
+  it("asks nothing without a log id", async () => {
+    await useDataManager().requestDataManagerLog("");
     expect(mocks.refreshRecord).not.toHaveBeenCalled();
   });
 
-  it("asks the systemMessage domain on a miss, then reads the stored row", async () => {
-    mocks.refreshRecord.mockImplementation(async () => {
-      mocks.rows.systemMessages = { M2: { systemMessageId: "M2", statusId: "SmsgSent" } };
-      return 1;
-    });
+  it("swallows a failed refresh, so a fire-and-forget caller cannot reject", async () => {
+    mocks.refreshRecord.mockRejectedValue(new Error("offline"));
 
-    expect(await useSystemMessage().ensureSystemMessageById("M2")).toEqual({ systemMessageId: "M2", statusId: "SmsgSent" });
+    await expect(useDataManager().requestDataManagerLog("L3")).resolves.toBeUndefined();
+  });
+});
+
+describe("requestSystemMessage", () => {
+  it("asks the systemMessage domain for the message, and stores nothing itself", async () => {
+    expect(await useSystemMessage().requestSystemMessage("M2")).toBeUndefined();
     expect(mocks.refreshRecord).toHaveBeenCalledWith("systemMessage", { systemMessageId: "M2" });
     expect(mocks.api).not.toHaveBeenCalled();
     expect(mocks.upsertMany).not.toHaveBeenCalled();
   });
 
-  it("resolves null when the refresh fails", async () => {
+  it("swallows a failed refresh, so a fire-and-forget caller cannot reject", async () => {
     mocks.refreshRecord.mockRejectedValue(new Error("offline"));
 
-    expect(await useSystemMessage().ensureSystemMessageById("M3")).toBeNull();
+    await expect(useSystemMessage().requestSystemMessage("M3")).resolves.toBeUndefined();
   });
 });
 
-describe("fetchShopifyBulkOperation", () => {
+describe("requestShopifyBulkOperation", () => {
   const id = "gid://shopify/BulkOperation/9";
 
-  it("serves a finished operation from the db without asking the worker", async () => {
-    mocks.rows.shopifyBulkOperations = { [id]: { id, status: "COMPLETED" } };
-
-    expect(await useSystemMessage().fetchShopifyBulkOperation(id, "REMOTE")).toEqual({ id, status: "COMPLETED" });
-    expect(mocks.refreshRecord).not.toHaveBeenCalled();
-  });
-
-  it("asks the shopifyBulkOperation domain for a running or missing one, then reads the stored row", async () => {
-    mocks.rows.shopifyBulkOperations = { [id]: { id, status: "RUNNING" } };
-    mocks.refreshRecord.mockImplementation(async () => {
-      mocks.rows.shopifyBulkOperations = { [id]: { id, status: "COMPLETED", objectCount: 4 } };
-      return 1;
-    });
-
-    expect(await useSystemMessage().fetchShopifyBulkOperation(id, "REMOTE"))
-      .toEqual({ id, status: "COMPLETED", objectCount: 4 });
+  it("asks the shopifyBulkOperation domain for the operation, and stores nothing itself", async () => {
+    expect(await useSystemMessage().requestShopifyBulkOperation(id, "REMOTE")).toBeUndefined();
     expect(mocks.refreshRecord).toHaveBeenCalledWith("shopifyBulkOperation", { id, systemMessageRemoteId: "REMOTE" });
     expect(mocks.api).not.toHaveBeenCalled();
     expect(mocks.upsertMany).not.toHaveBeenCalled();
   });
 
-  it("rethrows a failed fetch, as it did before", async () => {
+  it("rethrows a failed fetch, which screens show as status unavailable", async () => {
     mocks.refreshRecord.mockRejectedValue(new Error("Shopify unavailable"));
 
-    await expect(useSystemMessage().fetchShopifyBulkOperation(id, "REMOTE")).rejects.toThrow("Shopify unavailable");
+    await expect(useSystemMessage().requestShopifyBulkOperation(id, "REMOTE")).rejects.toThrow("Shopify unavailable");
   });
 });

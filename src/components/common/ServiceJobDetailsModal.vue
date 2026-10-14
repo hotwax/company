@@ -483,7 +483,7 @@ async function load() {
   try {
     const [details, runs, audits] = await Promise.all([
       fetchJobDetail(jobName),
-      fetchJobRuns(jobName, { pageSize: 5, pageIndex: 0 }, { fromServer: true }),
+      fetchJobRuns(jobName, { pageSize: 5, pageIndex: 0 }),
       fetchJobAuditHistory(jobName, { pageSize: 10, pageIndex: 0 }),
     ]);
     if (request !== loadGeneration) return;

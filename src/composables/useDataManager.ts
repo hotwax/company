@@ -158,30 +158,20 @@ export function useDataManager() {
   };
 
   /**
-   * One import by `logId`, CACHE-FIRST, fetched through the dataManagerLog domain on a miss.
+   * Ask the dataManagerLog domain to fetch one import by `logId`, and return nothing.
    *
-   * The counterpart to `ensureSystemMessageById`. A finished import never changes, so once cached this
-   * costs nothing — which is what makes per-id enrichment viable where a shop-scoped log feed is not:
-   * `admin/dataManager/details` ignores shop filters entirely, but by-id always works.
+   * Screens read imports live, and call this only when their live rows show one missing. A finished
+   * import never changes, so once fetched it is never asked for again — which is what makes per-id
+   * enrichment viable where a shop-scoped log feed is not: `admin/dataManager/details` ignores shop
+   * filters entirely, but by-id always works.
    */
-  const ensureDataManagerLog = async (logId: string) => {
-    if (!logId) return null;
-    const logs = companyDb.entity(companyDb.tables.dataManagerLogs);
+  const requestDataManagerLog = async (logId: string) => {
+    if (!logId) return;
     try {
-      const cached = await logs.get(String(logId));
-      if (cached) return cached;
-    } catch {
-      // cache unavailable — fall through to the network
-    }
-
-    try {
-      // The dataManagerLog domain fetches and stores it; this side only reads.
       await refreshRecord("dataManagerLog", { logId: String(logId) });
-      return (await logs.get(String(logId))) ?? null;
     } catch (err) {
       logger.error(`Failed to fetch DataManager log ${logId}`, err);
     }
-    return null;
   };
 
   const fetchMdmLogBySystemMessageIds = async (systemMessageIds: string[]) => {
@@ -296,7 +286,7 @@ export function useDataManager() {
     fetchMdmLogBySystemMessageId,
     fetchMdmLogBySystemMessageIds,
     fetchLogDetails,
-    ensureDataManagerLog,
+    requestDataManagerLog,
     fetchAllRecentFailedRecords,
     fetchRecentLogsByConfigId,
     clearStorage

@@ -1,4 +1,4 @@
-import { computed, reactive, toRefs } from "vue";
+import { computed } from "vue";
 import { api, logger, useLiveEntity } from "@common";
 import cronstrue from "cronstrue";
 import { companyDb } from "@/db/companyDb";
@@ -14,12 +14,8 @@ import { onSessionCleared } from "./sessionScope";
  *  - `useServiceJobs()` / `useServiceJobRecord()` read the CACHED definitions. Reactive, no
  *    request, and enough for "which jobs exist / are they paused / what are this template's
  *    clones" — the questions list screens ask.
- *  - `useServiceJob()` fetches LIVE. Job detail carries `serviceJobParameters`, runs and audit
- *    history, none of which the cached snapshot holds, and run state changes constantly, so a
- *    detail screen must ask the server rather than read a snapshot.
- *
- * Both expose a `jobs` binding, so mind which one a screen means: `useServiceJobs().jobs` is the
- * cached definition list, `useServiceJob().jobs` is the live working set this module holds.
+ *  - `useServiceJob()` asks the SERVER. Job detail carries `serviceJobParameters`, and the full
+ *    run and audit history is more than the cached snapshot holds, so a detail screen asks for it.
  */
 
 // ---------------------------------------------------------------------------------------------
@@ -127,7 +123,7 @@ export function useServiceJobRunsByJob(jobNames: () => string[], limitPerJob = 5
 }
 
 // ---------------------------------------------------------------------------------------------
-// Live reads + writes — job detail, runs, audit history
+// Server reads + writes — job detail, runs, audit history
 // ---------------------------------------------------------------------------------------------
 
 const getCronString = (cronExpression: any) => {
@@ -145,23 +141,6 @@ const getNormalizedJob = (job: any = {}) => ({
   ...job
 });
 
-/**
- * Every envelope shape these endpoints have been seen to return.
- *
- * The job endpoints are not consistent — bare array, `serviceJobList`, `docs`, `entityValueList` —
- * so the collection is unwrapped defensively rather than assuming one convention.
- */
-const getServiceJobs = (payload: any) => {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.serviceJobs)) return payload.serviceJobs;
-  if (Array.isArray(payload?.serviceJobList)) return payload.serviceJobList;
-  if (Array.isArray(payload?.jobs)) return payload.jobs;
-  if (Array.isArray(payload?.jobList)) return payload.jobList;
-  if (Array.isArray(payload?.docs)) return payload.docs;
-  if (Array.isArray(payload?.entityValueList)) return payload.entityValueList;
-  return [];
-};
-
 const getEntityAuditLogs = (payload: any) => {
   if (Array.isArray(payload)) return payload;
   if (payload?._entity === "moqui.entity.EntityAuditLog") return [payload];
@@ -175,20 +154,6 @@ const getEntityAuditLogs = (payload: any) => {
 };
 
 const getNormalizedJobDetail = (jobDetail: any = {}) => getNormalizedJob(jobDetail);
-
-/**
- * Module-level state, shared by every caller of `useServiceJob()` — NOT per-component. The sync
- * screens call it from several components at once and expect one working set.
- */
-const state = reactive({
-  jobs: [] as Array<any>,
-  loading: false
-});
-
-const defaultJobFetchParams = {
-  instanceOfProductId_op: "empty",
-  instanceOfProductId_not: "Y"
-};
 
 /**
  * Collapse identical in-flight requests.
@@ -208,69 +173,6 @@ const fetchDeduplicated = async (key: string, fetchFn: () => Promise<any>) => {
 };
 
 export function useServiceJob() {
-
-  /**
-   * CACHE-FIRST. The `serviceJob` domain snapshots every job definition at login, so the cached set
-   * is the same data this used to page for — two 250-row requests on every page load.
-   *
-   * Falls back to the network only while the cache is unpopulated (cold start before the login sync
-   * completes, or a filtered query the snapshot cannot answer).
-   */
-  const fetchJobs = async (params: Record<string, any> = defaultJobFetchParams) => {
-    // Normalize params to ensure stable keying (especially for empty objects vs defaults)
-    const normalizedParams = (params && Object.keys(params).length > 0) ? params : {};
-    const key = `jobs_${JSON.stringify(normalizedParams)}`;
-
-    try {
-      const cached = await companyDb.entity(companyDb.tables.serviceJobs).all();
-      if (cached.length) {
-        state.jobs = cached.map((row: any) => {
-          const job = row;
-          return { ...job, cronString: job.cronExpression ? getCronString(job.cronExpression) : "" };
-        });
-        return state.jobs;
-      }
-    } catch (err) {
-      logger.warn("Service job cache unavailable; falling back to the server", err);
-    }
-
-    return fetchDeduplicated(key, async () => {
-      state.loading = true;
-      try {
-        let total = 0;
-        let pageIndex = 0;
-        let allJobs = [] as any[];
-        do {
-          const resp = await api({
-            url: "admin/serviceJobs",
-            method: "GET",
-            params: {
-              pageSize: 250,
-              pageIndex,
-              ...normalizedParams
-            }
-          }) as any;
-
-
-          const respJobs = getServiceJobs(resp?.data).map((job: any) => ({
-            ...job,
-            cronString: job.cronExpression ? getCronString(job.cronExpression) : ''
-          }));
-
-          total = respJobs.length;
-          allJobs = pageIndex > 0 ? allJobs.concat(respJobs) : respJobs;
-          pageIndex++;
-        } while(total === 250);
-
-        state.jobs = allJobs;
-      } catch(err) {
-        logger.error("Failed to fetch jobs", err);
-        throw err;
-      } finally {
-        state.loading = false;
-      }
-    });
-  };
 
   /**
    * The job as the server has it. Given a `productStoreId`, a job carrying a `productStoreIds`
@@ -305,14 +207,12 @@ export function useServiceJob() {
   };
 
   /**
-   * `fromServer` skips the cache-first branch below.
+   * A job's runs, always from the server.
    *
-   * That branch returns as soon as the cache holds ANY row for the job, and the domain filling it is
-   * activated with a small `total` (5 on the inventory screen). So a caller wanting a full history
-   * got five rows with no sign there were more, and raising `pageSize` alone changed nothing -
-   * silently. A history view has to ask the server, and to page it.
+   * The `serviceJobRun` domain keeps only the newest few runs per job, so it cannot answer a history
+   * read; screens that only need the latest runs read them live through `useServiceJobRuns`.
    */
-  const fetchJobRuns = async (jobName: string, payload: any, options: { fromServer?: boolean } = {}) => {
+  const fetchJobRuns = async (jobName: string, payload: any) => {
     const params = {
       pageSize: 250,
       pageIndex: 0,
@@ -320,20 +220,6 @@ export function useServiceJob() {
       ...payload
     }
     const key = `job_runs_${jobName}_${JSON.stringify(params)}`;
-
-    // CACHE-FIRST: the `serviceJobRun` domain keeps the newest runs per job, which is what every
-    // caller here asks for (`pageSize: 1` or a handful, ordered by -startTime).
-    if (!options.fromServer) try {
-      const cached = (await companyDb.entity(companyDb.tables.serviceJobRuns).all())
-        .filter((row: any) => row.jobName === jobName)
-        .sort((a: any, b: any) => (Number(b.startTime ?? 0) - Number(a.startTime ?? 0)));
-      if (cached.length) {
-        const wanted = Number(params.pageSize ?? 250);
-        return cached.slice(0, wanted);
-      }
-    } catch (err) {
-      logger.warn("Service job run cache unavailable; falling back to the server", err);
-    }
 
     return fetchDeduplicated(key, async () => {
       let jobRuns = [] as any;
@@ -429,8 +315,6 @@ export function useServiceJob() {
   };
 
   return {
-    ...toRefs(state),
-    fetchJobs,
     fetchJobDetail,
     fetchJobRuns,
     fetchJobAuditHistory,

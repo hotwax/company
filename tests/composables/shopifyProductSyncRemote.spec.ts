@@ -36,14 +36,14 @@ vi.mock("@/db/companyDb", () => ({
 
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
-    ensureSystemMessageById: vi.fn(),
-    ensureSystemMessageErrors: vi.fn(),
-    fetchShopifyBulkOperation: vi.fn(),
+    requestSystemMessage: vi.fn(),
+    requestSystemMessageErrors: vi.fn(),
+    requestShopifyBulkOperation: vi.fn(),
   }),
 }));
 
 vi.mock("@/composables/useDataManager", () => ({
-  useDataManager: () => ({ ensureDataManagerLog: vi.fn() }),
+  useDataManager: () => ({ requestDataManagerLog: vi.fn() }),
   useRecentDataManagerLogs: () => ({
     logs: { value: [] },
     totalFailedRecords: { value: 0 },

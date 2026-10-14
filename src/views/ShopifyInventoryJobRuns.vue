@@ -211,9 +211,6 @@ import { useServiceJob } from "@/composables/useServiceJobs";
  *  - The route returns a bare array with no total, so paging it blind could not fill a "Page x / y"
  *    counter or the KPI cards. One capped read is taken and paged in memory instead, which keeps
  *    both honest; `truncated` says so when a job has more runs than the cap.
- *
- * Runs are read with `fromServer`: the cached read returns as soon as the cache holds anything, and
- * the domain that fills it is capped at five per job, so it can never answer "all runs".
  */
 const props = defineProps<{ id: string; jobName: string; title?: string }>();
 
@@ -318,7 +315,6 @@ async function loadRuns() {
     const page = await fetchJobRuns(
       props.jobName,
       { pageSize: MAX_RUNS, pageIndex: 0, orderByField: "-startTime" },
-      { fromServer: true },
     );
     const rows = Array.isArray(page) ? page : [];
     rawRuns.value = rows;

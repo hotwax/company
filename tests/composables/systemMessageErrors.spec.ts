@@ -77,13 +77,13 @@ describe("systemMessageMayHaveErrors", () => {
   });
 });
 
-describe("ensureSystemMessageErrors", () => {
-  it("asks the systemMessageError domain and reads the message's stored errors, newest first", async () => {
-    const { ensureSystemMessageErrors } = useSystemMessage();
+describe("requestSystemMessageErrors", () => {
+  it("asks the systemMessageError domain, and stores and reads nothing itself", async () => {
+    const { requestSystemMessageErrors } = useSystemMessage();
 
-    await ensureSystemMessageErrors("MSG_0");
+    expect(await requestSystemMessageErrors("MSG_0")).toBeUndefined();
     expect(mocks.refreshRecord).toHaveBeenCalledWith("systemMessageError", { systemMessageId: "MSG_0" });
-    expect(mocks.errorCacheQuery).toHaveBeenCalledWith({ equals: { systemMessageId: "MSG_0" }, dateField: "errorDate" });
+    expect(mocks.errorCacheQuery).not.toHaveBeenCalled();
     expect(mocks.api).not.toHaveBeenCalled();
   });
 
@@ -91,39 +91,41 @@ describe("ensureSystemMessageErrors", () => {
     mocks.refreshRecord
       .mockRejectedValueOnce(new Error("network unavailable"))
       .mockResolvedValue(0);
-    const { ensureSystemMessageErrors } = useSystemMessage();
+    const { requestSystemMessageErrors } = useSystemMessage();
 
-    expect(await ensureSystemMessageErrors("MSG_1")).toEqual([]);
-    expect(await ensureSystemMessageErrors("MSG_1")).toEqual([]);
+    await expect(requestSystemMessageErrors("MSG_1")).rejects.toThrow("network unavailable");
+    await requestSystemMessageErrors("MSG_1");
     expect(mocks.refreshRecord).toHaveBeenCalledTimes(2);
 
     // The successful empty response is the point at which the session memo becomes authoritative.
-    expect(await ensureSystemMessageErrors("MSG_1")).toEqual([]);
+    await requestSystemMessageErrors("MSG_1");
     expect(mocks.refreshRecord).toHaveBeenCalledTimes(2);
   });
 
   it("clears confirmed-clean results with the rest of the session", async () => {
-    const { ensureSystemMessageErrors } = useSystemMessage();
+    const { requestSystemMessageErrors } = useSystemMessage();
 
-    await ensureSystemMessageErrors("MSG_2");
-    await ensureSystemMessageErrors("MSG_2");
+    await requestSystemMessageErrors("MSG_2");
+    await requestSystemMessageErrors("MSG_2");
     expect(mocks.refreshRecord).toHaveBeenCalledTimes(1);
 
     clearSessionScopedState();
 
-    await ensureSystemMessageErrors("MSG_2");
+    await requestSystemMessageErrors("MSG_2");
     expect(mocks.refreshRecord).toHaveBeenCalledTimes(2);
   });
 
-  it("drops a confirmed-clean answer once a fresh fetch finds a retry's error", async () => {
-    const retryError = { systemMessageId: "MSG_4", errorText: "Shopify timed out", errorDate: 5 };
-    const { ensureSystemMessageErrors, fetchSystemMessageErrors } = useSystemMessage();
+  it("drops a confirmed-clean answer once a fresh fetch stores a retry's error", async () => {
+    const { requestSystemMessageErrors, refreshSystemMessageErrors } = useSystemMessage();
 
-    expect(await ensureSystemMessageErrors("MSG_4")).toEqual([]);
-    mocks.errorCacheQuery.mockResolvedValue([retryError]);
-    expect(await fetchSystemMessageErrors("MSG_4")).toEqual([retryError]);
+    await requestSystemMessageErrors("MSG_4");
+    // A fresh read always asks, even past the memo, and this one stores an error.
+    mocks.refreshRecord.mockResolvedValueOnce(1);
+    await refreshSystemMessageErrors("MSG_4");
+    expect(mocks.refreshRecord).toHaveBeenCalledTimes(2);
 
-    expect(await ensureSystemMessageErrors("MSG_4")).toEqual([retryError]);
+    await requestSystemMessageErrors("MSG_4");
+    expect(mocks.refreshRecord).toHaveBeenCalledTimes(3);
   });
 
   it("does not let a late empty response from the previous session restore the memo", async () => {
@@ -131,14 +133,14 @@ describe("ensureSystemMessageErrors", () => {
     mocks.refreshRecord
       .mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }))
       .mockResolvedValue(0);
-    const { ensureSystemMessageErrors } = useSystemMessage();
+    const { requestSystemMessageErrors } = useSystemMessage();
 
-    const oldRequest = ensureSystemMessageErrors("MSG_3");
+    const oldRequest = requestSystemMessageErrors("MSG_3");
     clearSessionScopedState();
     resolveOld(0);
     await oldRequest;
 
-    await ensureSystemMessageErrors("MSG_3");
+    await requestSystemMessageErrors("MSG_3");
     expect(mocks.refreshRecord).toHaveBeenCalledTimes(2);
   });
 });

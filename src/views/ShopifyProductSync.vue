@@ -734,7 +734,6 @@ const props = defineProps(["id"]);
 const userStore = useUserStore();
 const {
   fetchJobDetail,
-  fetchJobRuns,
   fetchJobAuditHistory,
   updateJob,
   runNow
