@@ -9,9 +9,14 @@
  * Kept as its OWN composable rather than folded into `useShopify`: the assistant is a bounded,
  * removable feature (it dies when every shop is on the new sync), and burying 1,100 lines of legacy
  * teardown logic in the everyday Shopify composable would outlive its usefulness.
+ *
+ * Message types, service jobs and remotes are synced tables, so nothing here reads them: the screen
+ * hands its live rows in as a `MigrationCatalog`, and recomputes what depends on them as they change
+ * (`withCatalog`). What only the server knows — eligibility, configs, documents, legacy messages —
+ * is still asked for.
  */
-import { companyDb } from "@/db/companyDb";
 import { useMaargConfig } from "@/composables/useSeed";
+import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
 import { api, logger } from '@common'
 import { PRODUCT_SYNC_MIGRATION_CONFIG, isProductSyncMigrationEligibleRelease } from "@/config/productSyncMigration";
 // Both moved to the Shopify composable when `store/shopifyProductSync` was retired; the `*Internal`
@@ -29,6 +34,16 @@ export interface ProductSyncMigrationTeardownStep {
   error?: string;
 }
 
+/** The synced rows the migration reads, as the screen's live reads hold them. */
+export interface MigrationCatalog {
+  systemMessageTypes: any[];
+  serviceJobs: any[];
+  systemMessageRemotes: any[];
+}
+
+/** Read on every use, so a step taken after a write sees the rows the write's refresh stored. */
+export type MigrationCatalogSource = () => MigrationCatalog;
+
 export interface ProductSyncMigrationTeardownResult {
   failedSteps: ProductSyncMigrationTeardownStep[];
   legacySystemMessageTypes: ProductSyncMigrationLegacyItem[];
@@ -36,6 +51,7 @@ export interface ProductSyncMigrationTeardownResult {
   legacySystemMessages: ProductSyncMigrationLegacyItem[];
   legacySystemMessagesTotalCount: number;
   legacySystemMessageRemoteIds: string[];
+  legacyDynamicServiceJobNames: string[];
 }
 
 export interface ProductSyncMigrationEligibility {
@@ -77,6 +93,8 @@ export interface ProductSyncMigrationAssistantState {
   legacySystemMessageTypes: ProductSyncMigrationLegacyItem[];
   legacyServiceJobs: ProductSyncMigrationLegacyItem[];
   legacySystemMessages: ProductSyncMigrationLegacyItem[];
+  /** This shop's per-shop legacy jobs, found on the server; their state is read from the catalog. */
+  legacyDynamicServiceJobNames: string[];
 }
 
 export function isActionableLegacyItem(item: ProductSyncMigrationLegacyItem, kind: "type" | "job" | "message") {
@@ -260,32 +278,12 @@ export async function fetchEligibility(): Promise<ProductSyncMigrationEligibilit
   };
 }
 
-/**
- * Look a system message type up in the cached seed set.
- *
- * These are existence probes run once per required artifact — previously one request each (11 on a
- * single connection-details load). The cached set is complete, so a miss is a genuine "missing".
- * The network fallback covers only the case where the seed sync has not populated the table yet,
- * so an unsynced cache can never be misreported as a missing artifact.
- */
-async function fetchSystemMessageTypeEntity(systemMessageTypeId: string) {
-  try {
-    const cached = await companyDb.entity(companyDb.tables.systemMessageTypes).all();
-    if (cached.length) {
-      return cached.find((row: any) => row.systemMessageTypeId === systemMessageTypeId);
-    }
-  } catch (error) {
-    logger.warn("System message type cache unavailable; falling back to the server", error);
-  }
+const findSystemMessageType = (catalog: MigrationCatalog, systemMessageTypeId: string) =>
+  catalog.systemMessageTypes.find((row: any) => row.systemMessageTypeId === systemMessageTypeId);
 
-  const response = await api({
-    url: "admin/systemMessages/types",
-    method: "GET",
-    params: { systemMessageTypeId, pageSize: 1 }
-  }) as any;
-
-  return Array.isArray(response?.data) ? response.data[0] : undefined;
-}
+/** The job as the `serviceJob` domain stores it: `jobName`, `paused`, service and parameters. */
+const findServiceJob = (catalog: MigrationCatalog, jobName: string) =>
+  catalog.serviceJobs.find((row: any) => row.jobName === jobName);
 
 async function fetchDataManagerConfigEntity(configId: string) {
   const response = await api({
@@ -296,73 +294,27 @@ async function fetchDataManagerConfigEntity(configId: string) {
   return response?.data;
 }
 
-/**
- * Look a service job up in the cached definitions.
- *
- * The check only reads `jobName` and `paused`, both of which the cached row carries. Same
- * fallback rule as above: network only when the cache has not been populated.
- */
-async function fetchServiceJobEntity(jobName: string) {
-  try {
-    const cached = await companyDb.entity(companyDb.tables.serviceJobs).all();
-    if (cached.length) {
-      return cached.find((row: any) => row.jobName === jobName);
-    }
-  } catch (error) {
-    logger.warn("Service job cache unavailable; falling back to the server", error);
-  }
+/** A required job: verified when the catalog holds it. The catalog is a full snapshot, so a miss is real. */
+function serviceJobCheck(catalog: MigrationCatalog, jobName: string, label: string, note: string): ProductSyncMigrationArtifactCheck {
+  const jobDetail = findServiceJob(catalog, jobName);
 
-  const response = await api({
-    url: `admin/serviceJobs/${jobName}`,
-    method: "GET",
-    params: { pageSize: 1 }
-  }) as any;
-
-  return response?.data?.jobDetail;
+  return {
+    id: jobName,
+    label,
+    status: jobDetail?.jobName ? "verified" : "missing",
+    note,
+    isPaused: jobDetail?.paused === "Y",
+    jobDetail
+  };
 }
 
-async function fetchServiceJobCheck(jobName: string, label: string, note: string): Promise<ProductSyncMigrationArtifactCheck> {
-  try {
-    const jobDetail = await fetchServiceJobEntity(jobName);
-
-    return {
-      id: jobName,
-      label,
-      status: jobDetail?.jobName ? "verified" : "missing",
-      note,
-      isPaused: jobDetail?.paused === "Y",
-      jobDetail
-    };
-  } catch (error) {
-    logger.warn(`Failed to verify service job ${jobName}`, error);
-    return {
-      id: jobName,
-      label,
-      status: "missing",
-      note
-    };
-  }
-}
-
-async function fetchSystemMessageTypeCheck(systemMessageTypeId: string, label: string, note: string): Promise<ProductSyncMigrationArtifactCheck> {
-  try {
-    const systemMessageType = await fetchSystemMessageTypeEntity(systemMessageTypeId);
-
-    return {
-      id: systemMessageTypeId,
-      label,
-      status: systemMessageType?.systemMessageTypeId ? "verified" : "missing",
-      note
-    };
-  } catch (error) {
-    logger.warn(`Failed to verify system message type ${systemMessageTypeId}`, error);
-    return {
-      id: systemMessageTypeId,
-      label,
-      status: "missing",
-      note
-    };
-  }
+function systemMessageTypeCheck(catalog: MigrationCatalog, systemMessageTypeId: string, label: string, note: string): ProductSyncMigrationArtifactCheck {
+  return {
+    id: systemMessageTypeId,
+    label,
+    status: findSystemMessageType(catalog, systemMessageTypeId)?.systemMessageTypeId ? "verified" : "missing",
+    note
+  };
 }
 
 async function fetchDataManagerConfigCheck(configId: string, label: string, note: string): Promise<ProductSyncMigrationArtifactCheck> {
@@ -415,11 +367,12 @@ async function fetchDataDocumentCheck(dataDocumentId: string, label: string, not
   }
 }
 
-async function fetchLegacySystemMessageRemoteIds(payload: any) {
+async function fetchLegacySystemMessageRemoteIds(payload: any, catalog: MigrationCatalog) {
   try {
     const systemMessageRemoteIds = await fetchShopSystemMessageRemoteId({
       shopId: payload?.shopId,
       shop: payload?.shop,
+      remotes: catalog.systemMessageRemotes,
       returnAllSystemMessageRemoteIds: true
     });
 
@@ -432,60 +385,34 @@ async function fetchLegacySystemMessageRemoteIds(payload: any) {
 
 const LEGACY_BULK_QUERY_TYPE_TERM = "BulkProductAndVariantsByIdQuery";
 
-async function fetchDynamicLegacySystemMessageTypes(): Promise<string[]> {
-  // The server form is a `_op: like` search over the type catalog. That catalog is cached in full,
-  // so the same substring match runs locally (Moqui's bare `like` value is a contains match).
-  try {
-    const cached = await companyDb.entity(companyDb.tables.systemMessageTypes).all();
-    if (cached.length) {
-      return cached
-        .map((row: any) => String(row.systemMessageTypeId || "").trim())
-        .filter((typeId: string) => typeId.includes(LEGACY_BULK_QUERY_TYPE_TERM));
-    }
-  } catch (error) {
-    logger.warn("System message type cache unavailable; falling back to the server", error);
-  }
+/** The shared artifacts the new sync needs. Job and type checks read the catalog; the rest ask the server. */
+const ARTIFACT_CHECK_DEFINITIONS: Array<{ id: string; type: "job" | "systemMessageType" | "dataManagerConfig" | "dataDocument"; label: string; note: string }> = [
+  { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.serviceJobs.baseSync, type: "job", label: "Base sync job", note: "Shared template job required before the app can configure a per-shop sync." },
+  { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.serviceJobs.send, type: "job", label: "Send produced messages job", note: "Shared sender for new product sync system messages." },
+  { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.serviceJobs.poll, type: "job", label: "Poll bulk operation results job", note: "Shared poller for completed Shopify bulk query results." },
+  { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.systemMessageTypes.productSync, type: "systemMessageType", label: "New product sync message type", note: "Required message type for the bulk-query product sync flow." },
+  { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.dataManagerConfig, type: "dataManagerConfig", label: "Data manager config", note: "Required config for processing imported Shopify product sync files." },
+  { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.dataDocuments[0], type: "dataDocument", label: "Service job parameters document", note: "Required for verifying per-shop sync job configuration via Data Document." },
+  { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.dataDocuments[1], type: "dataDocument", label: "Data manager logs document", note: "Required for tracking sync progress and error counts via Data Document." },
+  { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.dataDocuments[2], type: "dataDocument", label: "Product store counts document", note: "Required for preflight checks and catalog metrics via Data Document." }
+];
 
-  try {
-    const response = await api({
-      url: "admin/systemMessages/types",
-      method: "GET",
-      params: {
-        systemMessageTypeId: LEGACY_BULK_QUERY_TYPE_TERM,
-        systemMessageTypeId_op: "like",
-        pageSize: 50
-      }
-    }) as any;
+/** The legacy bulk-query types: a contains match over the catalog, as the server's bare `like` is. */
+function legacySystemMessageTypeIds(catalog: MigrationCatalog): string[] {
+  const dynamicTypes = catalog.systemMessageTypes
+    .map((row: any) => String(row.systemMessageTypeId || "").trim())
+    .filter((typeId: string) => typeId.includes(LEGACY_BULK_QUERY_TYPE_TERM));
 
-    const types = Array.isArray(response?.data) ? response.data : [];
-    return types.map((t: any) => String(t?.systemMessageTypeId || "").trim());
-  } catch (error) {
-    logger.error("Failed to fetch dynamic system message types", error);
-    return [];
-  }
+  return [...new Set([...PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.systemMessageTypes, ...dynamicTypes])];
 }
 
-async function fetchLegacySystemMessageTypeState(): Promise<ProductSyncMigrationLegacyItem[]> {
-  const dynamicTypes = await fetchDynamicLegacySystemMessageTypes();
-  const allTypes = [...new Set([...PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.systemMessageTypes, ...dynamicTypes])];
-
-  return Promise.all(allTypes.map(async (systemMessageTypeId) => {
-    try {
-      const systemMessageType = await fetchSystemMessageTypeEntity(systemMessageTypeId);
-      return describeLegacySystemMessageTypeState(systemMessageTypeId, systemMessageType);
-    } catch (error) {
-      logger.error(`Failed to inspect legacy system message type ${systemMessageTypeId}`, error);
-      return {
-        id: systemMessageTypeId,
-        label: systemMessageTypeId,
-        status: "failed",
-        note: "This legacy system message type could not be verified."
-      } as ProductSyncMigrationLegacyItem;
-    }
-  }));
+function legacySystemMessageTypeState(catalog: MigrationCatalog): ProductSyncMigrationLegacyItem[] {
+  return legacySystemMessageTypeIds(catalog).map((systemMessageTypeId) =>
+    describeLegacySystemMessageTypeState(systemMessageTypeId, findSystemMessageType(catalog, systemMessageTypeId)));
 }
 
-async function fetchDynamicLegacyServiceJobs(shopId: string, systemMessageRemoteIds: string[]): Promise<ProductSyncMigrationLegacyItem[]> {
+/** This shop's per-shop legacy jobs: the server document is the only place their parameters are searchable. */
+async function fetchDynamicLegacyServiceJobNames(systemMessageRemoteIds: string[]): Promise<string[]> {
   try {
     const response = await api({
       url: "oms/dataDocumentView",
@@ -510,7 +437,7 @@ async function fetchDynamicLegacyServiceJobs(shopId: string, systemMessageRemote
       jobsMap[name].push(row);
     }
 
-    const matchedJobs: ProductSyncMigrationLegacyItem[] = [];
+    const matchedJobNames: string[] = [];
 
     for (const [jobName, jobRows] of Object.entries(jobsMap)) {
       const params: Record<string, string> = {};
@@ -528,69 +455,65 @@ async function fetchDynamicLegacyServiceJobs(shopId: string, systemMessageRemote
       const matchesType = typeValue && typeValue.includes("BulkProductAndVariantsByIdQuery");
       const matchesRemote = remoteValue && systemMessageRemoteIds.includes(remoteValue);
 
-      if (matchesType && matchesRemote) {
-        try {
-          const jobDetail = await fetchServiceJobEntity(jobName);
-          if (jobDetail) {
-            matchedJobs.push(describeLegacyServiceJobState(jobDetail));
-          } else {
-            logger.warn(`Could not fetch details for dynamic legacy job ${jobName}, adding as missing.`);
-            matchedJobs.push({
-              id: jobName,
-              label: jobName,
-              status: "missing",
-              note: "Could not retrieve details for this dynamic job."
-            });
-          }
-        } catch (err) {
-          logger.error(`Error fetching service job entity for ${jobName}`, err);
-          matchedJobs.push({
-            id: jobName,
-            label: jobName,
-            status: "failed",
-            note: "Failed to inspect this dynamic service job."
-          });
-        }
-      }
+      if (matchesType && matchesRemote) matchedJobNames.push(jobName);
     }
 
-    return matchedJobs;
+    return matchedJobNames;
   } catch (error) {
     logger.error("Failed to fetch dynamic legacy service jobs", error);
     return [];
   }
 }
 
-async function fetchLegacyServiceJobState(shopId: string, systemMessageRemoteIds: string[] = []): Promise<ProductSyncMigrationLegacyItem[]> {
-  const staticJobs = await Promise.all(PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.serviceJobs.map(async (jobName) => {
-    try {
-      const jobDetail = await fetchServiceJobEntity(jobName);
-      if (!jobDetail?.jobName) {
-        return {
-          id: jobName,
-          label: jobName,
-          status: "missing",
-          note: "This legacy service job is not present."
-        } as ProductSyncMigrationLegacyItem;
-      }
-
-      return describeLegacyServiceJobState(jobDetail);
-    } catch (error) {
-      logger.warn(`Failed to inspect legacy service job ${jobName}`, error);
+function legacyServiceJobState(catalog: MigrationCatalog, dynamicJobNames: string[]): ProductSyncMigrationLegacyItem[] {
+  const staticJobs = PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.serviceJobs.map((jobName) => {
+    const jobDetail = findServiceJob(catalog, jobName);
+    if (!jobDetail?.jobName) {
       return {
         id: jobName,
         label: jobName,
-        status: "failed",
-        note: "This legacy service job could not be verified."
+        status: "missing",
+        note: "This legacy service job is not present."
       } as ProductSyncMigrationLegacyItem;
     }
-  }));
 
-  const dynamicJobs = systemMessageRemoteIds.length ? await fetchDynamicLegacyServiceJobs(shopId, systemMessageRemoteIds) : [];
+    return describeLegacyServiceJobState(jobDetail);
+  });
+
+  const dynamicJobs = dynamicJobNames.map((jobName) => {
+    const jobDetail = findServiceJob(catalog, jobName);
+    return jobDetail
+      ? describeLegacyServiceJobState(jobDetail)
+      : { id: jobName, label: jobName, status: "missing", note: "Could not retrieve details for this dynamic job." } as ProductSyncMigrationLegacyItem;
+  });
+
   return [...staticJobs, ...dynamicJobs];
 }
 
-async function fetchLegacySystemMessages(payload: any): Promise<{ items: ProductSyncMigrationLegacyItem[]; totalCount: number }> {
+/**
+ * Recompute everything the catalog decides — the required types and jobs, and the legacy types and
+ * jobs — from the catalog as it is now. A screen calls this whenever its live rows change, so a
+ * teardown or setup step shows as soon as the worker stores its result.
+ */
+export function withCatalog<T extends Partial<ProductSyncMigrationAssistantState>>(state: T, catalog: MigrationCatalog): T {
+  const updated: T = {
+    ...state,
+    legacySystemMessageTypes: legacySystemMessageTypeState(catalog),
+    legacyServiceJobs: legacyServiceJobState(catalog, state.legacyDynamicServiceJobNames ?? []),
+  };
+  if (state.artifactChecks) {
+    updated.artifactChecks = state.artifactChecks.map((check) => {
+      const definition = ARTIFACT_CHECK_DEFINITIONS.find((def) => def.id === check.id);
+      if (definition?.type === "job") return serviceJobCheck(catalog, check.id, check.label, check.note);
+      if (definition?.type === "systemMessageType") return systemMessageTypeCheck(catalog, check.id, check.label, check.note);
+      return check;
+    });
+  }
+
+  return updated;
+}
+
+async function fetchLegacySystemMessages(payload: any, catalog: MigrationCatalog): Promise<{ items: ProductSyncMigrationLegacyItem[]; totalCount: number }> {
   const shopId = getShopId(payload);
   if (!shopId) {
     logger.warn("Shop ID is missing. Cannot fetch legacy system messages.");
@@ -601,7 +524,7 @@ async function fetchLegacySystemMessages(payload: any): Promise<{ items: Product
   }
   const systemMessageRemoteIds = payload?.legacySystemMessageRemoteIds?.length ?
     payload.legacySystemMessageRemoteIds :
-    await fetchLegacySystemMessageRemoteIds(payload);
+    await fetchLegacySystemMessageRemoteIds(payload, catalog);
 
   if (!systemMessageRemoteIds.length) {
     logger.warn("No legacy system message remote IDs found for this shop.");
@@ -616,8 +539,7 @@ async function fetchLegacySystemMessages(payload: any): Promise<{ items: Product
   const pageSize = payload?.includeAllSystemMessages ? 250 : 50; // Increased to 50 for better coverage in fewer calls
   const maxPages = 3; // Strict hard stop to prevent infinite pagination loops
 
-  const dynamicTypes = await fetchDynamicLegacySystemMessageTypes();
-  const allTypes = [...new Set([...PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.systemMessageTypes, ...dynamicTypes])];
+  const allTypes = legacySystemMessageTypeIds(catalog);
 
   let pageIndex = 0;
   let shouldContinue = true;
@@ -681,30 +603,42 @@ async function fetchLegacySystemMessages(payload: any): Promise<{ items: Product
   };
 }
 
-export async function fetchLegacyTeardownState(payload: any) {
-  const shopId = getShopId(payload);
-
-  const legacySystemMessageRemoteIds = await fetchLegacySystemMessageRemoteIds(payload);
-  const [legacySystemMessageTypes, legacyServiceJobs, legacySystemMessageState] = await Promise.all([
-    fetchLegacySystemMessageTypeState(),
-    fetchLegacyServiceJobState(shopId, legacySystemMessageRemoteIds),
+/** `payload.catalog` is the screen's live rows, read once its tables have loaded. */
+export async function fetchLegacyTeardownState(payload: { catalog: MigrationCatalogSource } & Record<string, any>) {
+  const legacySystemMessageRemoteIds = await fetchLegacySystemMessageRemoteIds(payload, payload.catalog());
+  const [legacyDynamicServiceJobNames, legacySystemMessageState] = await Promise.all([
+    legacySystemMessageRemoteIds.length ? fetchDynamicLegacyServiceJobNames(legacySystemMessageRemoteIds) : [],
     fetchLegacySystemMessages({
       ...payload,
       legacySystemMessageRemoteIds
-    })
+    }, payload.catalog())
   ]);
+  const catalog = payload.catalog();
 
   return {
     legacySystemMessageRemoteIds,
-    legacySystemMessageTypes,
-    legacyServiceJobs,
+    legacyDynamicServiceJobNames,
+    legacySystemMessageTypes: legacySystemMessageTypeState(catalog),
+    legacyServiceJobs: legacyServiceJobState(catalog, legacyDynamicServiceJobNames),
     legacySystemMessages: legacySystemMessageState.items,
     legacySystemMessagesTotalCount: legacySystemMessageState.totalCount
   };
 }
 
-export async function deprecateLegacySystemMessageType(systemMessageTypeId: string): Promise<void> {
-  const systemMessageType = await fetchSystemMessageTypeEntity(systemMessageTypeId);
+/**
+ * A write's local refresh failing does not undo the write, and the teardown reports a step as failed
+ * only when the server rejected it — so a failed refresh is logged, and the next sync corrects the row.
+ */
+async function reconcile(refresh: () => Promise<unknown>, what: string) {
+  try {
+    await refresh();
+  } catch (error) {
+    logger.warn(`Saved ${what}, but its stored row could not be refreshed`, error);
+  }
+}
+
+export async function deprecateLegacySystemMessageType(systemMessageTypeId: string, catalog: MigrationCatalog): Promise<void> {
+  const systemMessageType = findSystemMessageType(catalog, systemMessageTypeId);
   if (!systemMessageType?.systemMessageTypeId) return;
 
   await api({
@@ -723,10 +657,12 @@ export async function deprecateLegacySystemMessageType(systemMessageTypeId: stri
       receiveResponseEnumId: ""
     }
   });
+  // The type lookup has no by-key route, so its whole (small) snapshot is re-read.
+  await reconcile(() => resyncDomain("systemMessageType"), `system message type ${systemMessageTypeId}`);
 }
 
-export async function deactivateLegacyServiceJob(jobName: string): Promise<void> {
-  const jobDetail = await fetchServiceJobEntity(jobName);
+export async function deactivateLegacyServiceJob(jobName: string, catalog: MigrationCatalog): Promise<void> {
+  const jobDetail = findServiceJob(catalog, jobName);
   if (!jobDetail?.jobName) return;
 
   await api({
@@ -741,6 +677,7 @@ export async function deactivateLegacyServiceJob(jobName: string): Promise<void>
       serviceJobParameters: Array.isArray(jobDetail.serviceJobParameters) ? jobDetail.serviceJobParameters : []
     }
   });
+  await reconcile(() => refreshAfterMutation("serviceJob", { jobName }), `service job ${jobName}`);
 }
 
 export async function enableServiceJob(jobName: string, jobDetail: any): Promise<void> {
@@ -760,6 +697,7 @@ export async function enableServiceJob(jobName: string, jobDetail: any): Promise
       serviceJobParameters: Array.isArray(jobDetail.serviceJobParameters) ? jobDetail.serviceJobParameters : []
     }
   });
+  await reconcile(() => refreshAfterMutation("serviceJob", { jobName }), `service job ${jobName}`);
 }
 
 export async function cancelLegacySystemMessage(systemMessage: any): Promise<void> {
@@ -812,7 +750,7 @@ export async function cancelLegacySystemMessage(systemMessage: any): Promise<voi
 }
 
 export async function teardownLegacySync(
-  payload: any,
+  payload: { catalog: MigrationCatalogSource } & Record<string, any>,
   onProgress?: (step: ProductSyncMigrationTeardownStep) => void
 ): Promise<ProductSyncMigrationTeardownResult> {
   const legacyTeardownState = await fetchLegacyTeardownState({
@@ -842,7 +780,7 @@ export async function teardownLegacySync(
     });
 
     try {
-      await deprecateLegacySystemMessageType(systemMessageType.id);
+      await deprecateLegacySystemMessageType(systemMessageType.id, payload.catalog());
       onProgress?.({
         kind: "type",
         id: systemMessageType.id,
@@ -884,7 +822,7 @@ export async function teardownLegacySync(
     });
 
     try {
-      await deactivateLegacyServiceJob(serviceJob.id);
+      await deactivateLegacyServiceJob(serviceJob.id, payload.catalog());
       onProgress?.({
         kind: "job",
         id: serviceJob.id,
@@ -955,8 +893,9 @@ export async function teardownLegacySync(
   };
 }
 
+/** `payload.catalog` is the screen's live rows, read once its tables have loaded. */
 export async function fetchAssistantState(
-  payload: any,
+  payload: { catalog: MigrationCatalogSource } & Record<string, any>,
   onProgress?: (state: Partial<ProductSyncMigrationAssistantState>) => void
 ): Promise<ProductSyncMigrationAssistantState> {
   const shopId = getShopId(payload);
@@ -973,7 +912,8 @@ export async function fetchAssistantState(
     artifactChecks: [],
     legacySystemMessageTypes: [],
     legacyServiceJobs: [],
-    legacySystemMessages: []
+    legacySystemMessages: [],
+    legacyDynamicServiceJobNames: []
   };
 
   // 1. Eligibility Check
@@ -992,31 +932,21 @@ export async function fetchAssistantState(
   }
 
   // 2. Artifact Checks (Base infrastructure)
-  const artifactCheckDefinitions = [
-    { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.serviceJobs.baseSync, type: "job", label: "Base sync job", note: "Shared template job required before the app can configure a per-shop sync." },
-    { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.serviceJobs.send, type: "job", label: "Send produced messages job", note: "Shared sender for new product sync system messages." },
-    { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.serviceJobs.poll, type: "job", label: "Poll bulk operation results job", note: "Shared poller for completed Shopify bulk query results." },
-    { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.systemMessageTypes.productSync, type: "systemMessageType", label: "New product sync message type", note: "Required message type for the bulk-query product sync flow." },
-    { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.dataManagerConfig, type: "dataManagerConfig", label: "Data manager config", note: "Required config for processing imported Shopify product sync files." },
-    { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.dataDocuments[0], type: "dataDocument", label: "Service job parameters document", note: "Required for verifying per-shop sync job configuration via Data Document." },
-    { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.dataDocuments[1], type: "dataDocument", label: "Data manager logs document", note: "Required for tracking sync progress and error counts via Data Document." },
-    { id: PRODUCT_SYNC_MIGRATION_CONFIG.incoming.dataDocuments[2], type: "dataDocument", label: "Product store counts document", note: "Required for preflight checks and catalog metrics via Data Document." }
-  ];
 
-  state.artifactChecks = artifactCheckDefinitions.map(def => ({ id: def.id, label: def.label, note: def.note, status: "checking" }));
+  state.artifactChecks = ARTIFACT_CHECK_DEFINITIONS.map(def => ({ id: def.id, label: def.label, note: def.note, status: "checking" }));
   onProgress?.({ artifactChecks: [...state.artifactChecks] });
 
   // Process artifact checks concurrently and update state piece by piece
-  await Promise.all(artifactCheckDefinitions.map(async (def, index) => {
+  await Promise.all(ARTIFACT_CHECK_DEFINITIONS.map(async (def, index) => {
     let result: ProductSyncMigrationArtifactCheck;
     if (def.type === "systemMessageType") {
-      result = await fetchSystemMessageTypeCheck(def.id, def.label, def.note);
+      result = systemMessageTypeCheck(payload.catalog(), def.id, def.label, def.note);
     } else if (def.type === "dataManagerConfig") {
       result = await fetchDataManagerConfigCheck(def.id, def.label, def.note);
     } else if (def.type === "dataDocument") {
       result = await fetchDataDocumentCheck(def.id, def.label, def.note);
     } else {
-      result = await fetchServiceJobCheck(def.id, def.label, def.note);
+      result = serviceJobCheck(payload.catalog(), def.id, def.label, def.note);
     }
     state.artifactChecks[index] = result;
     onProgress?.({ artifactChecks: [...state.artifactChecks] });
@@ -1044,7 +974,8 @@ export async function fetchAssistantState(
     try {
       state.systemMessageRemoteId = await fetchShopSystemMessageRemoteId({
         shopId,
-        shop: payload?.shop
+        shop: payload?.shop,
+        remotes: payload.catalog().systemMessageRemotes
       });
       onProgress?.({
         systemMessageRemoteId: state.systemMessageRemoteId
@@ -1059,27 +990,29 @@ export async function fetchAssistantState(
     state.legacySystemMessageRemoteIds = await fetchLegacySystemMessageRemoteIds({
       shopId,
       shop: payload?.shop
-    });
+    }, payload.catalog());
     onProgress?.({ legacySystemMessageRemoteIds: state.legacySystemMessageRemoteIds });
 
     // Fetch legacy items in parallel blocks
-    const [legacyTypes, legacyJobs, legacyMessages] = await Promise.all([
-      fetchLegacySystemMessageTypeState(),
-      fetchLegacyServiceJobState(shopId, state.legacySystemMessageRemoteIds),
+    const [legacyDynamicServiceJobNames, legacyMessages] = await Promise.all([
+      state.legacySystemMessageRemoteIds.length ? fetchDynamicLegacyServiceJobNames(state.legacySystemMessageRemoteIds) : [],
       fetchLegacySystemMessages({
         shopId,
         shop: payload?.shop,
         legacySystemMessageRemoteIds: state.legacySystemMessageRemoteIds,
         includeAllSystemMessages: false
-      })
+      }, payload.catalog())
     ]);
 
-    state.legacySystemMessageTypes = legacyTypes;
-    state.legacyServiceJobs = legacyJobs;
+    const catalog = payload.catalog();
+    state.legacyDynamicServiceJobNames = legacyDynamicServiceJobNames;
+    state.legacySystemMessageTypes = legacySystemMessageTypeState(catalog);
+    state.legacyServiceJobs = legacyServiceJobState(catalog, legacyDynamicServiceJobNames);
     state.legacySystemMessages = legacyMessages.items;
     state.legacySystemMessagesTotalCount = legacyMessages.totalCount;
 
     onProgress?.({
+      legacyDynamicServiceJobNames: state.legacyDynamicServiceJobNames,
       legacySystemMessageTypes: state.legacySystemMessageTypes,
       legacyServiceJobs: state.legacyServiceJobs,
       legacySystemMessages: state.legacySystemMessages,

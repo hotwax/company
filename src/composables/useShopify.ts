@@ -5980,10 +5980,6 @@ interface SystemMessagesResponse {
   systemMessagesCount?: number;
 }
 
-interface SystemMessageRemotesResponse {
-  systemMessageRemoteList?: any[];
-}
-
 const PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID = "BulkQueryShopifyProductUpdates";
 const SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID = "SHOP_NO_ACCESS";
 // SHOP_RW_ACCESS is the official read-write access scope. SHOP_READ_WRITE_ACCESS is the
@@ -6321,33 +6317,6 @@ function getShopifyAccessStateFromCandidate(candidate: any): ShopifyProductSyncA
   };
 }
 
-/**
- * Candidate remotes for a shop, read from the cached remote list.
- *
- * This ran three times on a single connection-details load, each time re-fetching the whole remote
- * list to filter it client-side. The list is cached seed data, so the filtering happens locally and
- * the request disappears. Network fallback only while the cache is unpopulated.
- */
-async function fetchShopRemoteCandidates(payload: any) {
-  try {
-    const cached = await companyDb.entity(companyDb.tables.systemMessageRemotes).all();
-    if(cached.length) {
-      const remotes = cached;
-
-      return sortShopRemoteCandidates(getShopRemoteCandidates(remotes, payload));
-    }
-  } catch (error) {
-    logger.warn("System message remote cache unavailable; falling back to the server", error);
-  }
-
-  const response = await requestBackend<SystemMessageRemotesResponse>({
-    url: "oms/systemMessageRemotes",
-    method: "get"
-  });
-
-  return sortShopRemoteCandidates(getShopRemoteCandidates(response?.systemMessageRemoteList || [], payload));
-}
-
 /** A shop's remotes out of a remote list, best access first. Screens pass their live remote rows. */
 export function shopRemoteCandidatesFor(remotes: any[], payload: any) {
   return sortShopRemoteCandidates(getShopRemoteCandidates(remotes, payload));
@@ -6371,7 +6340,7 @@ export function shopifyAccessStateFor(remotes: any[], payload: any): ShopifyProd
 
 /**
  * The remote a shop's product sync runs on: the first candidate with product-sync history on the
- * server. A screen passes its live remote rows as `remotes`; without them the stored list is read.
+ * server. `remotes` is the caller's live remote rows.
  */
 export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any> => {
   const shopifyShopId = payload.shopifyShopId || payload.shop?.shopifyShopId;
@@ -6379,9 +6348,7 @@ export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any>
     throw new Error("Shopify shop id is required to resolve SystemMessageRemote.remoteId.");
   }
 
-  const candidates = Array.isArray(payload.remotes)
-    ? shopRemoteCandidatesFor(payload.remotes, payload)
-    : await fetchShopRemoteCandidates(payload);
+  const candidates = shopRemoteCandidatesFor(Array.isArray(payload.remotes) ? payload.remotes : [], payload);
   if(!candidates.length) {
     throw new Error(`No SystemMessageRemote found with remoteId ${shopifyShopId}.`);
   }

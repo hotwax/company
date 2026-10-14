@@ -567,6 +567,8 @@ import ShopifyOrderSyncCard from "@/components/shopify-order-sync/ShopifyOrderSy
 import {
   fetchEligibility,
   fetchLegacyTeardownState,
+  withCatalog,
+  type MigrationCatalog,
 } from "@/composables/useShopifyProductSyncMigration";
 import {
   fetchUnsyncedProductUpdateCount,
@@ -586,7 +588,8 @@ import {
 import { refreshAfterMutation } from "@/services/appDbSync";
 import { useProductStores } from "@/composables/useProductStores";
 import { useSystemMessageRemotes } from "@/composables/useSystemMessage";
-import { useTypedEnums } from "@/composables/useSeed";
+import { useSystemMessageTypes, useTypedEnums } from "@/composables/useSeed";
+import { useServiceJobs } from "@/composables/useServiceJobs";
 
 /** Enum type behind SystemMessageRemote.accessScopeEnumId: SHOP_NO / SHOP_READ / SHOP_RW access. */
 const SHOPIFY_SHOP_ACCESS_SCOPE_ENUM_TYPE = "ShopifyShopAccessScope";
@@ -641,8 +644,11 @@ const productSyncMigrationEligibility = ref({
 const legacyProductSyncState = ref({
   legacySystemMessageTypes: [] as any[],
   legacyServiceJobs: [] as any[],
-  legacySystemMessages: [] as any[]
+  legacySystemMessages: [] as any[],
+  legacyDynamicServiceJobNames: [] as string[]
 });
+/** Set once the legacy state has been read for this shop; until then there is nothing to re-derive. */
+const legacyStateLoaded = ref(false);
 
 const { shops: cachedShops } = useShopifyShops();
 const { record: shopRecord } = useShopifyShop(props.id);
@@ -650,6 +656,35 @@ const shop = computed<any>(() => shopRecord.value ?? {});
 // Live from the shop's remotes, so a changed access scope shows without reopening the page.
 const { remotes: systemMessageRemotes } = useSystemMessageRemotes();
 const shopifyAccessState = computed(() => shopifyAccessStateFor(systemMessageRemotes.value, { shopId: props.id, shop: shop.value }));
+
+// The synced tables the legacy check reads. It runs once they have loaded, and its job and type items
+// re-derive as they change, so a teardown done in the upgrade assistant shows here without a reload.
+const { systemMessageTypes: systemMessageTypeRows, hydrated: typesHydrated } = useSystemMessageTypes();
+const { records: serviceJobRows, hydrated: jobsHydrated } = useServiceJobs();
+const { hydrated: remotesHydrated } = useSystemMessageRemotes();
+const catalogLoaded = computed(() => typesHydrated.value && jobsHydrated.value && remotesHydrated.value);
+const migrationCatalog = (): MigrationCatalog => ({
+  systemMessageTypes: systemMessageTypeRows.value,
+  serviceJobs: serviceJobRows.value,
+  systemMessageRemotes: systemMessageRemotes.value,
+});
+
+function whenCatalogLoaded(): Promise<void> {
+  if (catalogLoaded.value) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    const stop = watch(catalogLoaded, (ready) => {
+      if (!ready) return;
+      stop();
+      resolve();
+    });
+  });
+}
+
+watch([systemMessageTypeRows, serviceJobRows], () => {
+  if (!catalogLoaded.value || !legacyStateLoaded.value) return;
+  legacyProductSyncState.value = withCatalog(legacyProductSyncState.value, migrationCatalog());
+});
 const selectedShopId = computed(() => String(shop.value.shopId || "").trim());
 /**
  * Order sync state, LIVE from the cache — the same shape the deleted `shopifyOrderSync` store fed
@@ -1030,8 +1065,10 @@ async function loadProductsInventorySummary() {
   legacyProductSyncState.value = {
     legacySystemMessageTypes: [],
     legacyServiceJobs: [],
-    legacySystemMessages: []
+    legacySystemMessages: [],
+    legacyDynamicServiceJobNames: []
   };
+  legacyStateLoaded.value = false;
   // Nothing to reset for the run state or the record count — both are cached projections that
   // re-derive from whichever shop is selected.
   clearSyncRun();
@@ -1043,7 +1080,8 @@ async function loadProductsInventorySummary() {
 
   const [eligibilityResult, legacyTeardownStateResult] = await Promise.allSettled([
     fetchEligibility(),
-    fetchLegacyTeardownState({ shopId: props.id, shop: shop.value })
+    // Before the tables load every legacy job and type would read as missing.
+    whenCatalogLoaded().then(() => fetchLegacyTeardownState({ shopId: props.id, shop: shop.value, catalog: migrationCatalog }))
   ]);
 
   if (eligibilityResult.status === "fulfilled") {
@@ -1053,11 +1091,13 @@ async function loadProductsInventorySummary() {
   }
 
   if (legacyTeardownStateResult.status === "fulfilled") {
-    legacyProductSyncState.value = {
+    legacyProductSyncState.value = withCatalog({
       legacySystemMessageTypes: legacyTeardownStateResult.value.legacySystemMessageTypes || [],
       legacyServiceJobs: legacyTeardownStateResult.value.legacyServiceJobs || [],
-      legacySystemMessages: legacyTeardownStateResult.value.legacySystemMessages || []
-    };
+      legacySystemMessages: legacyTeardownStateResult.value.legacySystemMessages || [],
+      legacyDynamicServiceJobNames: legacyTeardownStateResult.value.legacyDynamicServiceJobNames || []
+    }, migrationCatalog());
+    legacyStateLoaded.value = true;
   } else {
     logger.warn("Failed to inspect legacy product sync state", legacyTeardownStateResult.reason);
   }

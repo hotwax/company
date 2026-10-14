@@ -4,7 +4,6 @@ import { ref } from "vue";
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
   hasError: vi.fn((_response: any) => false),
-  remotes: [] as any[],
 }));
 
 vi.mock("@common", () => ({
@@ -23,14 +22,7 @@ vi.mock("@common", () => ({
 
 vi.mock("@/db/companyDb", () => ({
   companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
-    entity: (table: string) => {
-      if (table === "systemMessageRemotes") {
-        return {
-          all: vi.fn(() => harness.remotes),
-        };
-      }
-      return { all: vi.fn(async () => []) };
-    },
+    entity: () => ({ all: vi.fn(async () => []) }),
   },
 }));
 
@@ -98,8 +90,10 @@ function remote(systemMessageRemoteId: string) {
 beforeEach(() => {
   harness.api.mockReset();
   harness.hasError.mockReset().mockReturnValue(false);
-  harness.remotes = [remote("RemoteA"), remote("RemoteB")];
 });
+
+/** The screen's live remote rows for the shop. */
+const shopRemotes = () => [remote("RemoteA"), remote("RemoteB")];
 
 describe("refreshMappedProductSearchIndex", () => {
   it("indexes only the selected OMS product without an import or Shopify call", async () => {
@@ -137,6 +131,7 @@ describe("fetchShopSystemMessageRemoteId", () => {
     const selected = await fetchShopSystemMessageRemoteId({
       shopId: SHOP_ID,
       shopifyShopId: SHOPIFY_SHOP_ID,
+      remotes: shopRemotes(),
     });
 
     expect(selected).toBe("RemoteB");
@@ -164,13 +159,13 @@ describe("fetchShopSystemMessageRemoteId", () => {
     await expect(fetchShopSystemMessageRemoteId({
       shopId: SHOP_ID,
       shopifyShopId: SHOPIFY_SHOP_ID,
+      remotes: shopRemotes(),
     })).resolves.toBe("RemoteB");
   });
 });
 
 describe("fetchShopSystemMessageRemoteId with the screen's live remotes", () => {
-  it("picks among the remotes it is given rather than the stored list", async () => {
-    harness.remotes = [];
+  it("picks among the remotes it is given", async () => {
     harness.api.mockResolvedValue({ data: { systemMessages: [{ systemMessageRemoteId: "LiveRemote" }] } });
 
     await expect(fetchShopSystemMessageRemoteId({

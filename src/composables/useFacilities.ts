@@ -1355,14 +1355,17 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
  * belongs to `groupFacility`, re-listed for the one group so a removed member is pruned.
  */
 export function useFacilityArchive() {
+  // The archive group's stored row, live. The group list is a login snapshot, so a hit costs no request.
+  const { first: storedArchiveGroup } = useLiveEntity<any>(companyDb.tables.facilityGroups, {
+    equals: { facilityGroupId: ARCHIVE_FACILITY_GROUP_ID },
+  });
+
   /** Resolve the archive group, creating it once if this OMS has never had one. */
   async function ensureArchiveGroup(): Promise<string> {
-    // Cache first — the group list is a login snapshot, so a hit costs no request at all.
-    const cached = await companyDb.entity(companyDb.tables.facilityGroups).all();
-    if (cached.some((group: any) => group.facilityGroupId === ARCHIVE_FACILITY_GROUP_ID)) return ARCHIVE_FACILITY_GROUP_ID;
+    if (storedArchiveGroup.value) return ARCHIVE_FACILITY_GROUP_ID;
 
-    // A cache miss is not proof of absence (the group may have been created outside this app since
-    // login), so confirm against the server before trying to create it.
+    // No stored row is not proof of absence (the group may have been created outside this app since
+    // login, or the snapshot has not loaded yet), so confirm against the server before creating it.
     try {
       const resp: any = await api({ url: `oms/facilityGroups/${ARCHIVE_FACILITY_GROUP_ID}`, method: "get" });
       if (!commonUtil.hasError(resp) && resp.data?.facilityGroupId) {
