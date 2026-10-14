@@ -788,10 +788,11 @@ const {
  * every row as missing: no runs means the wizard, no last-sync date means counting every product.
  */
 function whenSpineLoaded(): Promise<void> {
-  if(spineHydrated.value) {return Promise.resolve();}
+  const loaded = () => spineHydrated.value && remotesHydrated.value;
+  if(loaded()) {return Promise.resolve();}
 
   return new Promise((resolve) => {
-    const stop = watch(spineHydrated, (ready) => {
+    const stop = watch(loaded, (ready) => {
       if(!ready) {return;}
       stop();
       resolve();
@@ -1011,7 +1012,7 @@ const productStoreHasLinkedProducts = computed(() => {
   return relatedShops.value.some((relatedShop: any) => relatedShop.shopId !== props.id);
 });
 // Live from the shop's remotes, so a changed access scope shows without reloading the wizard.
-const { remotes: systemMessageRemotes } = useSystemMessageRemotes();
+const { remotes: systemMessageRemotes, hydrated: remotesHydrated } = useSystemMessageRemotes();
 const shopifyAccessState = computed(() => shopifyAccessStateFor(systemMessageRemotes.value, { shopId: props.id, shop: shop.value }));
 const hasShopifyWriteAccess = computed(() => {
   return !!shopifyAccessState.value.hasWriteAccess;
