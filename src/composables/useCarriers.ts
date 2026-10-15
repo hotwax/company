@@ -5,8 +5,8 @@ import {
   bootstrapState,
   refreshAfterMutation,
   resyncDomain,
-  startReferenceSync,
-} from "@/services/appDbSync";
+  startAppDbSync,
+} from "@/db/appDbSync";
 import { getResponseErrorMessage } from "@/utils";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { isEffectiveNow } from "@common/db";
@@ -357,7 +357,7 @@ export function useCarrier(partyId: string) {
     const failedDomains = CARRIER_DETAIL_DOMAINS.filter((domain) => Boolean(errors[domain]));
 
     if(errors.__start) {
-      await startReferenceSync();
+      await startAppDbSync();
       if(bootstrapState.errors.__start) {
         throw new Error(bootstrapState.errors.__start);
       }

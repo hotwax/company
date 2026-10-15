@@ -3,8 +3,6 @@ import { Login, commonUtil, translate } from "@common/index"
 import { createRouter, createWebHistory } from "@ionic/vue-router"
 import type { RouteLocationNormalized, RouteRecordRaw } from "vue-router"
 import Actions from "@/authorization/actions"
-import { useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard"
-import { followInventorySyncArea } from "@/services/inventorySyncArea"
 import { useUserStore } from "@/store/user"
 
 const FindFacilities = () => import("@/views/FindFacilities.vue")
@@ -72,13 +70,12 @@ const requirePermission = (permissionId: string) => () => {
 }
 
 /**
- * `/create-product-store` is a compatibility command, not a resumable route. Reset before
- * redirecting so old links always start a clean setup. The canonical base route remains resumable,
- * and no transient query flag is left behind for a reload or later navigation to replay.
+ * `/create-product-store` is a compatibility command, not a resumable route. The onboarding page
+ * sees the redirect in `route.redirectedFrom` and starts a clean setup, so old links never resume a
+ * draft. The canonical base route remains resumable, and no transient query flag is left behind for
+ * a reload or later navigation to replay.
  */
 export function redirectLegacyProductStoreCreation(to: Pick<RouteLocationNormalized, "query" | "hash">) {
-  useProductStoreOnboardingWizard().startNewSetup()
-
   return {
     name: "ProductStoreOnboarding",
     query: to.query,
@@ -238,11 +235,6 @@ router.beforeEach(() => {
   if(useAuth().checkAppVersionRedirect()) {
     return false
   }
-})
-
-// Entering a shop's inventory sync pages starts that area's pollers; leaving them stops the worker.
-router.afterEach((to) => {
-  void followInventorySyncArea(to)
 })
 
 export default router

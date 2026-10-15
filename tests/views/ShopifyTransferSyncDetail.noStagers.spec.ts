@@ -39,7 +39,7 @@ vi.mock("@common/db", async (importOriginal) => ({
   serviceState: reactive({ syncedAt: {} as Record<string, number>, errors: {} as Record<string, string> }),
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   activateSyncDomains: vi.fn().mockResolvedValue(undefined),
   deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
   createSyncDomainOwner: (label: string) => label,

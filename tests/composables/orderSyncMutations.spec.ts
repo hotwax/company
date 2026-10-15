@@ -111,7 +111,7 @@ vi.mock("@common", () => ({
   },
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
   bootstrapState: { running: false },
   activateSyncDomains: vi.fn().mockResolvedValue(undefined),

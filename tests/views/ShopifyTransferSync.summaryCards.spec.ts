@@ -30,7 +30,7 @@ vi.mock("@common", () => ({
 // "Cannot access '__vi_import_1__' before initialization".
 let syncDomainsErrorRef: ReturnType<typeof ref<string>>;
 
-vi.mock("@/services/appDbSync", () => {
+vi.mock("@/db/appDbSync", () => {
   syncDomainsErrorRef = ref("");
   return {
     activateSyncDomains: vi.fn().mockResolvedValue(undefined),

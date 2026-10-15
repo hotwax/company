@@ -221,7 +221,7 @@ import {
 import { alertCircleOutline, checkmarkCircleOutline, playOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import { useNetSuiteProductStore } from "@/composables/useProductStores";
-import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains } from "@/services/appDbSync";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains } from "@/db/appDbSync";
 import {
   describeConditions,
   describeSortBy,

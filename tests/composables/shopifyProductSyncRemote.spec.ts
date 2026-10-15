@@ -51,7 +51,7 @@ vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJob: () => ({ updateJob: vi.fn(), runNow: vi.fn() }),
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   bootstrapState: { running: false },
   activateSyncDomains: vi.fn().mockResolvedValue(undefined),

@@ -649,8 +649,8 @@ import {
 import { INVENTORY_EVENT_DOMAINS, inventoryEventAreaDomains } from "@/config/appSyncConfig";
 import {
   activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation as afterMutation, resyncDomain,
-} from "@/services/appDbSync";
-import { useInventorySyncArea } from "@/services/inventorySyncArea";
+} from "@/db/appDbSync";
+import { useInventorySyncArea } from "@/composables/useInventorySyncArea";
 import { formatDateTime } from "@/utils";
 import {
   INVENTORY_LEDGER_PURGE_SERVICES,

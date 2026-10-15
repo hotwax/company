@@ -663,7 +663,7 @@ import {
 } from "@/utils/shopifyProductSyncWizard";
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from "@/utils";
 import { getSafeSyncRunQueryId } from "@/utils/syncRunRoute";
-import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation } from "@/services/appDbSync";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation } from "@/db/appDbSync";
 import { useServiceJob, useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useDataManager, useRecentDataManagerLogs } from "@/composables/useDataManager";
 import { useProductUpdateHistories } from "@/composables/useProductUpdateHistory";

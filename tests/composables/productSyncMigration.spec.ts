@@ -11,7 +11,7 @@ vi.mock("@common", () => ({
   api: (...args: any[]) => harness.api(...args),
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
 }));
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
   resyncDomain: (...args: any[]) => harness.resyncDomain(...args),
 }));

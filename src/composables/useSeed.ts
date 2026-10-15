@@ -3,9 +3,10 @@ import { api, commonUtil, logger, useLiveEntity } from "@common";
 import { companyDb } from "@/db/companyDb";
 import { serviceState, useSeedData } from "@common/db";
 import { getResponseErrorMessage } from "@/utils";
-import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { refreshAfterMutation, resyncDomain } from "@/db/appDbSync";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { usePrimaryOrganization } from "./useOrganizations";
+import { useMaargStore } from "@/store/maarg";
 
 function byDescription(a: any, b: any): number {
   return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));
@@ -257,47 +258,10 @@ export function useSystemMessageTypes() {
 // =============================================================================================
 // Maarg server configuration
 //
-// Seed data like the rest of this file, but stored in localStorage rather than IndexedDB: it is a
-// small, flat, read-only object of server config properties, so it needs none of the cache's
-// projection / prune / liveQuery machinery. Grouped here because its ROLE is the same as the other
-// seed sets — reference data no single model owns — and callers should not care where it is kept.
+// Server config properties kept in localStorage by the maarg store (see store/maarg.ts). Grouped here
+// because its ROLE is the same as the other seed sets — reference data no single model owns — and
+// components should not care where it is kept.
 // =============================================================================================
-const MAARG_STORAGE_KEY = "company:maargConfig";
-
-export interface MaargInstanceInfo {
-  instancePurpose?: string;
-  instanceName?: string;
-  omsInstanceUrl?: string | null;
-  componentRelease?: string;
-}
-
-export interface MaargComponent {
-  name: string;
-  version: string;
-}
-
-export interface MaargConfig {
-  instanceInfo: MaargInstanceInfo;
-  components: MaargComponent[];
-  /** When this copy was read from the server. */
-  fetchedAt: number;
-}
-
-function readStored(): MaargConfig | null {
-  try {
-    const raw = localStorage.getItem(MAARG_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    return parsed as MaargConfig;
-  } catch {
-    return null; // corrupt entry — treat as absent and re-read from the server
-  }
-}
-
-// Module-scoped so every consumer shares one copy and one in-flight request.
-const config = ref<MaargConfig | null>(readStored());
-let inFlight: Promise<void> | null = null;
 
 /**
  * The operating organization's partyId — the `ownerPartyId` stamped on facilities this app creates.
@@ -531,41 +495,8 @@ export function useOrganization() {
 }
 
 export function useMaargConfig() {
-  /**
-   * Read the config, from localStorage when present. `force` re-reads from the server (used by an
-   * explicit refresh); otherwise a stored copy is reused for the whole session.
-   */
-  async function load(force = false): Promise<void> {
-    if (config.value && !force) return;
-    if (inFlight) return inFlight;
-
-    inFlight = (async () => {
-      try {
-        const resp: any = await api({ url: "admin/maarg", method: "get" });
-        const data = resp?.data;
-        if (!data || typeof data !== "object") throw new Error("Maarg config response is unavailable.");
-        const next: MaargConfig = {
-          instanceInfo: data.instanceInfo ?? {},
-          components: Array.isArray(data.components) ? data.components : [],
-          fetchedAt: Date.now(),
-        };
-        config.value = next;
-        localStorage.setItem(MAARG_STORAGE_KEY, JSON.stringify(next));
-      } catch (error) {
-        logger.error("Failed to load Maarg configuration", error);
-      } finally {
-        inFlight = null;
-      }
-    })();
-
-    return inFlight;
-  }
-
-  /** Drop the stored copy (called on logout alongside the cache wipe). */
-  function clear(): void {
-    config.value = null;
-    try { localStorage.removeItem(MAARG_STORAGE_KEY); } catch { /* ignore */ }
-  }
+  const maarg = useMaargStore();
+  const config = computed(() => maarg.config);
 
   const componentVersion = (name: string) =>
     computed(() => config.value?.components.find((component) => component.name === name)?.version ?? null);
@@ -576,8 +507,8 @@ export function useMaargConfig() {
     components: computed(() => config.value?.components ?? []),
     isLoaded: computed(() => !!config.value),
     componentVersion,
-    load,
-    clear,
+    load: (force = false) => maarg.load(force),
+    clear: () => maarg.clear(),
   };
 }
 

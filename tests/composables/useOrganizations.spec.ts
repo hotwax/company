@@ -22,7 +22,7 @@ vi.mock("@common", () => ({
   useLiveEntity: () => ({ records: ref([]), rows: ref([]), first: ref(undefined), count: ref(0), hydrated: ref(true) }),
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: mocks.refreshAfterMutation,
   resyncDomain: mocks.resyncDomain,
 }));

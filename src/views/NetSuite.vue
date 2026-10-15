@@ -307,7 +307,7 @@ import { closeOutline, informationCircleOutline, openOutline, saveOutline, searc
 import { commonUtil, emitter, logger, translate } from '@common';
 import router from "@/router";
 import { useNetSuite } from "@/composables/useNetSuite";
-import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains } from "@/services/appDbSync";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains } from "@/db/appDbSync";
 import {
   useNetSuiteOrderPushBacklog,
   useNetSuiteRecentRuns,

@@ -17,10 +17,17 @@ import { emitter, FastTravel, translate } from '@common'
 import { Settings } from 'luxon'
 import { useAuth } from '@common/composables/useAuth'
 import { useUserStore } from '@/store/user'
-import { startAppDbSync } from '@/services/appDbSync'
+import { startAppDbSync } from '@/db/appDbSync'
+import { useInventorySyncArea } from '@/composables/useInventorySyncArea'
 import router from "@/router"
 
 const userStore = useUserStore()
+
+// Entering a shop's inventory sync pages starts that area's pollers; leaving them (logout included)
+// stops them. Synchronous, so the area re-takes the worker on each move before the outgoing page's
+// didLeave runs, as a router afterEach hook would.
+const { followInventorySyncArea } = useInventorySyncArea()
+watch(() => router.currentRoute.value.path, (path) => { void followInventorySyncArea({ path }) }, { immediate: true, flush: 'sync' })
 
 // The global loader is held as the PROMISE of its overlay, not the overlay. `create()` is async, and a
 // dismiss that landed while it was pending used to find nothing to dismiss: the overlay then presented

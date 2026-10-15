@@ -4,7 +4,7 @@ import { alertController } from "@ionic/vue";
 import { api, commonUtil, emitter, logger, useLiveEntity } from "@common";
 import { companyDb } from "@/db/companyDb";
 import { translate } from "@/i18n";
-import { resyncDomain } from "@/services/appDbSync";
+import { resyncDomain } from "@/db/appDbSync";
 
 /**
  * NetSuite master entity — the whole integration surface in one composable.

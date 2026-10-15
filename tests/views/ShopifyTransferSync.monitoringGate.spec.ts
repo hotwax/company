@@ -40,7 +40,7 @@ vi.mock("@common", () => ({
   useLiveEntity: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   activateSyncDomains: vi.fn().mockResolvedValue(undefined),
   deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
   createSyncDomainOwner: (label: string) => label,

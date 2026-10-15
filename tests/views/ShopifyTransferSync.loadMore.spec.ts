@@ -34,7 +34,7 @@ vi.mock("@common", () => ({
 }));
 
 const activateSyncDomains = vi.hoisted(() => vi.fn());
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   activateSyncDomains,
   deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
   createSyncDomainOwner: (label: string) => label,

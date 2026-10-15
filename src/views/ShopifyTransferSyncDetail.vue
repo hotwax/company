@@ -152,7 +152,7 @@ import ShopifyTransferMissingMapping from "@/components/shopify/ShopifyTransferM
 import ShopifyTransferUpdateBlocker from "@/components/shopify/ShopifyTransferUpdateBlocker.vue";
 import { serviceState } from "@common/db";
 import { type TransferDetachResult, type TransferOwner, useShopifyTransferDetach } from "@/composables/useShopifyTransferDetach";
-import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncDomainsError as syncError, syncNow } from "@/services/appDbSync";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncDomainsError as syncError, syncNow } from "@/db/appDbSync";
 import { useFacilities } from "@/composables/useFacilities";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";

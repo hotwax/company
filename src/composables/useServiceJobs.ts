@@ -2,7 +2,7 @@ import { computed } from "vue";
 import { api, logger, useLiveEntity } from "@common";
 import cronstrue from "cronstrue";
 import { companyDb } from "@/db/companyDb";
-import { refreshAfterMutation } from "@/services/appDbSync";
+import { refreshAfterMutation } from "@/db/appDbSync";
 import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { onSessionCleared } from "./sessionScope";
 

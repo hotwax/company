@@ -9,7 +9,7 @@ import { pageAll, workerGet, workerPost } from "@common/core/workerRemoteApi";
 import { type InventoryEventKind, effectiveMessageOf, isUnsettledMessage } from "@/utils/inventoryEvents";
 
 /**
- * Class A for as long as the user is in a shop's inventory sync pages (`src/services/inventorySyncArea.ts`).
+ * Class A for as long as the user is in a shop's inventory sync pages (`src/composables/useInventorySyncArea.ts`).
  * Both ledgers share the pollers: the rows poller reads the newest 500, then rows whose
  * `detailLastUpdatedStamp` moved; the message poller reads rows whose joined
  * `systemMessageLastUpdatedStamp` moved. An OMS without the cursor aliases (connector before v4.4.0)

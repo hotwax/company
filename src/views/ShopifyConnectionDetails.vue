@@ -585,7 +585,7 @@ import {
   updateShopifyRemote,
   useShopifyAccessScopes,
 } from "@/composables/useShopify";
-import { refreshAfterMutation } from "@/services/appDbSync";
+import { refreshAfterMutation } from "@/db/appDbSync";
 import { useProductStores } from "@/composables/useProductStores";
 import { useSystemMessageRemotes } from "@/composables/useSystemMessage";
 import { useSystemMessageTypes, useTypedEnums } from "@/composables/useSeed";

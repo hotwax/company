@@ -18,7 +18,7 @@ vi.mock("@/composables/useShopify", () => ({
   }),
 }));
 
-vi.mock("@/services/appDbSync", () => ({ refreshAfterMutation: vi.fn() }));
+vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: vi.fn() }));
 vi.mock("@/router", () => ({ default: { push: vi.fn() } }));
 
 const IonSearchbarStub = defineComponent({

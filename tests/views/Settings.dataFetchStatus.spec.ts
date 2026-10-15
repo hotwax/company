@@ -39,7 +39,7 @@ vi.mock("@common/db", () => ({
   }),
 }));
 vi.mock("@/db/companyDb", () => ({ companyDb: { client: () => ({}) } }));
-vi.mock("@/services/appDbSync", () => ({ resyncDomain: vi.fn(), resyncReferenceData: vi.fn() }));
+vi.mock("@/db/appDbSync", () => ({ resyncDomain: vi.fn(), resyncReferenceData: vi.fn() }));
 vi.mock("@/composables/useSeed", () => ({ useMaargConfig: () => ({ config: ref({}), load: vi.fn(async () => {}) }) }));
 vi.mock("@/router", () => ({ default: { push: vi.fn() } }));
 vi.mock("@/authorization/actions", () => ({ default: {} }));

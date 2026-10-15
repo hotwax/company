@@ -16,7 +16,7 @@
  * is still asked for.
  */
 import { useMaargConfig } from "@/composables/useSeed";
-import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { refreshAfterMutation, resyncDomain } from "@/db/appDbSync";
 import { api, logger } from '@common'
 import { PRODUCT_SYNC_MIGRATION_CONFIG, isProductSyncMigrationEligibleRelease } from "@/config/productSyncMigration";
 // Both moved to the Shopify composable when `store/shopifyProductSync` was retired; the `*Internal`

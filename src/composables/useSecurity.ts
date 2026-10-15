@@ -2,7 +2,7 @@ import { computed, onScopeDispose, ref, watch } from "vue";
 import { api, client, commonUtil, logger, useLiveEntity } from "@common";
 import { companyDb } from "@/db/companyDb";
 import { useUserStore } from "@/store/user";
-import { resyncDomain } from "@/services/appDbSync";
+import { resyncDomain } from "@/db/appDbSync";
 import { onSessionCleared } from "./sessionScope";
 
 function byDescription(a: any, b: any): number {

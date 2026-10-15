@@ -23,7 +23,7 @@ vi.mock("@/db/companyDb", () => ({
     },
   },
 }));
-vi.mock("@/services/appDbSync", () => ({ refreshAfterMutation: (...args: any[]) => mocks.refreshAfterMutation(...args) }));
+vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: (...args: any[]) => mocks.refreshAfterMutation(...args) }));
 
 import { clearSessionScopedState } from "@/composables/sessionScope";
 import { systemMessageMayHaveErrors, useSystemMessage } from "@/composables/useSystemMessage";

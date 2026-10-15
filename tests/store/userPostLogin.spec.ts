@@ -13,9 +13,8 @@ vi.mock("@common", () => ({
 }));
 vi.mock("@common/composables/useAuth", () => ({ useAuth: () => ({}) }));
 vi.mock("@common/composables/useSolrSearch", () => ({ useSolrSearch: () => ({}) }));
-vi.mock("@/composables/useServiceJobs", () => ({ useServiceJob: () => ({}) }));
-vi.mock("@/composables/useSeed", () => ({ useMaargConfig: () => ({ load: () => calls.push("loadMaargConfig") }) }));
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/store/maarg", () => ({ useMaargStore: () => ({ load: () => calls.push("loadMaargConfig") }) }));
+vi.mock("@/db/appDbSync", () => ({
   stopAppDbSync: vi.fn(async () => { calls.push("wipe"); }),
   startAppDbSync: vi.fn(async () => { calls.push("start"); }),
 }));

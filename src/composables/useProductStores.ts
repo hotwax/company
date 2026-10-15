@@ -1,7 +1,7 @@
 import { computed, ref, reactive, toRefs, toValue, type MaybeRefOrGetter } from "vue";
 import { api, commonUtil, logger, useLiveEntity } from "@common";
 import { companyDb } from "@/db/companyDb";
-import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { refreshAfterMutation, resyncDomain } from "@/db/appDbSync";
 import { getResponseErrorMessage } from "@/utils";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { isEffectiveNow } from "@common/db";

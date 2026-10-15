@@ -7,8 +7,8 @@ import {
   deactivateSyncDomains,
   refreshAfterMutation,
   syncNow as syncActiveDomains,
-} from "@/services/appDbSync";
-import type { InventoryEventKind } from "@/utils/inventoryEvents";
+} from "@/db/appDbSync";
+import { type InventoryEventKind, inventorySyncAreaShopId } from "@/utils/inventoryEvents";
 
 /**
  * Route-scoped class-A activation for every page under a shop's
@@ -20,22 +20,14 @@ import type { InventoryEventKind } from "@/utils/inventoryEvents";
  * so the area takes ownership back and a departing page's owner-guarded teardown no longer matches.
  * A page in the area that needs more domains activates `[...its own, ...inventoryEventAreaDomains()]`.
  */
-const INVENTORY_SYNC_AREA = /^\/shopify-connection-details\/([^/]+)\/inventory-sync(?:\/|$)/;
-
 const AREA_OWNER = createSyncDomainOwner("inventorySyncArea");
 const AREA_DOMAIN_NAMES: readonly string[] = Object.values(INVENTORY_EVENT_DOMAINS);
 
 const activeShopId = ref("");
 const pendingManualRefreshes = ref(0);
 
-/** The shop whose inventory area a path belongs to, or "" outside the area. */
-export function inventorySyncAreaShopId(path: string): string {
-  const match = String(path ?? "").match(INVENTORY_SYNC_AREA);
-
-  return match ? decodeURIComponent(match[1]) : "";
-}
-
-export async function followInventorySyncArea(to: { path: string }): Promise<void> {
+/** Take or retire the area's domains for a route the router just moved to. */
+async function followInventorySyncArea(to: { path: string }): Promise<void> {
   const shopId = inventorySyncAreaShopId(to.path);
   if(!shopId) {
     if(activeShopId.value) {
@@ -71,7 +63,10 @@ function afterMutation(domain: string, pk: Record<string, unknown>): Promise<num
   return refreshAfterMutation(domain, pk);
 }
 
-/** What a page in the area reads about the area's polling. */
+/**
+ * What a page in the area reads about the area's polling, and `followInventorySyncArea` for the
+ * router's `afterEach`. The state is module-level, so every caller shares one area.
+ */
 export function useInventorySyncArea() {
   /** Load a ledger's events back to `fromMs` into the table, for a date filter older than what is held. Resolves to the rows written. */
   const loadEventsFrom = (kind: InventoryEventKind, fromMs: number) =>
@@ -91,5 +86,5 @@ export function useInventorySyncArea() {
     return !serviceState.syncedAt[domain] && !serviceState.errors[domain];
   });
 
-  return { failingDomains, manualRefreshing, syncNow, afterMutation, loadEventsFrom, loadLedgerBounds, ledgerReading };
+  return { failingDomains, manualRefreshing, syncNow, afterMutation, loadEventsFrom, loadLedgerBounds, ledgerReading, followInventorySyncArea };
 }

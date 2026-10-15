@@ -1,7 +1,7 @@
 import { api, commonUtil, useLiveEntity } from "@common";
 import { companyDb } from "@/db/companyDb";
 import { computed } from "vue";
-import { resyncDomain } from "@/services/appDbSync";
+import { resyncDomain } from "@/db/appDbSync";
 import { useTypedEnums } from "./useSeed";
 
 /**

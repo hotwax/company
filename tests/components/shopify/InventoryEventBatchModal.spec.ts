@@ -25,7 +25,7 @@ vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessageRecord: () => ({ record: live.message, hydrated: ref(true) }),
   useSystemMessageErrors: () => ({ errors: live.errors, errorText: ref(""), hydrated: ref(true) }),
 }));
-vi.mock("@/services/inventorySyncArea", () => ({ useInventorySyncArea: () => ({ afterMutation: harness.afterMutation }) }));
+vi.mock("@/composables/useInventorySyncArea", () => ({ useInventorySyncArea: () => ({ afterMutation: harness.afterMutation }) }));
 
 const batch = (deliveryId: string) => ({
   id: "M1", delivery: { id: deliveryId }, createdAt: 0, reason: "correction", reasonMapped: true, mixedEventTypes: false,

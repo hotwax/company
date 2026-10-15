@@ -4,7 +4,7 @@ import { api, commonUtil, logger, translate, useLiveEntity } from "@common";
 import { getResponseErrorMessage } from "@/utils";
 import { isEffectiveNow, toCount, toMillis } from "@common/db";
 import { facilityGroupTypeLabel } from "@/utils/facilityGroupTypeLabels";
-import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { refreshAfterMutation, resyncDomain } from "@/db/appDbSync";
 import { companyDb } from "@/db/companyDb";
 import { useShopifyFacilityMappings } from "./useShopify";
 import { useTypedEnums } from "./useSeed";

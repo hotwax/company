@@ -411,7 +411,7 @@ import { parseFulfillmentMessageText } from "@/utils/shopifyFulfillment";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { serviceState } from "@common/db";
-import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/services/appDbSync";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/db/appDbSync";
 import { useFacilities } from "@/composables/useFacilities";
 import {
   useFulfillmentSyncHealth, useShopifySyncContext, useOmsShipmentContext, usePendingFulfillments,

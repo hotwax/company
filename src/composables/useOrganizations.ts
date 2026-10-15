@@ -2,7 +2,7 @@
 import { api, commonUtil, translate, useLiveEntity } from "@common";
 import { companyDb } from "@/db/companyDb";
 import { computed, ref, type Ref } from "vue";
-import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { refreshAfterMutation, resyncDomain } from "@/db/appDbSync";
 import { getResponseErrorMessage } from "@/utils";
 import { isEffectiveNow } from "@common/db";
 import { onSessionCleared } from "./sessionScope";

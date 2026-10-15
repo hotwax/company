@@ -675,7 +675,7 @@ import ShopifyTransferDeliveryStatus from "@/components/shopify/ShopifyTransferD
 import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapshot.vue";
 import { serviceState } from "@common/db";
 import { TRANSFER_ORDER_PAGE } from "@/config/appSyncConfig";
-import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/services/appDbSync";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/db/appDbSync";
 import ShopifyTransferStagingErrors from "@/components/shopify/ShopifyTransferStagingErrors.vue";
 import { useFacilities } from "@/composables/useFacilities";
 import { useServiceJobs } from "@/composables/useServiceJobs";

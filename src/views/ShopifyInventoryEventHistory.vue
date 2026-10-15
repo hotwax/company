@@ -263,7 +263,7 @@ import { type InventoryEventRow, useInventoryEvents } from "@/composables/useInv
 import { useShopifySyncContext } from "@/composables/useShopify";
 import { useVirtualRows } from "@/composables/useVirtualRows";
 import { INVENTORY_EVENT_DOMAINS } from "@/config/appSyncConfig";
-import { useInventorySyncArea } from "@/services/inventorySyncArea";
+import { useInventorySyncArea } from "@/composables/useInventorySyncArea";
 import { formatDateTime } from "@/utils";
 import {
   type DeliveryStateId,

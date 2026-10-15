@@ -16,7 +16,7 @@ vi.mock("@common", () => ({
   translate: (value: string) => value,
   useLiveEntity: () => ({ first: harness.storedArchiveGroup, records: ref([]), hydrated: ref(true) }),
 }));
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
   resyncDomain: (...args: any[]) => harness.resyncDomain(...args),
 }));

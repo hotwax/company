@@ -1,7 +1,7 @@
 import { api, commonUtil, useLiveEntity } from "@common";
 import { companyDb } from "@/db/companyDb";
 import { computed, ref } from "vue";
-import { refreshAfterMutation } from "@/services/appDbSync";
+import { refreshAfterMutation } from "@/db/appDbSync";
 import { PENDING_SEGMENT_ENDPOINTS, type PendingSegment, SYNCED_SEGMENT_ENDPOINTS } from "@/workers/domains/shopifyTransferSyncDomain";
 import {
   type ReconciliationSummary,

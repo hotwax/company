@@ -71,7 +71,7 @@ vi.mock("@common", () => ({
   },
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   resyncDomain: vi.fn(),
   activateSyncDomains: vi.fn().mockResolvedValue(undefined),
   deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
@@ -80,7 +80,7 @@ vi.mock("@/services/appDbSync", () => ({
 }));
 
 // The ledgers are polled by the inventory sync area, not by this view, so the view only reads its health.
-vi.mock("@/services/inventorySyncArea", () => ({
+vi.mock("@/composables/useInventorySyncArea", () => ({
   useInventorySyncArea: () => ({
     ready: syncReady,
     error: syncError,

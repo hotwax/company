@@ -158,7 +158,7 @@ import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons
 import { getCurrentTime } from "../utils"
 import { catalogFrom, useDbStatus } from "@common/db";
 import { companyDb } from "@/db/companyDb";
-import { resyncDomain, resyncReferenceData } from "@/services/appDbSync";
+import { resyncDomain, resyncReferenceData } from "@/db/appDbSync";
 import { useMaargConfig } from "@/composables/useSeed";
 import Actions from "@/authorization/actions";
 const userStore = useUserStore();

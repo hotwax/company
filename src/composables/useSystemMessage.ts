@@ -1,7 +1,7 @@
 import { computed, reactive, toRefs, type Ref } from 'vue';
 import { api, commonUtil, logger, useLiveEntity } from '@common'
 import { companyDb } from '@/db/companyDb';
-import { refreshAfterMutation } from "@/services/appDbSync";
+import { refreshAfterMutation } from "@/db/appDbSync";
 import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 import { onSessionCleared } from "./sessionScope";
 

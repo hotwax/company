@@ -54,7 +54,7 @@ vi.mock("@common", async () => {
   };
 });
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
 }));
 

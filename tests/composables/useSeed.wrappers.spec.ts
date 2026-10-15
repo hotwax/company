@@ -49,7 +49,7 @@ vi.mock("@common/db", () => ({
   },
 }));
 
-vi.mock("@/services/appDbSync", () => ({ refreshAfterMutation: vi.fn(), resyncDomain: vi.fn() }));
+vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: vi.fn(), resyncDomain: vi.fn() }));
 vi.mock("@/composables/useOrganizations", () => ({ usePrimaryOrganization: vi.fn() }));
 
 beforeEach(() => {

@@ -72,7 +72,8 @@ vi.mock("@common", () => ({
 vi.mock("@/components/common/Menu.vue", () => ({ default: harness.stub("Menu") }));
 vi.mock("@common/composables/useAuth", () => ({ useAuth: () => ({ isAuthenticated: ref(false) }) }));
 vi.mock("@/store/user", () => ({ useUserStore: () => ({ current: null }) }));
-vi.mock("@/services/appDbSync", () => ({ startAppDbSync: vi.fn() }));
+vi.mock("@/db/appDbSync", () => ({ startAppDbSync: vi.fn() }));
+vi.mock("@/composables/useInventorySyncArea", () => ({ useInventorySyncArea: () => ({ followInventorySyncArea: vi.fn() }) }));
 vi.mock("@/router", () => ({ default: { currentRoute: { value: { name: "Login" } } } }));
 
 import App from "@/App.vue";

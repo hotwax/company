@@ -129,7 +129,7 @@ import { computed, ref, watch } from "vue";
 import type { InventoryEventRow } from "@/composables/useInventoryEvents";
 import { useStatuses } from "@/composables/useSeed";
 import { useSystemMessage, useSystemMessageErrors, useSystemMessageRecord } from "@/composables/useSystemMessage";
-import { useInventorySyncArea } from "@/services/inventorySyncArea";
+import { useInventorySyncArea } from "@/composables/useInventorySyncArea";
 import { formatDateTime } from "@/utils";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { translateMutationError } from "@/utils/errorPresentation";

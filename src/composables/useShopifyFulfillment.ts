@@ -12,10 +12,19 @@ import {
   mapFulfillmentDetails,
   parseFulfillmentMessageText,
 } from "@/utils/shopifyFulfillment";
-import { scheduleDiagnosis } from "@/services/diagnosisQueue";
 import { onSessionCleared } from "./sessionScope";
 import { type ShopIdSource, useShopifySyncContext } from "./useShopify";
 import { useSystemMessages } from "./useSystemMessage";
+
+// Bound concurrent Shopify reads across all mounted cards. Results stay instance-scoped.
+let activeDiagnoses = 0;
+const waitingDiagnoses: Array<() => void> = [];
+async function scheduleDiagnosis<T>(request: () => Promise<T>): Promise<T> {
+  if(activeDiagnoses >= 3) {await new Promise<void>(resolve => waitingDiagnoses.push(resolve));}
+  activeDiagnoses++;
+  try {return await request();}
+  finally {activeDiagnoses--; waitingDiagnoses.shift()?.();}
+}
 
 /**
  * SHOPIFY FULFILLMENT SYNC — the reactive readers behind the fulfillment sync screen.

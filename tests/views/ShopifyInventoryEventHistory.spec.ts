@@ -59,7 +59,7 @@ vi.mock("@common", () => ({
   },
 }));
 
-vi.mock("@/services/inventorySyncArea", () => ({
+vi.mock("@/composables/useInventorySyncArea", () => ({
   useInventorySyncArea: () => ({
     ready: ref(true), error: ref(""), failingDomains: areaFailures, busy: ref(false), manualRefreshing,
     syncNow: harness.syncNow, afterMutation: vi.fn(), loadEventsFrom: harness.loadEventsFrom, loadLedgerBounds: harness.loadLedgerBounds,

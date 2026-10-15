@@ -1,6 +1,6 @@
 import { computed, reactive, ref, type Ref, unref } from "vue";
 import { api, commonUtil } from "@common";
-import { refreshAfterMutation } from "@/services/appDbSync";
+import { refreshAfterMutation } from "@/db/appDbSync";
 import { onSessionCleared } from "./sessionScope";
 
 const log = {

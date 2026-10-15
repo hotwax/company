@@ -18,7 +18,7 @@ vi.mock("@common", () => ({
   useLiveEntity: vi.fn(),
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
 }));

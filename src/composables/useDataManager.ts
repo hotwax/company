@@ -1,8 +1,8 @@
 import { computed, reactive, toRefs, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
 import { api, logger, useLiveEntity } from '@common'
 import { companyDb } from '@/db/companyDb';
-import { refreshAfterMutation } from '@/services/appDbSync';
-import { clearStorage, getErrorRecords, setErrorRecords } from '@/utils/storage';
+import { refreshAfterMutation } from '@/db/appDbSync';
+import { clearStorage, getErrorRecords, setErrorRecords } from '@/db/shopifySyncDb';
 import Papa from 'papaparse';
 
 /**
