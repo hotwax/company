@@ -4,7 +4,6 @@ import { ref } from "vue";
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
   hasError: vi.fn((_response: any) => false),
-  remotes: [] as any[],
 }));
 
 vi.mock("@common", () => ({
@@ -12,7 +11,7 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: (response: any) => harness.hasError(response), showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
-  useDb: () => ({
+  useLiveEntity: () => ({
     rows: { value: [] },
     records: { value: [] },
     first: { value: undefined },
@@ -22,28 +21,21 @@ vi.mock("@common", () => ({
 }));
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: {
-    entity: (table: string) => {
-      if (table === "systemMessageRemotes") {
-        return {
-          all: vi.fn(() => harness.remotes),
-        };
-      }
-      return { all: vi.fn(async () => []) };
-    },
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
+    entity: () => ({ all: vi.fn(async () => []) }),
   },
 }));
 
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
-    ensureSystemMessageById: vi.fn(),
-    ensureSystemMessageErrors: vi.fn(),
-    fetchShopifyBulkOperation: vi.fn(),
+    requestSystemMessage: vi.fn(),
+    requestSystemMessageErrors: vi.fn(),
+    requestShopifyBulkOperation: vi.fn(),
   }),
 }));
 
 vi.mock("@/composables/useDataManager", () => ({
-  useDataManager: () => ({ ensureDataManagerLog: vi.fn() }),
+  useDataManager: () => ({ requestDataManagerLog: vi.fn() }),
   useRecentDataManagerLogs: () => ({
     logs: { value: [] },
     totalFailedRecords: { value: 0 },
@@ -59,7 +51,7 @@ vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJob: () => ({ updateJob: vi.fn(), runNow: vi.fn() }),
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   bootstrapState: { running: false },
   activateSyncDomains: vi.fn().mockResolvedValue(undefined),
@@ -74,6 +66,10 @@ import {
   refreshMappedProductSearchIndex,
   fetchShopSystemMessageRemoteId,
   fetchUpdateFilesToProcessCount,
+  fetchSetupState,
+  fetchShopifyShopProductCount,
+  fetchUnsyncedProductUpdates,
+  shopifyAccessStateFor,
 } from "@/composables/useShopify";
 
 const { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping, fetchRecentOrders, searchVariants, addMapping } = useTransferMappingResolution();
@@ -94,8 +90,10 @@ function remote(systemMessageRemoteId: string) {
 beforeEach(() => {
   harness.api.mockReset();
   harness.hasError.mockReset().mockReturnValue(false);
-  harness.remotes = [remote("RemoteA"), remote("RemoteB")];
 });
+
+/** The screen's live remote rows for the shop. */
+const shopRemotes = () => [remote("RemoteA"), remote("RemoteB")];
 
 describe("refreshMappedProductSearchIndex", () => {
   it("indexes only the selected OMS product without an import or Shopify call", async () => {
@@ -133,6 +131,7 @@ describe("fetchShopSystemMessageRemoteId", () => {
     const selected = await fetchShopSystemMessageRemoteId({
       shopId: SHOP_ID,
       shopifyShopId: SHOPIFY_SHOP_ID,
+      remotes: shopRemotes(),
     });
 
     expect(selected).toBe("RemoteB");
@@ -160,7 +159,101 @@ describe("fetchShopSystemMessageRemoteId", () => {
     await expect(fetchShopSystemMessageRemoteId({
       shopId: SHOP_ID,
       shopifyShopId: SHOPIFY_SHOP_ID,
+      remotes: shopRemotes(),
     })).resolves.toBe("RemoteB");
+  });
+});
+
+describe("fetchShopSystemMessageRemoteId with the screen's live remotes", () => {
+  it("picks among the remotes it is given", async () => {
+    harness.api.mockResolvedValue({ data: { systemMessages: [{ systemMessageRemoteId: "LiveRemote" }] } });
+
+    await expect(fetchShopSystemMessageRemoteId({
+      shopId: SHOP_ID,
+      shopifyShopId: SHOPIFY_SHOP_ID,
+      remotes: [remote("LiveRemote")],
+    })).resolves.toBe("LiveRemote");
+  });
+});
+
+describe("shopifyAccessStateFor", () => {
+  it("reads the shop's best remote", () => {
+    expect(shopifyAccessStateFor([remote("RemoteA")], { shopId: SHOP_ID, shopifyShopId: SHOPIFY_SHOP_ID }))
+      .toMatchObject({ systemMessageRemoteId: "RemoteA", hasWriteAccess: true, status: "write" });
+  });
+
+  it("is unavailable for a shop with no remote, including before the remotes have loaded", () => {
+    expect(shopifyAccessStateFor([], { shopId: SHOP_ID, shopifyShopId: SHOPIFY_SHOP_ID }))
+      .toMatchObject({ systemMessageRemoteId: "", hasWriteAccess: false, status: "unavailable" });
+  });
+});
+
+/** The server's product-sync history document, answering for one shop. */
+function serverHistory(entityValueList: any[]) {
+  harness.api.mockImplementation(async (config: any) => {
+    if (config.url === "oms/dataDocumentView") return { data: { entityValueList, entityValueListCount: entityValueList.length } };
+    return { data: { data: { productsCount: { count: 7, precision: "EXACT" }, products: { nodes: [] } } } };
+  });
+}
+const documentCalls = () => harness.api.mock.calls.filter(([config]) => config.url === "oms/dataDocumentView");
+const shopifyQuery = () => harness.api.mock.calls.find(([config]) => config.url === "shopify/graphql")?.[0].data.queryText ?? "";
+
+describe("fetchSetupState — the wizard decision", () => {
+  const accessState = { systemMessageRemoteId: "RemoteA", accessScopeEnumId: "SHOP_RW_ACCESS", hasWriteAccess: true, status: "write", label: "Write access" };
+
+  it("trusts the live runs of a shop that has some, asking the server nothing", async () => {
+    serverHistory([]);
+    const state = await fetchSetupState({ shopId: SHOP_ID, syncRunState: { latestSystemMessage: { systemMessageId: "M1" } }, shopifyAccessState: accessState });
+
+    expect(state).toMatchObject({ hasLinkedOmsProducts: true, productStoreLocked: true, identifierLocked: true, shopifyAccessState: accessState });
+    expect(documentCalls()).toHaveLength(0);
+  });
+
+  it("confirms an empty live spine with the server before treating the shop as never synced", async () => {
+    // The cold-profile race: this shop's runs are on the server but not stored yet.
+    serverHistory([{ systemMessageId: "M9", statusId: "SmsgConsumed" }]);
+    const state = await fetchSetupState({ shopId: SHOP_ID, syncRunState: { latestSystemMessage: null } });
+
+    expect(state).toMatchObject({ hasLinkedOmsProducts: true, productStoreLocked: true, identifierLocked: true });
+    expect(documentCalls()).toHaveLength(1);
+    expect(documentCalls()[0][0].data).toMatchObject({ pageSize: 1, customParametersMap: { remoteInternalId: SHOP_ID } });
+  });
+
+  it("opens the wizard unlocked only when the server agrees the shop has never synced", async () => {
+    serverHistory([]);
+    const state = await fetchSetupState({ shopId: SHOP_ID, syncRunState: { latestSystemMessage: null } });
+
+    expect(state).toMatchObject({ hasLinkedOmsProducts: false, productStoreLocked: false, identifierLocked: false, shopifyAccessState: { status: "unavailable" } });
+  });
+});
+
+describe("unsynced product counts — the last-sync date", () => {
+  it("counts from the live date without asking the server for one", async () => {
+    serverHistory([]);
+    await fetchShopifyShopProductCount({ shopId: SHOP_ID, systemMessageRemoteId: "RemoteA", lastSyncedAt: "2026-07-01T00:00:00Z" });
+
+    expect(documentCalls()).toHaveLength(0);
+    expect(shopifyQuery()).toContain("updated_at:>'2026-07-01T00:00:00");
+  });
+
+  it("asks the server for the last import when there is no live date, rather than counting every product", async () => {
+    serverHistory([
+      { systemMessageId: "M3", statusId: "SmsgConsumed", initDate: "2026-06-01T00:00:00Z" },
+      { systemMessageId: "M2", statusId: "SmsgConsumed", logId: "L2", initDate: "2026-05-01T00:00:00Z" },
+    ]);
+    await fetchShopifyShopProductCount({ shopId: SHOP_ID, systemMessageRemoteId: "RemoteA" });
+
+    expect(documentCalls()).toHaveLength(1);
+    // M3 imported nothing (no log), so the last sync is M2's.
+    expect(shopifyQuery()).toContain("updated_at:>'2026-05-01T00:00:00");
+  });
+
+  it("counts every product only when the server has no import either", async () => {
+    serverHistory([]);
+    await fetchUnsyncedProductUpdates({ shopId: SHOP_ID, systemMessageRemoteId: "RemoteA" });
+
+    expect(documentCalls()).toHaveLength(1);
+    expect(shopifyQuery()).not.toContain("updated_at");
   });
 });
 

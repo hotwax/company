@@ -3,7 +3,7 @@ import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
 
-const serviceJobRunEntity = companyDb.entity("serviceJobRuns");
+const serviceJobRunEntity = companyDb.entity(companyDb.tables.serviceJobRuns);
 
 /**
  * ServiceJobRun — class A (live), fetched PER JOB.

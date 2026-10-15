@@ -1,10 +1,12 @@
 import { computed, ref } from "vue";
-import { api, commonUtil, logger, useDb } from "@common";
+import { api, commonUtil, logger, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { serviceState, useSeedData } from "@common/db";
 import { getResponseErrorMessage } from "@/utils";
-import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { refreshAfterMutation, resyncDomain } from "@/db/appDbSync";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { usePrimaryOrganization } from "./useOrganizations";
+import { useMaargStore } from "@/store/maarg";
 
 function byDescription(a: any, b: any): number {
   return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));
@@ -20,14 +22,13 @@ function byDescription(a: any, b: any): number {
 
 // --- framework seed tables ------------------------------------------------------------------
 //
-// Thin wrappers over the framework's `useSeedData`, which keeps one live read per seed table for
-// the session. They keep the shapes templates already index into; the lookups themselves live in
-// `@common/db`.
-
-const seed = useSeedData();
+// Thin wrappers over the framework's `useSeedData`, which shares one live read per seed table with
+// every component below the first caller in a tree, closed when that component unmounts. They keep
+// the shapes templates already index into; the lookups themselves live in `@common/db`. Each wrapper
+// calls `useSeedData()` itself, so like it they only work during setup.
 
 /**
- * `useDb`'s `hydrated`, for a seed table read through `useSeedData`: its first read has landed,
+ * `useLiveEntity`'s `hydrated`, for a seed table read through `useSeedData`: its first read has landed,
  * and it either has rows or sync is no longer filling it, so an empty list really is empty.
  */
 function seedHydrated(firstRead: () => Promise<unknown>, rows: () => unknown[]) {
@@ -47,6 +48,7 @@ function descriptionMap(rows: any[], idField: string): Record<string, string> {
 // --- statuses -------------------------------------------------------------------------------
 
 export function useStatuses() {
+  const seed = useSeedData();
   const statuses = computed(() => seed.statuses());
 
   /** statusId → description, the map templates index into. */
@@ -65,6 +67,7 @@ export function useStatuses() {
 
 /** The generic enumeration catalog (id → description). */
 export function useEnums() {
+  const seed = useSeedData();
   const enums = computed(() => seed.enums());
   const enumItems = computed<Record<string, string>>(() => descriptionMap(enums.value, "enumId"));
   return { enums, enumItems };
@@ -78,6 +81,7 @@ export function useEnums() {
  * without adding a domain.
  */
 export function useTypedEnums(enumTypeId: string) {
+  const seed = useSeedData();
   const values = computed(() => [...seed.enumsByType(enumTypeId)].sort(byDescription));
   const enumItems = computed<Record<string, string>>(() => descriptionMap(values.value, "enumId"));
   const labelFor = (enumId: string | undefined) =>
@@ -88,12 +92,14 @@ export function useTypedEnums(enumTypeId: string) {
 
 /** Enum types (id → description). */
 export function useEnumTypes() {
+  const seed = useSeedData();
   return { enumTypes: computed(() => [...seed.enumTypes()].sort(byDescription)) };
 }
 
 // --- geographic boundaries ------------------------------------------------------------------
 
 export function useGeos() {
+  const seed = useSeedData();
   const geos = computed(() => seed.geos());
   const byId = computed<Record<string, any>>(() =>
     geos.value.reduce((map: Record<string, any>, row: any) => {
@@ -120,13 +126,13 @@ export function useGeos() {
 
 // --- type tables ----------------------------------------------------------------------------
 
-function sortedTypes(cache: string) {
-  const { records, hydrated } = useDb<any>(cache);
+function sortedTypes(table: string) {
+  const { records, hydrated } = useLiveEntity<any>(table);
   return { records: computed(() => [...records.value].sort(byDescription)), hydrated };
 }
 
 export function useProductTypes() {
-  const { records, hydrated } = sortedTypes("productTypes");
+  const { records, hydrated } = sortedTypes(companyDb.tables.productTypes);
   return { productTypes: records, hydrated };
 }
 
@@ -181,15 +187,17 @@ export function useShipmentMethodTypeMutations() {
 
 /** Currencies (UOMs of type UT_CURRENCY_MEASURE), cached at login. */
 export function useCurrencies() {
-  const { records, hydrated } = sortedTypes("currencies");
+  const { records, hydrated } = sortedTypes(companyDb.tables.currencies);
   return { currencies: records, hydrated };
 }
 
 export function useShipmentMethodTypes() {
+  const seed = useSeedData();
   return { shipmentMethodTypes: computed(() => [...seed.shipmentMethodTypes()].sort(byDescription)) };
 }
 
 export function usePaymentMethodTypes() {
+  const seed = useSeedData();
   const paymentMethodTypes = computed(() => [...seed.paymentMethodTypes()].sort(byDescription));
   const hydrated = seedHydrated(() => seed.getPaymentMethodTypes(), () => paymentMethodTypes.value);
   return { paymentMethodTypes, hydrated };
@@ -210,6 +218,7 @@ export async function createPaymentMethodType(payload: { paymentMethodTypeId: st
 }
 
 export function useRoleTypes() {
+  const seed = useSeedData();
   const roleTypes = computed(() => [...seed.roleTypes()].sort(byDescription));
   /** roleTypeId → description, matching the map the party-role templates index. */
   const descriptionById = computed<Record<string, string>>(() => descriptionMap(roleTypes.value, "roleTypeId"));
@@ -223,7 +232,7 @@ export function useRoleTypes() {
  * on a single page load, for 9 distinct ids). Cached as one set, so labelling is a local lookup.
  */
 export function useSystemMessageTypes() {
-  const { records, hydrated } = useDb<any>("systemMessageTypes");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.systemMessageTypes);
 
   /** systemMessageTypeId → description. */
   const typeItems = computed<Record<string, string>>(() =>
@@ -249,47 +258,10 @@ export function useSystemMessageTypes() {
 // =============================================================================================
 // Maarg server configuration
 //
-// Seed data like the rest of this file, but stored in localStorage rather than IndexedDB: it is a
-// small, flat, read-only object of server config properties, so it needs none of the cache's
-// projection / prune / liveQuery machinery. Grouped here because its ROLE is the same as the other
-// seed sets — reference data no single model owns — and callers should not care where it is kept.
+// Server config properties kept in localStorage by the maarg store (see store/maarg.ts). Grouped here
+// because its ROLE is the same as the other seed sets — reference data no single model owns — and
+// components should not care where it is kept.
 // =============================================================================================
-const MAARG_STORAGE_KEY = "company:maargConfig";
-
-export interface MaargInstanceInfo {
-  instancePurpose?: string;
-  instanceName?: string;
-  omsInstanceUrl?: string | null;
-  componentRelease?: string;
-}
-
-export interface MaargComponent {
-  name: string;
-  version: string;
-}
-
-export interface MaargConfig {
-  instanceInfo: MaargInstanceInfo;
-  components: MaargComponent[];
-  /** When this copy was read from the server. */
-  fetchedAt: number;
-}
-
-function readStored(): MaargConfig | null {
-  try {
-    const raw = localStorage.getItem(MAARG_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    return parsed as MaargConfig;
-  } catch {
-    return null; // corrupt entry — treat as absent and re-read from the server
-  }
-}
-
-// Module-scoped so every consumer shares one copy and one in-flight request.
-const config = ref<MaargConfig | null>(readStored());
-let inFlight: Promise<void> | null = null;
 
 /**
  * The operating organization's partyId — the `ownerPartyId` stamped on facilities this app creates.
@@ -523,41 +495,8 @@ export function useOrganization() {
 }
 
 export function useMaargConfig() {
-  /**
-   * Read the config, from localStorage when present. `force` re-reads from the server (used by an
-   * explicit refresh); otherwise a stored copy is reused for the whole session.
-   */
-  async function load(force = false): Promise<void> {
-    if (config.value && !force) return;
-    if (inFlight) return inFlight;
-
-    inFlight = (async () => {
-      try {
-        const resp: any = await api({ url: "admin/maarg", method: "get" });
-        const data = resp?.data;
-        if (!data || typeof data !== "object") throw new Error("Maarg config response is unavailable.");
-        const next: MaargConfig = {
-          instanceInfo: data.instanceInfo ?? {},
-          components: Array.isArray(data.components) ? data.components : [],
-          fetchedAt: Date.now(),
-        };
-        config.value = next;
-        localStorage.setItem(MAARG_STORAGE_KEY, JSON.stringify(next));
-      } catch (error) {
-        logger.error("Failed to load Maarg configuration", error);
-      } finally {
-        inFlight = null;
-      }
-    })();
-
-    return inFlight;
-  }
-
-  /** Drop the stored copy (called on logout alongside the cache wipe). */
-  function clear(): void {
-    config.value = null;
-    try { localStorage.removeItem(MAARG_STORAGE_KEY); } catch { /* ignore */ }
-  }
+  const maarg = useMaargStore();
+  const config = computed(() => maarg.config);
 
   const componentVersion = (name: string) =>
     computed(() => config.value?.components.find((component) => component.name === name)?.version ?? null);
@@ -568,8 +507,8 @@ export function useMaargConfig() {
     components: computed(() => config.value?.components ?? []),
     isLoaded: computed(() => !!config.value),
     componentVersion,
-    load,
-    clear,
+    load: (force = false) => maarg.load(force),
+    clear: () => maarg.clear(),
   };
 }
 

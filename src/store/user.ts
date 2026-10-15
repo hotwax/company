@@ -3,9 +3,8 @@ import { DateTime, Settings } from "luxon"
 import { api, commonUtil, cookieHelper, emitter, logger, translate } from "@common"
 import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
-import { useServiceJob } from "@/composables/useServiceJobs"
-import { useMaargConfig } from "@/composables/useSeed"
-import { startAppDbSync, stopAppDbSync } from "@/services/appDbSync"
+import { useMaargStore } from "@/store/maarg"
+import { startAppDbSync, stopAppDbSync } from "@/db/appDbSync"
 
 export const useUserStore = defineStore("user", {
   state: () => ({
@@ -439,22 +438,12 @@ export const useUserStore = defineStore("user", {
           params: { partyId }
         }) as any
 
-        /**
-         * Store names come from the CACHED productStores table (class-B snapshot, filled at login)
-         * rather than the retired util store. The old code also fetched roles here and never read
-         * them — dropped with the store.
-         */
-        const { useSeedData } = await import("@common/db")
-        const cachedStores = await useSeedData().getProductStores().catch(() => [])
-
+        // The user's current product store roles, as the server returns them. The page names each
+        // store from the local productStores table.
         if(!commonUtil.hasError(resp)) {
           const now = Date.now()
-          const storeNameByProductStoreId = {} as any
-          cachedStores.forEach((store: any) => { storeNameByProductStoreId[store.productStoreId] = store.storeName })
-
           productStores = (resp.data || [])
             .filter((productStoreRole: any) => !productStoreRole.thruDate || productStoreRole.thruDate > now)
-            .map((productStoreRole: any) => ({ ...productStoreRole, storeName: storeNameByProductStoreId[productStoreRole.productStoreId] }))
         } else {
           throw resp.data
         }
@@ -964,7 +953,7 @@ export const useUserStore = defineStore("user", {
         await this.fetchUserProfile()
         await this.fetchPermissions()
         // Force fetch maarg config information so that the localStorage config gets correctly populated
-        useMaargConfig().load(true);
+        useMaargStore().load(true);
       } catch (error: any) {
         return Promise.reject(new Error(error))
       }
@@ -999,8 +988,7 @@ export const useUserStore = defineStore("user", {
       // Stop worker and wipe the local read cache (IndexedDB)
       await stopAppDbSync().catch(() => { /* never block logout on cache cleanup */ })
       // Maarg config lives in localStorage, not the cache, so it is cleared separately.
-      const { useMaargConfig } = await import("@/composables/useSeed")
-      useMaargConfig().clear()
+      useMaargStore().clear()
 
       /**
        * Reset the remaining persisted stores AND composable module state.

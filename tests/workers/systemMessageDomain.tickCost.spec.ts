@@ -46,7 +46,7 @@ const systemMessageCacheMock = {
 };
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: {
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
     entity: (table: string) => {
       if (table === "systemMessages") return systemMessageCacheMock;
       if (table === "shopifyShops") {

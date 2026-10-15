@@ -1,9 +1,10 @@
 import { computed } from "vue";
 import { isEffectiveNow } from "@common/db";
 import { alertController } from "@ionic/vue";
-import { api, commonUtil, emitter, logger, useDb } from "@common";
+import { api, commonUtil, emitter, logger, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { translate } from "@/i18n";
-import { resyncDomain } from "@/services/appDbSync";
+import { resyncDomain } from "@/db/appDbSync";
 
 /**
  * NetSuite master entity — the whole integration surface in one composable.
@@ -28,8 +29,8 @@ import { resyncDomain } from "@/services/appDbSync";
  * This is the table every NetSuite mapping screen edits.
  */
 export function useIntegrationTypeMappings(integrationTypeId?: string) {
-  const { records, hydrated } = useDb<any>(
-    "integrationTypeMappings",
+  const { records, hydrated } = useLiveEntity<any>(
+    companyDb.tables.integrationTypeMappings,
     integrationTypeId ? { scope: { field: "integrationTypeId", value: integrationTypeId } } : {},
   );
 
@@ -59,7 +60,7 @@ export function useIntegrationTypeMappings(integrationTypeId?: string) {
 
 /** Enum group members for one group (e.g. sales channel / variance reason sets). */
 export function useEnumGroupMembers(enumerationGroupId?: string) {
-  const { records, hydrated } = useDb<any>("enumGroupMembers");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.enumGroupMembers);
   // The stored field is `enumerationGroupId`; with no group named, every cached member is returned.
   const members = computed(() => enumerationGroupId
     ? records.value.filter((row: any) => row.enumerationGroupId === enumerationGroupId)
@@ -69,7 +70,7 @@ export function useEnumGroupMembers(enumerationGroupId?: string) {
 
 /** Facility identifications (party/facility external-id mappings). */
 export function useFacilityIdentifications() {
-  const { records, hydrated } = useDb<any>("facilityIdentifications");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.facilityIdentifications);
 
   /**
    * Only identifications in force right now. `oms/facilities/identifications` returns thru-dated

@@ -27,7 +27,7 @@ vi.mock("@common/core/workerRemoteApi", () => ({
 }));
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: {
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
     entity: () => ({
       snapshotReplace: vi.fn(async (rows: any[], scope: any) => {
         state.snapshots.push({ rows, scope });

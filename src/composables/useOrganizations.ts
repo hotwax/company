@@ -1,7 +1,8 @@
 /* eslint-disable no-restricted-syntax -- pure hierarchy helpers and entity mutations share this entity composable */
-import { api, commonUtil, translate, useDb } from "@common";
+import { api, commonUtil, translate, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { computed, ref, type Ref } from "vue";
-import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { refreshAfterMutation, resyncDomain } from "@/db/appDbSync";
 import { getResponseErrorMessage } from "@/utils";
 import { isEffectiveNow } from "@common/db";
 import { onSessionCleared } from "./sessionScope";
@@ -173,8 +174,8 @@ export function wouldCreateOrganizationCycle(
 }
 
 export function useOrganizations() {
-  const organizationRead = useDb<Organization>("organizations");
-  const relationshipRead = useDb<OrganizationRelationship>("organizationRelationships");
+  const organizationRead = useLiveEntity<Organization>(companyDb.tables.organizations);
+  const relationshipRead = useLiveEntity<OrganizationRelationship>(companyDb.tables.organizationRelationships);
   const forest = computed(() =>
     deriveOrganizationForest(organizationRead.records.value, relationshipRead.records.value));
   const organizations = computed(() =>
@@ -191,7 +192,7 @@ export function useOrganizations() {
 }
 
 export const useOrganizationRecord = (partyId: string | Ref<string | undefined> | undefined) => {
-  const { first: record, hydrated } = useDb<Organization>("organizations", () => {
+  const { first: record, hydrated } = useLiveEntity<Organization>(companyDb.tables.organizations, () => {
     const targetId = typeof partyId === "object" && partyId && "value" in partyId ? partyId.value : partyId;
     return targetId ? { equals: { partyId: targetId } } : { filter: () => false };
   });
@@ -199,7 +200,7 @@ export const useOrganizationRecord = (partyId: string | Ref<string | undefined> 
 };
 
 export function useOrganizationFacilities(partyId: string | Ref<string | undefined> | undefined) {
-  const { records, hydrated } = useDb<any>("facilities");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.facilities);
   const facilities = computed(() => {
     const targetId = typeof partyId === "object" && partyId && "value" in partyId ? partyId.value : partyId;
     return targetId ? records.value.filter((row: any) => row.ownerPartyId === targetId) : records.value;

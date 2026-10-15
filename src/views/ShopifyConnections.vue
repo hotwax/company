@@ -77,7 +77,7 @@ import { translate } from '@common';
 import { computed, ref } from "vue";
 import router from "@/router";
 import { useShopifyShops } from "@/composables/useShopify";
-import { refreshAfterMutation } from "@/services/appDbSync";
+import { refreshAfterMutation } from "@/db/appDbSync";
 
 import ShopifyConnectionFilters from "@/components/shopify/ShopifyConnectionFilters.vue";
 import CreateShopifyConnectionModal from "@/components/shopify/CreateShopifyConnectionModal.vue";

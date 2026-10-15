@@ -20,7 +20,7 @@ import { ref } from "vue";
  * strictly `false`, and — as the regression lock — that the resolved object is NOT the axios envelope.
  *
  * The api client is stubbed at `@common` (importing the composable otherwise pulls `useAuth` →
- * `cookieHelper`, which has no browser context here) and the Dexie layer at `useDb`, which is
+ * `cookieHelper`, which has no browser context here) and the Dexie layer at `useLiveEntity`, which is
  * the read seam every cached entity in this composable goes through. `useServiceJobs` is deliberately
  * NOT stubbed: `updateJob`/`runNow` are the functions that produce the axios envelope, so leaving them
  * real is what makes "the envelope is unwrapped" a genuine end-to-end assertion rather than a
@@ -82,7 +82,7 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: () => false, showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
-  useDb: (entity: any, selectorOrOptions?: any) => {
+  useLiveEntity: (entity: any, selectorOrOptions?: any) => {
     const raw = typeof entity === "string" ? entity : String(entity?.name ?? entity?.__kind ?? "");
     const key = TABLE_TO_CACHE_KEY[raw] || raw;
     let records = CACHE[key] ?? [];
@@ -111,7 +111,7 @@ vi.mock("@common", () => ({
   },
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
   bootstrapState: { running: false },
   activateSyncDomains: vi.fn().mockResolvedValue(undefined),
@@ -123,13 +123,13 @@ vi.mock("@/services/appDbSync", () => ({
 
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
-    ensureSystemMessageById: vi.fn(),
-    ensureSystemMessageErrors: vi.fn(),
-    fetchShopifyBulkOperation: vi.fn(),
+    requestSystemMessage: vi.fn(),
+    requestSystemMessageErrors: vi.fn(),
+    requestShopifyBulkOperation: vi.fn(),
   }),
 }));
 vi.mock("@/composables/useDataManager", () => ({
-  useDataManager: () => ({ ensureDataManagerLog: vi.fn() }),
+  useDataManager: () => ({ requestDataManagerLog: vi.fn() }),
   useRecentDataManagerLogs: () => ({
     logs: { value: [] }, totalFailedRecords: { value: 0 }, hydrated: { value: true },
   }),

@@ -14,6 +14,8 @@ import { commonDomains } from "@common/db/seed/seedDomains";
 
 import { dataManagerLogDomain } from "./domains/dataManagerLogDomain";
 import { systemMessageDomain } from "./domains/systemMessageDomain";
+import { systemMessageErrorDomain } from "./domains/systemMessageErrorDomain";
+import { shopifyBulkOperationDomain } from "./domains/shopifyBulkOperationDomain";
 import { serviceJobRunDomain } from "./domains/serviceJobRunDomain";
 import { syncRunDomain } from "./domains/syncRunDomain";
 import { productUpdateHistoryDomain } from "./domains/productUpdateHistoryDomain";
@@ -50,6 +52,8 @@ export const appSyncDomains: SyncDomain[] = [
   ...companySeedDomains,
   dataManagerLogDomain,
   systemMessageDomain,
+  systemMessageErrorDomain,
+  shopifyBulkOperationDomain,
   serviceJobRunDomain,
   syncRunDomain,
   productUpdateHistoryDomain,

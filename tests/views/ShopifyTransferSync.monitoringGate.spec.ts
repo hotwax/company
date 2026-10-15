@@ -37,10 +37,10 @@ vi.mock("@common", () => ({
   translate: (k: string, v: Record<string, any> = {}) =>
     Object.entries(v).reduce((m, [key, val]) => m.replace(`{${key}}`, String(val)), k),
   buildAppUrl: () => null,
-  useDb: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
+  useLiveEntity: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   activateSyncDomains: vi.fn().mockResolvedValue(undefined),
   deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
   createSyncDomainOwner: (label: string) => label,

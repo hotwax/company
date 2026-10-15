@@ -124,10 +124,12 @@
                   {{ domain.count }} {{ translate("records") }}
                   <template v-if="domain.syncedAt">, {{ translate("synced") }} {{ formatSyncTime(domain.syncedAt) }}</template>
                   <template v-else-if="domain.syncClass === 'A'">, {{ translate("live while in use") }}</template>
+                  <!-- Class C never runs a pass of its own: rows arrive when a screen asks for a record. -->
+                  <template v-else-if="domain.syncClass === 'C'">, {{ translate("fetched when opened") }}</template>
                   <template v-else>, {{ translate("not synced yet") }}</template>
                 </p>
               </ion-label>
-              <ion-button slot="end" fill="clear" :disabled="!!refreshing" @click="refreshDomain(domain.name)">
+              <ion-button v-if="domain.syncClass !== 'C'" slot="end" fill="clear" :disabled="!!refreshing" @click="refreshDomain(domain.name)">
                 <ion-spinner v-if="refreshing === domain.name" name="dots" />
                 <ion-icon v-else slot="icon-only" :icon="syncOutline" />
               </ion-button>
@@ -156,7 +158,7 @@ import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons
 import { getCurrentTime } from "../utils"
 import { catalogFrom, useDbStatus } from "@common/db";
 import { companyDb } from "@/db/companyDb";
-import { resyncDomain, resyncReferenceData } from "@/services/appDbSync";
+import { resyncDomain, resyncReferenceData } from "@/db/appDbSync";
 import { useMaargConfig } from "@/composables/useSeed";
 import Actions from "@/authorization/actions";
 const userStore = useUserStore();
@@ -179,7 +181,7 @@ const userFetchStatus = computed(() => userStore.fetchStatus)
 const {
   domains, refreshing, totalRows, oldestSyncedAt, lastSyncedAt, refreshDomain, refreshAll,
 } = useDbStatus(
-  companyDb.raw(),
+  companyDb.client(),
   // The domains the worker registers, read from the same list rather than asked of the worker: on a
   // reload here, or after sync failed to start, there is no worker to answer, and this card's
   // per-domain Refresh is the way back. Imported on demand to keep the domain code out of startup.

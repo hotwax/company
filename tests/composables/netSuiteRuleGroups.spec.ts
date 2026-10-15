@@ -7,7 +7,7 @@ vi.mock("@common", () => ({
   api: vi.fn(),
   commonUtil: { hasError: () => false },
   logger: { error: vi.fn() },
-  useDb: () => ({ records, hydrated: ref(true), first: computed(() => records.value[0]) }),
+  useLiveEntity: () => ({ records, hydrated: ref(true), first: computed(() => records.value[0]) }),
 }));
 
 describe("useNetSuiteRuleGroups", () => {

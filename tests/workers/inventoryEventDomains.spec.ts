@@ -65,7 +65,7 @@ vi.mock("@/db/companyDb", async (importOriginal) => {
     };
   }
 
-  return { companyDb: { entities: companyDb.entities, entity: fakeEntity } };
+  return { companyDb: { entities: companyDb.entities, tables: companyDb.tables, entity: fakeEntity } };
 });
 
 const channelKey = (raw: any) => joinKey(raw.eventTypeId, raw.eventReferenceId, raw.inventoryChannelId, raw.shopifyInventoryItemId);

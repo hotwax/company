@@ -614,6 +614,7 @@ import { isValidPhone } from "@/utils";
 import { useUserGroups } from '@/composables/useSecurity';
 import { useShopifyShops } from '@/composables/useShopify';
 import { useRoleTypes } from '@/composables/useSeed';
+import { useUserProductStores } from '@/composables/useProductStores';
 import ContactActionsPopover from "@/components/common/ContactActionsPopover.vue";
 import ProductStoreActionsPopover from "@/components/product-store/ProductStoreActionsPopover.vue";
 import SecurityGroupActionsPopover from "@/components/security/SecurityGroupActionsPopover.vue";
@@ -656,7 +657,7 @@ const showPassword = ref(false);
 const isUserFulfillmentAdmin = ref(false);
 
 const selectedUser = computed(() => userStore.selectedUser);
-const userProductStores = computed(() => userStore.getSelectedUserProductStores);
+const { userProductStores } = useUserProductStores(() => userStore.getSelectedUserProductStores);
 const userSecurityGroups = computed(() => userStore.getSelectedUserSecurityGroups);
 // Role types are cached at login; this used to depend on `prefetchReferenceData` having run.
 const { descriptionById: roleTypeDescriptions } = useRoleTypes();

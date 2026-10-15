@@ -1,5 +1,6 @@
 import { computed } from "vue";
-import { logger, useDb } from "@common";
+import { logger, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { translate } from "@/i18n";
 
 function parseJson(value: any, defaultValue: any) {
@@ -145,7 +146,7 @@ function getProductUpdateHistoryPayload(data: any): any[] {
  * valuable part of the old composable; only its data source moved.
  */
 export function useProductUpdateHistories(shopId?: string, limit = 10) {
-  const { records, hydrated } = useDb<any>("productUpdateHistories", {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.productUpdateHistories, {
     dateField: "lastUpdatedStamp",
     ...(shopId ? { scope: { field: "shopId", value: shopId } } : {}),
     limit,

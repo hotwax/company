@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * `tests/utils/shopifyFulfillment.spec.ts`; here it only proves it is APPLIED per row.
  *
  * The api client is stubbed at `@common` (importing the composable otherwise pulls `useAuth` →
- * `cookieHelper`, which has no browser context here), and so is `useDb`, the read seam every table
+ * `cookieHelper`, which has no browser context here), and so is `useLiveEntity`, the read seam every table
  * goes through — the mock applies scope/equals/filter/limit the way the real seam's options contract
  * promises, so the composables' declared queries are exercised rather than bypassed.
  */
@@ -26,7 +26,7 @@ vi.mock("@common", async () => {
     commonUtil: { hasError: () => false, showToast: vi.fn() },
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
     translate: (value: string) => value,
-    useDb: (table: string, source: any = {}) => {
+    useLiveEntity: (table: string, source: any = {}) => {
       const records = computed(() => {
         const options = typeof source === "function" ? source() : source;
         let rows = [...(CACHE[TABLES[table]] ?? [])];
@@ -54,7 +54,7 @@ vi.mock("@common", async () => {
   };
 });
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
 }));
 

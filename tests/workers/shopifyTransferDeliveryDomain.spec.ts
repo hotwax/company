@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ cached: [] as any[], post: vi.fn(), get: vi.fn(), write: vi.fn() }));
-vi.mock("@/db/companyDb", () => ({ companyDb: { entity: () => ({
+vi.mock("@/db/companyDb", () => ({ companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any, entity: () => ({
   query: ({ scope }: any) => Promise.resolve(state.cached.filter((row) => row[scope.field] === scope.value)),
   upsertMany: state.write,
 }) } }));

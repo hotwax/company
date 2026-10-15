@@ -1,6 +1,7 @@
-import { api, commonUtil, useDb } from "@common";
+import { api, commonUtil, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { computed, ref } from "vue";
-import { refreshAfterMutation } from "@/services/appDbSync";
+import { refreshAfterMutation } from "@/db/appDbSync";
 import { PENDING_SEGMENT_ENDPOINTS, type PendingSegment, SYNCED_SEGMENT_ENDPOINTS } from "@/workers/domains/shopifyTransferSyncDomain";
 import {
   type ReconciliationSummary,
@@ -38,7 +39,7 @@ import {
  * artifact timestamp (the create segment) fall back to order id, which is stable and monotonic.
  */
 export function useShopifyPendingSegment(shopId: () => string | undefined, segment: () => PendingSegment) {
-  const { records, hydrated } = useDb<any>("shopifyTransferPending");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyTransferPending);
 
   const rows = computed<any[]>(() => {
     const wantedShop = String(shopId() ?? "");
@@ -64,7 +65,7 @@ export function useShopifyPendingSegment(shopId: () => string | undefined, segme
  * than one query per tab, because they all live in the same table.
  */
 export function useShopifyPendingCounts(shopId: () => string | undefined) {
-  const { records, hydrated } = useDb<any>("shopifyTransferPending");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyTransferPending);
 
   const counts = computed<Record<string, number>>(() => {
     const wanted = String(shopId() ?? "");

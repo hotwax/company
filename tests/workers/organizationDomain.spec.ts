@@ -23,8 +23,12 @@ vi.mock("@common/core/workerRemoteApi", () => ({
 }));
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: {
-    raw: () => ({ organizations: { count: vi.fn(async () => state.cachedCount) } }),
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
+    client: () => ({
+      syncedThisLogin: vi.fn(async () => false),
+      markSyncedThisLogin: vi.fn(async (name: string) => { state.marked.push(name); }),
+      count: vi.fn(async (table: string) => (table === "organizations" ? state.cachedCount : 0)),
+    }),
     entities: {
       organizations: defineEntity({ primaryKey: "partyId", fields: { partyId: "text" } }),
     },
@@ -46,15 +50,6 @@ vi.mock("@/db/companyDb", () => ({
     },
   },
 }));
-
-vi.mock("@common/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@common/db")>();
-  return {
-    ...actual,
-    hasSyncedThisLogin: vi.fn(async () => false),
-    markSyncedThisLogin: vi.fn(async (_db: any, name: string) => { state.marked.push(name); }),
-  };
-});
 
 vi.mock("@common/db/sync/syncRegistry", () => ({
   registerSyncDomain: (domain: any) => { state.domains.push(domain); },

@@ -152,13 +152,15 @@ import {
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import cronstrue from "cronstrue";
 import { computed, ref, watch } from "vue";
-import { commonUtil, logger, translate, useDb } from "@common";
+import { commonUtil, logger, translate } from "@common";
+import { useServiceJobs } from "@/composables/useServiceJobs";
 import {
   ABSOLUTE_CHANNEL_RESET_SERVICE,
   ensureChannelResetJob,
   fetchLocationsFromShopify,
   fetchShopifyShopLocations,
   updateInventoryChannel,
+  useInventoryChannels,
 } from "@/composables/useShopify";
 import { isEffectiveNow } from "@common/db";
 import { formatDateTime } from "@/utils";
@@ -171,8 +173,8 @@ const emit = defineEmits<{
   "schedule-job": [{ jobName: string }];
 }>();
 
-const { records: cachedJobs } = useDb<any>("serviceJobs");
-const { records: inventoryChannels } = useDb<any>("inventoryChannels");
+const { jobs: cachedJobs } = useServiceJobs();
+const { channels: inventoryChannels } = useInventoryChannels();
 
 const isSettingUpJob = ref(false);
 

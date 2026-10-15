@@ -3,15 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 
 const deleted: string[] = [];
 
-vi.mock("@/db/companyDb", () => ({
-  companyDb: {
-    tableNames: [],
-    raw: () => ({ syncMeta: { delete: async (key: string) => { deleted.push(key); } } }),
-  },
-}));
+vi.mock("@/db/companyDb", async () => {
+  const { dbClient } = await import("@common/db/storage/dbClient");
+  const raw = () => ({ syncMeta: { delete: async (key: string) => { deleted.push(key); } } }) as any;
+  return { companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any, tableNames: [], raw, client: () => dbClient(raw) } };
+});
 
-vi.mock("@common/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@common/db")>();
+vi.mock("@common/db/sync/syncService", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@common/db/sync/syncService")>();
   return {
     ...actual,
     createSyncService: () => ({
@@ -33,7 +32,7 @@ vi.mock("@common/db", async (importOriginal) => {
 describe("resyncDomain login marker", () => {
   it("deletes the marker key that markSyncedThisLogin actually writes", async () => {
     deleted.length = 0;
-    const { resyncDomain } = await import("@/services/appDbSync");
+    const { resyncDomain } = await import("@/db/appDbSync");
 
     await resyncDomain("carrier").catch(() => {});
 

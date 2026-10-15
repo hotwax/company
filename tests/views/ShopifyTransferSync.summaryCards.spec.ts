@@ -20,7 +20,7 @@ vi.mock("@common", () => ({
   },
   translate: (k: string, v: Record<string, any> = {}) =>
     Object.entries(v).reduce((m, [key, val]) => m.replace(`{${key}}`, String(val)), k),
-  useDb: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
+  useLiveEntity: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
 }));
 
 // `vi.mock` factories run lazily -- only when the mocked module is actually imported, by which
@@ -30,7 +30,7 @@ vi.mock("@common", () => ({
 // "Cannot access '__vi_import_1__' before initialization".
 let syncDomainsErrorRef: ReturnType<typeof ref<string>>;
 
-vi.mock("@/services/appDbSync", () => {
+vi.mock("@/db/appDbSync", () => {
   syncDomainsErrorRef = ref("");
   return {
     activateSyncDomains: vi.fn().mockResolvedValue(undefined),

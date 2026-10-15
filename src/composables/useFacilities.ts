@@ -1,10 +1,10 @@
 import { computed, ref } from "vue";
 import { DateTime } from "luxon";
-import { api, commonUtil, logger, translate, useDb } from "@common";
+import { api, commonUtil, logger, translate, useLiveEntity } from "@common";
 import { getResponseErrorMessage } from "@/utils";
 import { isEffectiveNow, toCount, toMillis } from "@common/db";
 import { facilityGroupTypeLabel } from "@/utils/facilityGroupTypeLabels";
-import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { refreshAfterMutation, resyncDomain } from "@/db/appDbSync";
 import { companyDb } from "@/db/companyDb";
 import { useShopifyFacilityMappings } from "./useShopify";
 import { useTypedEnums } from "./useSeed";
@@ -65,7 +65,7 @@ export interface FacilityFilters {
  * screen states which facilities it wants rather than issuing a scoped request.
  */
 export function useFacilities(filters: FacilityFilters = {}) {
-  const { records, hydrated } = useDb<any>("facilities");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.facilities);
 
   const facilities = computed(() => records.value.filter((facility: any) => {
     if (filters.excludeVirtual && isVirtualFacility(facility)) return false;
@@ -79,7 +79,7 @@ export function useFacilities(filters: FacilityFilters = {}) {
 }
 
 export const useFacilityRecord = (facilityId: string | undefined) => {
-  const { first: record, hydrated } = useDb<any>("facilities", () => facilityId ? { equals: { facilityId } } : { filter: () => false });
+  const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.facilities, () => facilityId ? { equals: { facilityId } } : { filter: () => false });
   return { record, hydrated };
 };
 
@@ -99,7 +99,7 @@ export interface FacilityTypeFilters {
 
 /** Facility types, description-ordered for pickers, narrowed by `filters`. */
 export function useFacilityTypes(filters: FacilityTypeFilters = {}) {
-  const { records, hydrated } = useDb<any>("facilityTypes");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.facilityTypes);
 
   const facilityTypes = computed(() => records.value
     .filter((type: any) => {
@@ -125,7 +125,7 @@ export const ARCHIVE_FACILITY_GROUP_ID = "ARCHIVE";
  * marks it. Filtering on the facility rows alone would keep showing it in the active list.
  */
 export function useFacilityPartitions() {
-  const { records, hydrated } = useDb<any>("facilities");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.facilities);
   const { archivedIds } = useArchivedFacilities();
 
   const allVirtual = computed(() => records.value.filter(isVirtualFacility));
@@ -147,7 +147,7 @@ export function useFacilityPartitions() {
  */
 export function useArchivedFacilities() {
   const { active, hydrated: membershipsHydrated } = useGroupMembershipIndex();
-  const { records: facilities, hydrated: facilitiesHydrated } = useDb<any>("facilities");
+  const { records: facilities, hydrated: facilitiesHydrated } = useLiveEntity<any>(companyDb.tables.facilities);
 
   const archivedMembers = computed(() =>
     active.value.filter((row: any) => row.facilityGroupId === ARCHIVE_FACILITY_GROUP_ID));
@@ -179,7 +179,7 @@ export function useArchivedFacilities() {
 
 /** Groups with their member counts folded in — what the group list renders. */
 export function useFacilityGroups() {
-  const { records, hydrated } = useDb<any>("facilityGroups");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.facilityGroups);
   const { facilityCountByGroup } = useGroupFacilityCounts();
 
   const { productStoreCountByGroup } = useFacilityGroupProductStoreCounts();
@@ -194,7 +194,7 @@ export function useFacilityGroups() {
 }
 
 export const useFacilityGroupRecord = (facilityGroupId: string | undefined) => {
-  const { first: record, hydrated } = useDb<any>("facilityGroups", () => facilityGroupId ? { equals: { facilityGroupId } } : { filter: () => false });
+  const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.facilityGroups, () => facilityGroupId ? { equals: { facilityGroupId } } : { filter: () => false });
   return { record, hydrated };
 };
 
@@ -213,8 +213,8 @@ export const useFacilityGroupRecord = (facilityGroupId: string | undefined) => {
  * being one duplicate row and becomes a duplicate of the whole group.
  */
 export function useGroupFacilities(facilityGroupId?: string) {
-  const { records, hydrated } = useDb<any>(
-    "groupFacilities",
+  const { records, hydrated } = useLiveEntity<any>(
+    companyDb.tables.groupFacilities,
     facilityGroupId ? { scope: { field: "facilityGroupId", value: facilityGroupId } } : {},
   );
   const members = computed<any[]>(() => records.value.map((row: any) => {
@@ -234,7 +234,7 @@ export function useGroupFacilities(facilityGroupId?: string) {
 
 /** facilityGroupId → member count, honoring `thruDate` (memberships are date-effective). */
 export function useGroupFacilityCounts() {
-  const { records, hydrated } = useDb<any>("groupFacilities");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.groupFacilities);
   return {
     facilityCountByGroup: computed<Record<string, number>>(() => {
       const now = Date.now();
@@ -254,7 +254,7 @@ export function useGroupFacilityCounts() {
  * Expired memberships (`thruDate` in the past) are excluded, matching the server's `filterByDate`.
  */
 export function useGroupMembershipIndex() {
-  const { records, hydrated } = useDb<any>("groupFacilities");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.groupFacilities);
 
   const active = computed(() => {
     const now = Date.now();
@@ -289,7 +289,7 @@ export function useGroupMembershipIndex() {
  * Deriving the distinct ids off `facilityGroups` makes them work.
  */
 export function useFacilityGroupTypes() {
-  const { records, hydrated } = useDb<any>("facilityGroups");
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.facilityGroups);
   const facilityGroupTypes = computed(() => {
     const seen = new Set<string>();
     for (const group of records.value as any[]) {
@@ -352,8 +352,8 @@ export function useFacilityGroupTypeOptions() {
  * which is what lets the facility list filter by product store.
  */
 export function useFacilityProductStores(facilityId?: string) {
-  const { records, hydrated } = useDb<any>(
-    "productStoreFacilities",
+  const { records, hydrated } = useLiveEntity<any>(
+    companyDb.tables.productStoreFacilities,
     facilityId ? { scope: { field: "facilityId", value: facilityId } } : {},
   );
 
@@ -383,8 +383,8 @@ export const useFacilityShopifyMappings = (facilityId: string | undefined) =>
  * membership counts use.
  */
 export function useFacilityGroupProductStores(facilityGroupId?: string) {
-  const { records, hydrated } = useDb<any>(
-    "facilityGroupProductStores",
+  const { records, hydrated } = useLiveEntity<any>(
+    companyDb.tables.facilityGroupProductStores,
     facilityGroupId ? { scope: { field: "facilityGroupId", value: facilityGroupId } } : {},
   );
   // `Date.now()` belongs INSIDE the computed. Read once at setup it freezes the cutoff at the
@@ -1355,14 +1355,17 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
  * belongs to `groupFacility`, re-listed for the one group so a removed member is pruned.
  */
 export function useFacilityArchive() {
+  // The archive group's stored row, live. The group list is a login snapshot, so a hit costs no request.
+  const { first: storedArchiveGroup } = useLiveEntity<any>(companyDb.tables.facilityGroups, {
+    equals: { facilityGroupId: ARCHIVE_FACILITY_GROUP_ID },
+  });
+
   /** Resolve the archive group, creating it once if this OMS has never had one. */
   async function ensureArchiveGroup(): Promise<string> {
-    // Cache first — the group list is a login snapshot, so a hit costs no request at all.
-    const cached = await companyDb.entity("facilityGroups").all();
-    if (cached.some((group: any) => group.facilityGroupId === ARCHIVE_FACILITY_GROUP_ID)) return ARCHIVE_FACILITY_GROUP_ID;
+    if (storedArchiveGroup.value) return ARCHIVE_FACILITY_GROUP_ID;
 
-    // A cache miss is not proof of absence (the group may have been created outside this app since
-    // login), so confirm against the server before trying to create it.
+    // No stored row is not proof of absence (the group may have been created outside this app since
+    // login, or the snapshot has not loaded yet), so confirm against the server before creating it.
     try {
       const resp: any = await api({ url: `oms/facilityGroups/${ARCHIVE_FACILITY_GROUP_ID}`, method: "get" });
       if (!commonUtil.hasError(resp) && resp.data?.facilityGroupId) {

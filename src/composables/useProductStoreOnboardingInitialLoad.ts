@@ -7,7 +7,7 @@ import type {
 } from "@/components/product-store-onboarding/OnboardingSyncStatus.types"
 import { formatDateTime } from "@/utils"
 import { DATA_MANAGER_LOG_STATUS_IDS, logOutcome } from "@/utils/dataManagerLog"
-import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation, syncDomainsError as syncError, syncNow } from "@/services/appDbSync"
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation, syncDomainsError as syncError, syncNow } from "@/db/appDbSync"
 import type { ActiveDomain } from "@common/db"
 import type { ProductStoreOnboardingRunRequest } from "./useProductStoreOnboardingWizard"
 import { useServiceJobRunsByJob } from "./useServiceJobs"

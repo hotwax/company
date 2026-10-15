@@ -2,7 +2,7 @@ import { companyDb } from "@/db/companyDb";
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import { workerGet } from "@common/core/workerRemoteApi";
 
-const fulfillmentHealthEntity = companyDb.entity("shopifyFulfillmentHealth");
+const fulfillmentHealthEntity = companyDb.entity(companyDb.tables.shopifyFulfillmentHealth);
 
 export const shopifyFulfillmentHealthDomain = defineSyncDomain({
   name: "shopifyFulfillmentHealth",

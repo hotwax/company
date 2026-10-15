@@ -1,5 +1,6 @@
 import { INVENTORY_EVENT_DOMAINS, INVENTORY_SYNC_DOMAIN_LABELS } from "@/config/appSyncConfig";
 import { companyDb } from "@/db/companyDb";
+import type { AppDbTables } from "@common/db/schema/defineAppDb";
 import type { EntityClient } from "@common/db/storage/dbClient";
 import { canonicalKey, entityKeyOf, toMillis } from "@common/db/storage/projection";
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
@@ -8,7 +9,7 @@ import { pageAll, workerGet, workerPost } from "@common/core/workerRemoteApi";
 import { type InventoryEventKind, effectiveMessageOf, isUnsettledMessage } from "@/utils/inventoryEvents";
 
 /**
- * Class A for as long as the user is in a shop's inventory sync pages (`src/services/inventorySyncArea.ts`).
+ * Class A for as long as the user is in a shop's inventory sync pages (`src/composables/useInventorySyncArea.ts`).
  * Both ledgers share the pollers: the rows poller reads the newest 500, then rows whose
  * `detailLastUpdatedStamp` moved; the message poller reads rows whose joined
  * `systemMessageLastUpdatedStamp` moved. An OMS without the cursor aliases (connector before v4.4.0)
@@ -34,15 +35,15 @@ interface LedgerDefinition {
   rowsDomain: string;
   messageDomain: string;
   endpoint: string;
-  table: string;
+  table: AppDbTables<typeof companyDb>;
   entity: EntityClient<Record<string, any>>;
 }
 
-const systemMessageEntity = companyDb.entity("systemMessages");
-const inventoryItemEntity = companyDb.entity("shopifyInventoryItems");
-const ledgerBoundEntity = companyDb.entity("inventoryLedgerBounds");
+const systemMessageEntity = companyDb.entity(companyDb.tables.systemMessages);
+const inventoryItemEntity = companyDb.entity(companyDb.tables.shopifyInventoryItems);
+const ledgerBoundEntity = companyDb.entity(companyDb.tables.inventoryLedgerBounds);
 
-function ledger(kind: InventoryEventKind, table: string, endpoint: string, domains: { rows: string; messages: string }): LedgerDefinition {
+function ledger(kind: InventoryEventKind, table: AppDbTables<typeof companyDb>, endpoint: string, domains: { rows: string; messages: string }): LedgerDefinition {
   return { kind, rowsDomain: domains.rows, messageDomain: domains.messages, endpoint, table, entity: companyDb.entity(table) };
 }
 

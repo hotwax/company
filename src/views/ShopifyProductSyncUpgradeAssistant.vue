@@ -366,11 +366,12 @@ import {
   onIonViewWillEnter
 } from "@ionic/vue";
 import { arrowForwardOutline, checkmarkCircleOutline, warningOutline } from "ionicons/icons";
-import { computed, defineProps, ref } from "vue";
+import { computed, defineProps, ref, watch } from "vue";
 import router from "@/router";
 import { commonUtil, logger, translate } from '@common'
 import { PRODUCT_SYNC_MIGRATION_CONFIG } from "@/config/productSyncMigration";
 import {
+  type MigrationCatalog,
   type ProductSyncMigrationAssistantState,
   type ProductSyncMigrationEntryAction,
   type ProductSyncMigrationLegacyItem,
@@ -384,7 +385,11 @@ import {
   cancelLegacySystemMessage,
   deactivateLegacyServiceJob,
   deprecateLegacySystemMessageType,
+  withCatalog,
 } from "@/composables/useShopifyProductSyncMigration";
+import { useSystemMessageTypes } from "@/composables/useSeed";
+import { useServiceJobs } from "@/composables/useServiceJobs";
+import { useSystemMessageRemotes } from "@/composables/useSystemMessage";
 import { configureProductSyncJob, useShopifyShop } from "@/composables/useShopify";
 
 const props = defineProps(["id"]);
@@ -415,11 +420,42 @@ const assistantState = ref<ProductSyncMigrationAssistantState>({
   artifactChecks: [],
   legacySystemMessageTypes: [],
   legacyServiceJobs: [],
-  legacySystemMessages: []
+  legacySystemMessages: [],
+  legacyDynamicServiceJobNames: []
 });
 
 const { record: shopRecord } = useShopifyShop(props.id);
 const shop = computed<any>(() => shopRecord.value ?? {});
+
+// The synced tables the migration reads. Its checks run once they have loaded, and the items they
+// decide re-derive as they change — so a deactivated job or deprecated type shows once its refresh lands.
+const { systemMessageTypes: systemMessageTypeRows, hydrated: typesHydrated } = useSystemMessageTypes();
+const { records: serviceJobRows, hydrated: jobsHydrated } = useServiceJobs();
+const { remotes: systemMessageRemoteRows, hydrated: remotesHydrated } = useSystemMessageRemotes();
+const catalogLoaded = computed(() => typesHydrated.value && jobsHydrated.value && remotesHydrated.value);
+const catalog = (): MigrationCatalog => ({
+  systemMessageTypes: systemMessageTypeRows.value,
+  serviceJobs: serviceJobRows.value,
+  systemMessageRemotes: systemMessageRemoteRows.value,
+});
+
+function whenCatalogLoaded(): Promise<void> {
+  if (catalogLoaded.value) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    const stop = watch(catalogLoaded, (ready) => {
+      if (!ready) return;
+      stop();
+      resolve();
+    });
+  });
+}
+
+watch([systemMessageTypeRows, serviceJobRows], () => {
+  // A load in progress applies the catalog itself when it finishes.
+  if (!catalogLoaded.value || isLoading.value) return;
+  assistantState.value = withCatalog(assistantState.value, catalog());
+});
 const entryAction = computed<ProductSyncMigrationEntryAction>(() => {
   return resolveEntryAction(assistantState.value);
 });
@@ -584,8 +620,10 @@ async function loadAssistant() {
 
     const currentShop = shop.value;
 
+    // Before the tables load every required job and type would read as missing.
+    await whenCatalogLoaded();
     await fetchAssistantState(
-      { shopId: props.id, shop: currentShop },
+      { shopId: props.id, shop: currentShop, catalog },
       (partialState) => {
         assistantState.value = { ...assistantState.value, ...partialState };
       }
@@ -597,6 +635,8 @@ async function loadAssistant() {
     loadErrorMessage.value = error?.message || translate("Failed to load the product sync upgrade assistant.");
   }
 
+  // Rows a refresh stored while the load ran are applied here, since the watcher waits for it.
+  if (catalogLoaded.value) assistantState.value = withCatalog(assistantState.value, catalog());
   isLoading.value = false;
 }
 
@@ -803,7 +843,7 @@ async function teardownLegacySync() {
   try {
     const currentShop = shop.value;
     const result = await runTeardownLegacySync(
-      { shopId: props.id, shop: currentShop },
+      { shopId: props.id, shop: currentShop, catalog },
       (step: ProductSyncMigrationTeardownStep) => {
         // Update or append this step in the log
         const existingIndex = teardownLog.value.findIndex(
@@ -817,14 +857,14 @@ async function teardownLegacySync() {
       }
     );
 
-    assistantState.value = {
+    // Through the catalog as it is now: a refresh that landed before this result must not be undone.
+    assistantState.value = withCatalog({
       ...assistantState.value,
-      legacySystemMessageTypes: result.legacySystemMessageTypes,
-      legacyServiceJobs: result.legacyServiceJobs,
       legacySystemMessages: result.legacySystemMessages,
       legacySystemMessagesTotalCount: result.legacySystemMessagesTotalCount,
-      legacySystemMessageRemoteIds: result.legacySystemMessageRemoteIds
-    };
+      legacySystemMessageRemoteIds: result.legacySystemMessageRemoteIds,
+      legacyDynamicServiceJobNames: result.legacyDynamicServiceJobNames
+    }, catalog());
     teardownFailedSteps.value = result.failedSteps;
 
     if (result.failedSteps.length > 0) {
@@ -886,12 +926,12 @@ async function teardownSection(kind: "type" | "job" | "message") {
 
 async function runTeardownAction(item: ProductSyncMigrationLegacyItem, kind: "type" | "job" | "message") {
   if (kind === "type") {
-    await deprecateLegacySystemMessageType(item.id);
+    await deprecateLegacySystemMessageType(item.id, catalog());
     return;
   }
 
   if (kind === "job") {
-    await deactivateLegacyServiceJob(item.id);
+    await deactivateLegacyServiceJob(item.id, catalog());
     return;
   }
 

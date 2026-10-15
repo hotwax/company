@@ -15,7 +15,7 @@ vi.mock("@common/db", async () => {
   return { serviceState: reactive({ errors: sync.errors, syncedAt: sync.syncedAt }) };
 });
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   activateSyncDomains: sync.activate,
   deactivateSyncDomains: sync.deactivate,
   createSyncDomainOwner: (label: string) => `${label}:1`,
@@ -23,10 +23,12 @@ vi.mock("@/services/appDbSync", () => ({
   syncNow: sync.syncNow,
 }));
 
-function load() {
+async function load() {
   vi.resetModules();
+  const { useInventorySyncArea } = await import("@/composables/useInventorySyncArea");
+  const { inventorySyncAreaShopId } = await import("@/utils/inventoryEvents");
 
-  return import("@/services/inventorySyncArea");
+  return { ...useInventorySyncArea(), useInventorySyncArea, inventorySyncAreaShopId };
 }
 
 describe("inventory sync area", () => {

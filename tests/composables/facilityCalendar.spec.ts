@@ -15,10 +15,10 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: () => false },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
-  useDb: vi.fn(),
+  useLiveEntity: vi.fn(),
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
 }));

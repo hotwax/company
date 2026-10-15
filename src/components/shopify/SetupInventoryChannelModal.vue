@@ -160,7 +160,7 @@ import {
 } from "@ionic/vue";
 import { closeOutline, warningOutline } from "ionicons/icons";
 import { computed, ref } from "vue";
-import { commonUtil, logger, translate, useDb } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import { useFacilityGroups, useGroupFacilities } from "@/composables/useFacilities";
 import {
   createInventoryChannel,
@@ -169,6 +169,7 @@ import {
   ensureShopPhysicalInventoryResetJob,
   fetchLocationsFromShopify,
   fetchShopifyShopLocations,
+  useInventoryChannels,
   useShopifySyncContext,
 } from "@/composables/useShopify";
 import { isEffectiveNow } from "@common/db";
@@ -197,7 +198,7 @@ const omsMappings = ref<any[]>([]);
 
 const { records: facilityGroups, hydrated: groupsHydrated } = useFacilityGroups();
 const { members: groupMembers, hydrated: membersHydrated } = useGroupFacilities();
-const { records: inventoryChannels } = useDb<any>("inventoryChannels");
+const { channels: inventoryChannels } = useInventoryChannels();
 
 const facilityDataReady = computed(() => groupsHydrated.value && membersHydrated.value);
 

@@ -22,7 +22,7 @@ import {
   deactivateSyncDomains,
   refreshAfterMutation,
   syncNow
-} from "@/services/appDbSync"
+} from "@/db/appDbSync"
 
 vi.mock("@/composables/useShopify", () => ({
   PRODUCT_SYNC_FEATURE: { activePollMs: 10_000 },
@@ -36,7 +36,7 @@ vi.mock("@/composables/useShopify", () => ({
   useShopifySyncRuns: vi.fn()
 }))
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   activateSyncDomains: vi.fn().mockResolvedValue(undefined),
   deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
   createSyncDomainOwner: (label: string) => label,

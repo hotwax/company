@@ -1,7 +1,8 @@
 import { computed, reactive, toRefs, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
-import { api, logger, useDb } from '@common'
+import { api, logger, useLiveEntity } from '@common'
 import { companyDb } from '@/db/companyDb';
-import { clearStorage, getErrorRecords, setErrorRecords } from '@/utils/storage';
+import { refreshAfterMutation } from '@/db/appDbSync';
+import { clearStorage, getErrorRecords, setErrorRecords } from '@/db/shopifySyncDb';
 import Papa from 'papaparse';
 
 /**
@@ -29,7 +30,7 @@ export function useRecentDataManagerLogs(
   limit = 10,
   systemMessageIds?: MaybeRefOrGetter<readonly string[]>,
 ) {
-  const { records: configLogs, hydrated } = useDb<any>("dataManagerLogs", {
+  const { records: configLogs, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, {
     dateField: "createdDate",
     equals: { configId },
   });
@@ -157,36 +158,20 @@ export function useDataManager() {
   };
 
   /**
-   * One import by `logId`, CACHE-FIRST and WRITE-THROUGH.
+   * Ask the dataManagerLog domain to fetch one import by `logId`, and return nothing.
    *
-   * The counterpart to `ensureSystemMessageById`. A finished import never changes, so once cached this
-   * costs nothing — which is what makes per-id enrichment viable where a shop-scoped log feed is not:
-   * `admin/dataManager/details` ignores shop filters entirely, but by-id always works.
+   * Screens read imports live, and call this only when their live rows show one missing. A finished
+   * import never changes, so once fetched it is never asked for again — which is what makes per-id
+   * enrichment viable where a shop-scoped log feed is not: `admin/dataManager/details` ignores shop
+   * filters entirely, but by-id always works.
    */
-  const ensureDataManagerLog = async (logId: string) => {
-    if (!logId) return null;
+  const requestDataManagerLog = async (logId: string) => {
+    if (!logId) return;
     try {
-      const cached = await companyDb.entity("dataManagerLogs").get(String(logId));
-      if (cached) return cached;
-    } catch {
-      // cache unavailable — fall through to the network
-    }
-
-    try {
-      const resp = await api({
-        url: "admin/dataManager/details",
-        method: "GET",
-        params: { logId },
-      }) as any;
-      const row = getFirstMdmLog(resp?.data);
-      if (row) {
-        await companyDb.entity("dataManagerLogs").upsertMany([row]);
-        return row;
-      }
+      await refreshAfterMutation("dataManagerLog", { logId: String(logId) });
     } catch (err) {
       logger.error(`Failed to fetch DataManager log ${logId}`, err);
     }
-    return null;
   };
 
   const fetchMdmLogBySystemMessageIds = async (systemMessageIds: string[]) => {
@@ -301,7 +286,7 @@ export function useDataManager() {
     fetchMdmLogBySystemMessageId,
     fetchMdmLogBySystemMessageIds,
     fetchLogDetails,
-    ensureDataManagerLog,
+    requestDataManagerLog,
     fetchAllRecentFailedRecords,
     fetchRecentLogsByConfigId,
     clearStorage
@@ -319,7 +304,7 @@ export function useDataManager() {
 
 /** Cached DataManagerLogs, newest created first. Scope by config to follow one import type. */
 export function useDataManagerLogs(configId?: string) {
-  const { records, hydrated } = useDb<any>("dataManagerLogs", {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, {
     dateField: 'createdDate',
     ...(configId ? { scope: { field: 'configId', value: configId } } : {}),
   });
@@ -338,7 +323,7 @@ export function useDataManagerLogs(configId?: string) {
 }
 
 export function useDataManagerLogRecord(logId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("dataManagerLogs", () => logId ? { equals: { logId } } : { filter: () => false });
+  const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, () => logId ? { equals: { logId } } : { filter: () => false });
   return { record, hydrated };
 }
 
@@ -353,7 +338,7 @@ export function useDataManagerLogForMessages(systemMessageIds: Ref<string[]> | (
   const ids = computed<string[]>(() =>
     (typeof systemMessageIds === 'function' ? systemMessageIds() : systemMessageIds.value) ?? []);
 
-  const { records, hydrated } = useDb<any>("dataManagerLogs", { dateField: 'createdDate' });
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, { dateField: 'createdDate' });
 
   const log = computed<any>(() => {
     if (!ids.value.length) return undefined;

@@ -34,7 +34,7 @@ vi.mock("@common", () => ({
   translate: (key: string, values: Record<string, unknown> = {}) =>
     Object.entries(values).reduce((message, [name, value]) => message.replace(`{${name}}`, String(value)), key),
   // Stored rows are the projected server rows themselves, with no synthetic key beside them.
-  useDb: (table: string, options?: any) => {
+  useLiveEntity: (table: string, options?: any) => {
     if(table.endsWith("AdjustmentDetails")) {harness.ledgerOptions = options;}
     const list = (source: { value: any[] }, hydrated = ref(true)) => {
       const records = computed(() => {
@@ -59,7 +59,7 @@ vi.mock("@common", () => ({
   },
 }));
 
-vi.mock("@/services/inventorySyncArea", () => ({
+vi.mock("@/composables/useInventorySyncArea", () => ({
   useInventorySyncArea: () => ({
     ready: ref(true), error: ref(""), failingDomains: areaFailures, busy: ref(false), manualRefreshing,
     syncNow: harness.syncNow, afterMutation: vi.fn(), loadEventsFrom: harness.loadEventsFrom, loadLedgerBounds: harness.loadLedgerBounds,
@@ -73,10 +73,13 @@ vi.mock("@/composables/useSeed", () => ({
 
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
-    ensureSystemMessageById: vi.fn().mockResolvedValue(null),
-    ensureSystemMessageErrors: vi.fn().mockResolvedValue([]),
+    requestSystemMessage: vi.fn().mockResolvedValue(undefined),
+    requestSystemMessageErrors: vi.fn().mockResolvedValue(undefined),
+    refreshSystemMessageErrors: vi.fn().mockResolvedValue(undefined),
     resendSystemMessage: vi.fn(),
   }),
+  useSystemMessageRecord: () => ({ record: ref(undefined), hydrated: ref(true) }),
+  useSystemMessageErrors: () => ({ errors: ref([]), errorText: ref(""), hydrated: ref(true) }),
 }));
 
 vi.mock("@/composables/useShopify", () => ({

@@ -2636,6 +2636,9 @@ async function initialiseSetup() {
   const generation = ++setupLoadGeneration
   if(requestedProductStoreId) {
     onboarding.initializeForProductStore(requestedProductStoreId)
+  } else if(route.redirectedFrom?.name === "CreateProductStore") {
+    // The legacy `/create-product-store` link is a fresh-start command, never a resume.
+    onboarding.startNewSetup()
   } else {
     onboarding.initializeForNewSetup()
   }

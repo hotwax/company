@@ -13,12 +13,12 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: () => false },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (key: string) => key,
-  useDb: (table: string, options: any) => {
+  useLiveEntity: (table: string, options: any) => {
     harness.queries.push({ table, options });
     return { records: ref([]), first: ref(undefined), count: ref(0), hydrated: ref(true) };
   },
 }));
-vi.mock("@/services/appDbSync", () => ({ refreshAfterMutation: vi.fn(), resyncDomain: vi.fn() }));
+vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: vi.fn(), resyncDomain: vi.fn() }));
 vi.mock("@/store/user", () => ({ useUserStore: vi.fn() }));
 
 import { useFacilityGroupRecord, useFacilityRecord } from "@/composables/useFacilities";

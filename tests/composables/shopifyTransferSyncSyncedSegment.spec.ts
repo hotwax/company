@@ -7,7 +7,7 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: () => false },
 }));
 
-vi.mock("@/services/appDbSync", () => ({ refreshAfterMutation: vi.fn() }));
+vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: vi.fn() }));
 vi.mock("@/utils/shopifyWebhookReconciliation", () => ({ reconcileWebhookTopics: vi.fn() }));
 vi.mock("@/workers/domains/shopifyTransferSyncDomain", () => ({
   PENDING_SEGMENT_ENDPOINTS: {},

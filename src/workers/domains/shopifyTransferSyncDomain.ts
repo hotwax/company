@@ -3,7 +3,7 @@ import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import { TRANSFER_ORDER_PAGE } from "@/config/appSyncConfig";
 import { companyDb } from "@/db/companyDb";
 
-const shopifyTransferPendingEntity = companyDb.entity("shopifyTransferPending" as any);
+const shopifyTransferPendingEntity = companyDb.entity(companyDb.tables.shopifyTransferPending);
 
 /**
  * Shopify transfer sync — what has not reached Shopify yet.

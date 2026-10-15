@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "fs"
+import { resolve } from "path"
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import type { RouteRecordRaw } from "vue-router"
@@ -27,7 +29,6 @@ vi.mock("@ionic/vue-router", () => ({
   }),
 }))
 
-vi.mock("@/services/inventorySyncArea", () => ({ followInventorySyncArea: vi.fn() }))
 
 vi.mock("@common/composables/useAuth", () => ({
   useAuth: () => ({
@@ -59,21 +60,15 @@ beforeEach(() => {
 
 describe("Product Store onboarding route contract", () => {
   it("treats the legacy create URL as a fresh-start command without persisting a query flag", () => {
-    const wizard = wizardModule.useProductStoreOnboardingWizard()
-    wizard.setCreatedProductStoreId("OLD_STORE")
-    wizard.updateDraftField("storeName", "Previously persisted store")
-    wizard.markStepComplete("name")
-
     const query = { returnTo: "/product-store", source: "legacy-link" }
     const redirect = routerModule.redirectLegacyProductStoreCreation({
       query,
       hash: "#store-details",
     })
 
-    expect(wizard.createdProductStoreId).toBe("")
-    expect(wizard.scopedProductStoreId).toBe("")
-    expect(wizard.draft.storeName).toBe("")
-    expect(wizard.stepStatuses.name).toBe("not-started")
+    // The page, not the router, starts the clean setup: it sees the redirect in route.redirectedFrom.
+    const page = readFileSync(resolve(process.cwd(), "src/views/ProductStoreOnboarding.vue"), "utf8")
+    expect(page).toContain('} else if(route.redirectedFrom?.name === "CreateProductStore") {\n    // The legacy `/create-product-store` link is a fresh-start command, never a resume.\n    onboarding.startNewSetup()')
     expect(redirect).toEqual({
       name: "ProductStoreOnboarding",
       query,

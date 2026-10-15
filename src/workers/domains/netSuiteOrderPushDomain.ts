@@ -1,10 +1,10 @@
 import { companyDb } from "@/db/companyDb";
 import { keepNewerThan } from "@common/db";
 
-const netSuiteDecisionRuleEntity = companyDb.entity("netSuiteDecisionRules");
-const netSuiteOrderPushBacklogEntity = companyDb.entity("netSuiteOrderPushBacklog");
-const netSuiteRuleGroupEntity = companyDb.entity("netSuiteRuleGroups");
-const netSuiteRuleGroupRunEntity = companyDb.entity("netSuiteRuleGroupRuns");
+const netSuiteDecisionRuleEntity = companyDb.entity(companyDb.tables.netSuiteDecisionRules);
+const netSuiteOrderPushBacklogEntity = companyDb.entity(companyDb.tables.netSuiteOrderPushBacklog);
+const netSuiteRuleGroupEntity = companyDb.entity(companyDb.tables.netSuiteRuleGroups);
+const netSuiteRuleGroupRunEntity = companyDb.entity(companyDb.tables.netSuiteRuleGroupRuns);
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";

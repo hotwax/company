@@ -1,10 +1,11 @@
 import { computed, toValue, type MaybeRefOrGetter } from "vue";
-import { useDb } from "@common";
+import { useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { toMillis } from "@common/db";
 import { parseFulfillmentMessageText, QUEUED_FULFILLMENT_STATUS_IDS } from "@/utils/shopifyFulfillment";
 
 export function useOrderSyncHistory(shop: MaybeRefOrGetter<string>, ids: MaybeRefOrGetter<string[]>) {
-  const { records } = useDb<any>("shopifyOrderSyncHistory", () => ({ scope: { field: "shopId", value: toValue(shop) } }));
+  const { records } = useLiveEntity<any>(companyDb.tables.shopifyOrderSyncHistory, () => ({ scope: { field: "shopId", value: toValue(shop) } }));
   const histories = computed(() => toValue(ids).map(orderId => records.value.find(row => row.shopId === toValue(shop) && row.orderId === orderId)));
   const ready = computed(() => histories.value.length > 0 && histories.value.every(row => row?.state === "ready"));
   const error = computed(() => histories.value.some(row => row?.state === "error"));

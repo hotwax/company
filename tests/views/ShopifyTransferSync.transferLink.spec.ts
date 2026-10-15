@@ -22,7 +22,7 @@ vi.mock("@common", () => ({
   translate: (k: string) => k,
   buildAppUrl: (appId: string, path = "") =>
     (appId === "transfers" ? `https://transfers.example.test${path}` : null),
-  useDb: () => ({ records: ref([]), rows: ref([]), first: computed(() => undefined), count: computed(() => 0), hydrated: ref(true) }),
+  useLiveEntity: () => ({ records: ref([]), rows: ref([]), first: computed(() => undefined), count: computed(() => 0), hydrated: ref(true) }),
 }));
 
 // Mirrors how `useShopifyShop` unwraps its argument, so a view that passes a raw prop instead of a
@@ -40,7 +40,7 @@ vi.mock("@/composables/useShopify", () => ({
   }),
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   activateSyncDomains: vi.fn().mockResolvedValue(undefined),
   deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
   createSyncDomainOwner: (label: string) => label,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@common", () => ({ api: vi.fn(), logger: { error: vi.fn() } }));
-vi.mock("@/utils/storage", () => ({
+vi.mock("@/db/shopifySyncDb", () => ({
   clearStorage: vi.fn(),
   getErrorRecords: vi.fn(),
   setErrorRecords: vi.fn(),

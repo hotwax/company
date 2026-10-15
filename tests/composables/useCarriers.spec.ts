@@ -28,7 +28,7 @@ const harness = vi.hoisted(() => ({
     errors: {} as Record<string, string>,
   },
   resyncDomain: vi.fn(),
-  startReferenceSync: vi.fn(),
+  startAppDbSync: vi.fn(),
 }));
 
 const KIND_MAP: Record<string, string> = {
@@ -50,7 +50,7 @@ function getKind(entity: any): string {
 vi.mock("@common", () => ({
   api: vi.fn(),
   commonUtil: { hasError: vi.fn(() => false) },
-  useDb: (entity: any, optionsOrSelector: any = {}) => {
+  useLiveEntity: (entity: any, optionsOrSelector: any = {}) => {
     const kind = getKind(entity);
     const list = harness.records[kind] ?? [];
     let scope: any;
@@ -90,11 +90,11 @@ vi.mock("@/utils", () => ({
   getResponseErrorMessage: (_error: any, fallback: string) => fallback,
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   bootstrapState: harness.bootstrapState,
   refreshAfterMutation: vi.fn(),
   resyncDomain: (...args: any[]) => harness.resyncDomain(...args),
-  startReferenceSync: (...args: any[]) => harness.startReferenceSync(...args),
+  startAppDbSync: (...args: any[]) => harness.startAppDbSync(...args),
 }));
 
 import {
@@ -232,7 +232,7 @@ describe("carrier cache-backed reads", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     harness.resyncDomain.mockResolvedValue(undefined);
-    harness.startReferenceSync.mockResolvedValue(undefined);
+    harness.startAppDbSync.mockResolvedValue(undefined);
     Object.assign(harness.hydrated, {
       carriers: true,
       carrierMethods: true,
@@ -407,7 +407,7 @@ describe("carrier cache-backed reads", () => {
 
     await detail.refreshDetails();
 
-    expect(harness.startReferenceSync).not.toHaveBeenCalled();
+    expect(harness.startAppDbSync).not.toHaveBeenCalled();
     expect(harness.resyncDomain.mock.calls).toEqual([
       ["carrierFacility"],
       ["productStore"],
@@ -419,7 +419,7 @@ describe("carrier cache-backed reads", () => {
       __start: "cache worker failed to start",
       facility: "facility snapshot failed",
     };
-    harness.startReferenceSync.mockImplementationOnce(() => {
+    harness.startAppDbSync.mockImplementationOnce(() => {
       delete harness.bootstrapState.errors.__start;
 
       return Promise.resolve(undefined);
@@ -434,7 +434,7 @@ describe("carrier cache-backed reads", () => {
     expect(detail.readyForMutation.value).toBe(false);
     await detail.refreshDetails();
 
-    expect(harness.startReferenceSync).toHaveBeenCalledTimes(1);
+    expect(harness.startAppDbSync).toHaveBeenCalledTimes(1);
     expect(harness.resyncDomain.mock.calls).toEqual([["facility"]]);
     expect(harness.bootstrapState.errors).toEqual({});
   });
@@ -448,7 +448,7 @@ describe("carrier cache-backed reads", () => {
 
     await expect(detail.refreshDetails()).rejects.toThrow("cache worker failed to start");
 
-    expect(harness.startReferenceSync).toHaveBeenCalledTimes(1);
+    expect(harness.startAppDbSync).toHaveBeenCalledTimes(1);
     expect(harness.resyncDomain).not.toHaveBeenCalled();
     expect(detail.readyForMutation.value).toBe(false);
   });

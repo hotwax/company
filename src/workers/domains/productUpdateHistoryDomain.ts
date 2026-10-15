@@ -25,7 +25,7 @@ export interface ProductUpdateHistoryArgs {
   batchSize?: number;
 }
 
-const productUpdateHistoryEntity = companyDb.entity("productUpdateHistories");
+const productUpdateHistoryEntity = companyDb.entity(companyDb.tables.productUpdateHistories);
 
 async function syncShop(ctx: SyncContext, shopId: string, args: ProductUpdateHistoryArgs): Promise<number> {
   const cursor = await productUpdateHistoryEntity.newestCursor("lastUpdatedStamp", {

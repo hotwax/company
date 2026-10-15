@@ -55,7 +55,7 @@ vi.mock("@common", () => ({
       (message, [name, value]) => message.replace(`{${name}}`, String(value)),
       key,
     ),
-  useDb: (table: string) => {
+  useLiveEntity: (table: string) => {
     const read = (records: { value: any[] }, hydrated = ref(true)) => ({
       records, first: computed(() => records.value[0]), count: computed(() => records.value.length), hydrated,
     });
@@ -71,7 +71,7 @@ vi.mock("@common", () => ({
   },
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   resyncDomain: vi.fn(),
   activateSyncDomains: vi.fn().mockResolvedValue(undefined),
   deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
@@ -80,7 +80,7 @@ vi.mock("@/services/appDbSync", () => ({
 }));
 
 // The ledgers are polled by the inventory sync area, not by this view, so the view only reads its health.
-vi.mock("@/services/inventorySyncArea", () => ({
+vi.mock("@/composables/useInventorySyncArea", () => ({
   useInventorySyncArea: () => ({
     ready: syncReady,
     error: syncError,
@@ -95,6 +95,7 @@ vi.mock("@/services/inventorySyncArea", () => ({
 vi.mock("@/composables/useFacilities", () => ({
   useFacilityTypes: () => ({ facilityTypes: ref([]) }),
   useFacilities: () => ({ facilities: ref([]), hydrated: ref(true) }),
+  useGroupFacilities: () => ({ records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated }),
   useFacilityGroupMutations: (facilityGroupId: string) => ({
     saveMembers: (...args: any[]) => harness.saveFacilityGroupMembers(facilityGroupId, ...args),
   }),
@@ -122,14 +123,20 @@ vi.mock("@/composables/useSeed", () => ({
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
     findMessageErrors: vi.fn().mockResolvedValue([]),
-    ensureSystemMessageById: vi.fn().mockResolvedValue(null),
-    ensureSystemMessageErrors: vi.fn().mockResolvedValue([]),
+    requestSystemMessage: vi.fn().mockResolvedValue(undefined),
+    requestSystemMessageErrors: vi.fn().mockResolvedValue(undefined),
+    refreshSystemMessageErrors: vi.fn().mockResolvedValue(undefined),
     resendSystemMessage: vi.fn(),
     useRecentSystemMessages: () => ({ messages: ref([]), hydrated: ref(true) }),
   }),
+  useSystemMessageRecord: () => ({ record: ref(undefined), hydrated: ref(true) }),
+  useSystemMessageErrors: () => ({ errors: ref([]), errorText: ref(""), hydrated: ref(true) }),
 }));
 
 vi.mock("@/composables/useShopify", () => ({
+  useShopifyShops: () => ({ shops: cachedShops, records: cachedShops, hydrated: ref(true) }),
+  useInventoryChannels: () => ({ channels: cachedChannels, records: cachedChannels, hydrated: ref(true) }),
+  useDataFeeds: () => ({ feeds: cachedDataFeeds, records: cachedDataFeeds, hydrated: ref(true) }),
   useInventoryEventSources: () => ({
     sources: ref(new Map()),
     resolve: vi.fn(),

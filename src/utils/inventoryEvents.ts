@@ -13,6 +13,15 @@ import { isSuccess } from "./systemMessage";
 
 export type InventoryEventKind = "channel" | "location";
 
+const INVENTORY_SYNC_AREA = /^\/shopify-connection-details\/([^/]+)\/inventory-sync(?:\/|$)/;
+
+/** The shop whose inventory sync area a route path belongs to, or "" outside the area. */
+export function inventorySyncAreaShopId(path: string): string {
+  const match = String(path ?? "").match(INVENTORY_SYNC_AREA);
+
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
 /** Total over every input: an unknown message status is `inFlight`, never dropped. */
 export type DeliveryStateId = "waiting" | "noChange" | "inFlight" | "error" | "sent" | "cancelled";
 

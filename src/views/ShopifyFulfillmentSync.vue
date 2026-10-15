@@ -411,7 +411,7 @@ import { parseFulfillmentMessageText } from "@/utils/shopifyFulfillment";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { serviceState } from "@common/db";
-import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/services/appDbSync";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/db/appDbSync";
 import { useFacilities } from "@/composables/useFacilities";
 import {
   useFulfillmentSyncHealth, useShopifySyncContext, useOmsShipmentContext, usePendingFulfillments,
@@ -474,7 +474,7 @@ const syncedHydrated = computed(() => selectedOrders.value.length ? orderHistory
 const { getFulfillmentDetails } = useShopifyFulfillmentDetails();
 const { products: resolvedProducts, resolve: resolveProductNames } = useProducts();
 const {
-  ensureSystemMessageErrors, fetchSystemMessageErrors, resendSystemMessage, resetSystemMessageError,
+  requestSystemMessageErrors, refreshSystemMessageErrors, resendSystemMessage, resetSystemMessageError,
 } = useSystemMessage();
 // Unscoped on purpose: the cache only ever holds errors a card asked for (class C, on demand), and
 // one subscription serves every card where a per-row scope cannot be created inside v-for.
@@ -774,10 +774,12 @@ const loadingErrorIds = ref<string[]>([]);
 
 async function loadMessageErrors(systemMessageId: string, fresh = false) {
   if(loadingErrorIds.value.includes(systemMessageId)) {return;}
+  // Stored errors are the answer unless a changed attempt asks for a fresh read.
+  if(!fresh && errorsFor(systemMessageId).length) {return;}
   loadingErrorIds.value = [...loadingErrorIds.value, systemMessageId];
   try {
-    // Write-through: the rows land in systemMessageErrorCache, which `errorsFor` reads reactively.
-    await (fresh ? fetchSystemMessageErrors(systemMessageId) : ensureSystemMessageErrors(systemMessageId));
+    // The domain stores the rows in systemMessageErrors, which `errorsFor` reads reactively.
+    await (fresh ? refreshSystemMessageErrors(systemMessageId) : requestSystemMessageErrors(systemMessageId));
   } catch(error) {
     logger.error("Could not load fulfillment failure details", error);
     void commonUtil.showToast(translate("Could not refresh failure details. Please try again."));

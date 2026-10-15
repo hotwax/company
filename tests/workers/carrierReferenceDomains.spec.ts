@@ -56,7 +56,7 @@ const stubDb = () => ({
 vi.mock("@/db/companyDb", async (importOriginal) => {
   const actual = await importOriginal<any>();
   return {
-    companyDb: {
+    companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
       ...actual.companyDb,
       raw: stubDb,
       get: stubDb,

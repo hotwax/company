@@ -36,7 +36,7 @@ vi.mock("@common", () => ({
   translate: (value: string) => value,
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
   resyncDomain: (...args: any[]) => harness.resyncDomain(...args),
   bootstrapState: { running: false },
