@@ -79,6 +79,23 @@ export function useProductStores() {
   return { productStores, records, hydrated };
 }
 
+/**
+ * A user's product store roles (the user store's, as the server returns them), each named from the
+ * local productStores table.
+ */
+export function useUserProductStores(roles: () => any[]) {
+  const { records } = useLiveEntity<any>(companyDb.tables.productStores);
+  const storeNameById = computed<Record<string, string>>(() => Object.fromEntries(
+    records.value.map((store: any) => [store.productStoreId, store.storeName])));
+
+  const userProductStores = computed(() => roles().map((role: any) => ({
+    ...role,
+    storeName: storeNameById.value[role.productStoreId],
+  })));
+
+  return { userProductStores };
+}
+
 export const useProductStoreRecord = (productStoreId: string | undefined) => {
   const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.productStores, () => productStoreId ? { equals: { productStoreId } } : { filter: () => false });
   return { record, hydrated };

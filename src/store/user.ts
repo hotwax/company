@@ -439,22 +439,12 @@ export const useUserStore = defineStore("user", {
           params: { partyId }
         }) as any
 
-        /**
-         * Store names come from the CACHED productStores table (class-B snapshot, filled at login)
-         * rather than the retired util store. The old code also fetched roles here and never read
-         * them — dropped with the store.
-         */
-        const { loadSeedData } = await import("@common/db")
-        const cachedStores = await loadSeedData(["productStores"]).then((seed) => seed.getProductStores()).catch(() => [])
-
+        // The user's current product store roles, as the server returns them. The page names each
+        // store from the local productStores table.
         if(!commonUtil.hasError(resp)) {
           const now = Date.now()
-          const storeNameByProductStoreId = {} as any
-          cachedStores.forEach((store: any) => { storeNameByProductStoreId[store.productStoreId] = store.storeName })
-
           productStores = (resp.data || [])
             .filter((productStoreRole: any) => !productStoreRole.thruDate || productStoreRole.thruDate > now)
-            .map((productStoreRole: any) => ({ ...productStoreRole, storeName: storeNameByProductStoreId[productStoreRole.productStoreId] }))
         } else {
           throw resp.data
         }
