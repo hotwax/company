@@ -509,7 +509,6 @@ ion-card-header > div {
 
 ion-card-header ion-card-title {
   overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
 ion-card-header > ion-checkbox,
