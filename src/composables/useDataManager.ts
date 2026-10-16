@@ -84,10 +84,10 @@ export function useDataManager() {
 
   /**
    * Ask the dataManagerErrorRecord domain for one error file. It answers from the table while the
-   * file is younger than two hours (unless `force`), and resolves with the file's record count.
+   * file is younger than two hours, and resolves with the file's record count.
    */
-  const requestErrorRecords = (configId: string, logContentId: string, force = false) =>
-    refreshAfterMutation("dataManagerErrorRecord", { configId, logContentId, force });
+  const requestErrorRecords = (configId: string, logContentId: string) =>
+    refreshAfterMutation("dataManagerErrorRecord", { configId, logContentId });
 
   const downloadDataManagerFile = async (configId: string, logContentId: string) => {
     if (!configId || !logContentId) return null;
@@ -246,9 +246,8 @@ export function useDataManager() {
 
   /**
    * The error records of the given logs, in the order given, until at least 100 are collected.
-   * `force` re-downloads every file instead of using one younger than two hours (the Refresh button).
    */
-  const fetchAllRecentFailedRecords = async (configId: string, logs: any[], { force = false } = {}) => {
+  const fetchAllRecentFailedRecords = async (configId: string, logs: any[]) => {
     state.loading = true;
     const sources: Array<{ logContentId: string; logId?: string }> = [];
     let recordCount = 0;
@@ -258,7 +257,7 @@ export function useDataManager() {
         const errorLogContentId = log.errorLogContentId;
         if (!errorLogContentId) continue;
 
-        recordCount += await requestErrorRecords(configId, errorLogContentId, force);
+        recordCount += await requestErrorRecords(configId, errorLogContentId);
         sources.push({ logContentId: errorLogContentId, logId: log.logId });
 
         // Target at least 100 errors total across all processed logs

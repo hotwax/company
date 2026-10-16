@@ -24,6 +24,17 @@ export function parseErrorFile(data: unknown): Record<string, any>[] {
   }
 }
 
+/**
+ * The error file inside a download response: its `csvData`, or the body itself when that is the file.
+ * Throws on anything else (a payload-level error, an unexpected envelope), so the caller keeps the
+ * log's stored rows rather than replacing them with an empty list.
+ */
+export function errorFileOf(response: any): unknown {
+  if (typeof response?.csvData === "string") return response.csvData;
+  if (typeof response === "string" || Array.isArray(response)) return response;
+  throw new Error(response?._ERROR_MESSAGE_ || "Unexpected response downloading a DataManager error file");
+}
+
 /** One stored row per record, with the fields screens search on lifted out of the product payload. */
 export function toErrorRecordRows(logContentId: string, records: Record<string, any>[], fetchedAt: number) {
   return records.map((record, seqId) => {
@@ -46,9 +57,13 @@ export function toErrorRecordRows(logContentId: string, records: Record<string, 
  * DataManager error records — class C: one import's error file, downloaded when a screen asks for it
  * (`refreshAfterMutation("dataManagerErrorRecord", { configId, logContentId })`), never polled.
  *
- * A log whose rows are younger than two hours is answered from the table without a download, unless
- * `force` is set (the screen's Refresh). Every write also prunes the rows of any log past two hours,
- * which is what keeps the table to recent files. Resolves with that log's row count, fresh or written.
+ * A log whose rows are younger than two hours is answered from the table without a download: an
+ * import's error file never changes, so only expiry calls for a new one. Every write also prunes the
+ * rows of any log past two hours, which is what keeps the table to recent files. Resolves with that
+ * log's row count, fresh or written.
+ *
+ * The pk carries only the log, never a refresh mode: the harness queues refetches by the whole pk,
+ * and every request for one log must share that queue since they all replace the same rows.
  */
 export const dataManagerErrorRecordDomain = defineSyncDomain({
   name: "dataManagerErrorRecord",
@@ -67,14 +82,12 @@ export const dataManagerErrorRecordDomain = defineSyncDomain({
     const now = Date.now();
     const expiredBefore = now - ERROR_RECORD_TTL_MS;
 
-    if (!pk?.force) {
-      const stored = await errorRecordEntity.query({ equals: { logContentId } });
-      const fresh = stored.filter((row: any) => Number(row.fetchedAt) > expiredBefore);
-      if (fresh.length) return fresh.length;
-    }
+    const stored = await errorRecordEntity.query({ equals: { logContentId } });
+    const fresh = stored.filter((row: any) => Number(row.fetchedAt) > expiredBefore);
+    if (fresh.length) return fresh.length;
 
     const file = await workerGet(ctx, "admin/dataManager/downloadDataManagerFile", { configId, logContentId });
-    const rows = toErrorRecordRows(logContentId, parseErrorFile(file?.csvData || file), now);
+    const rows = toErrorRecordRows(logContentId, parseErrorFile(errorFileOf(file)), now);
     const { written } = await errorRecordEntity.snapshotReplace(rows, { field: "logContentId", value: logContentId });
 
     const expired = await errorRecordEntity.query({ dateField: "fetchedAt", until: expiredBefore });

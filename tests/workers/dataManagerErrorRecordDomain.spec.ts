@@ -32,7 +32,7 @@ vi.mock("@/db/companyDb", () => ({
 }));
 
 import { ERROR_RECORD_TTL_MS } from "@/config/appSyncConfig";
-import { dataManagerErrorRecordDomain, parseErrorFile } from "@/workers/domains/dataManagerErrorRecordDomain";
+import { dataManagerErrorRecordDomain, errorFileOf, parseErrorFile } from "@/workers/domains/dataManagerErrorRecordDomain";
 
 const ctx = { maargUrl: "https://example.test", token: "token" } as any;
 const pk = { configId: "SYNC_SHOPIFY_PRODUCT", logContentId: "LC1" };
@@ -81,15 +81,27 @@ describe("dataManagerErrorRecordDomain", () => {
     expect(state.calls).toEqual([]);
   });
 
-  it("downloads again once the rows have expired, or when forced", async () => {
+  it("downloads again once the rows have expired", async () => {
     state.response = { csvData: "[]" };
     state.stored = [{ logContentId: "LC1", seqId: 0, fetchedAt: Date.now() - ERROR_RECORD_TTL_MS - 1 }];
     await dataManagerErrorRecordDomain.refetchOne!(ctx, pk);
 
-    state.stored = [{ logContentId: "LC1", seqId: 0, fetchedAt: Date.now() }];
-    await dataManagerErrorRecordDomain.refetchOne!(ctx, { ...pk, force: true });
+    expect(state.calls).toHaveLength(1);
+  });
 
-    expect(state.calls).toHaveLength(2);
+  it("keeps the stored rows when the download answers with an error instead of a file", async () => {
+    state.response = { _ERROR_MESSAGE_: "File not found" };
+
+    await expect(dataManagerErrorRecordDomain.refetchOne!(ctx, pk)).rejects.toThrow("File not found");
+    expect(state.replaced).toEqual([]);
+    expect(state.removed).toEqual([]);
+  });
+
+  it("stores an empty error file as no rows", async () => {
+    state.response = { csvData: "" };
+
+    expect(await dataManagerErrorRecordDomain.refetchOne!(ctx, pk)).toBe(0);
+    expect(state.replaced[0].rows).toEqual([]);
   });
 
   it("prunes every expired row after it writes", async () => {
@@ -106,6 +118,16 @@ describe("dataManagerErrorRecordDomain", () => {
   it("does nothing without a config id and a log content id", async () => {
     expect(await dataManagerErrorRecordDomain.refetchOne!(ctx, { logContentId: "LC1" })).toBe(0);
     expect(state.calls).toEqual([]);
+  });
+});
+
+describe("errorFileOf", () => {
+  it("takes the file from csvData or the body, and throws on any other envelope", () => {
+    expect(errorFileOf({ csvData: "a,b" })).toBe("a,b");
+    expect(errorFileOf("a,b")).toBe("a,b");
+    expect(errorFileOf([{ a: 1 }])).toEqual([{ a: 1 }]);
+    expect(() => errorFileOf({ unexpected: true })).toThrow("Unexpected response");
+    expect(() => errorFileOf(null)).toThrow("Unexpected response");
   });
 });
 

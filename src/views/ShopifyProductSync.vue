@@ -2345,9 +2345,9 @@ function openErrorDetailsModal(record: any) {
 async function refreshErrorRecords() {
   detailedErrorSearchQuery.value = "";
 
-  // Re-download every recent error file, even one younger than the two-hour expiry
+  // Error files never change, so only an expired one is downloaded again
   if (recentMdmLogs.value.length) {
-    await fetchAllRecentFailedRecords(PRODUCT_SYNC_MDM_CONFIG_ID, recentMdmLogs.value, { force: true });
+    await fetchAllRecentFailedRecords(PRODUCT_SYNC_MDM_CONFIG_ID, recentMdmLogs.value);
   }
 }
 
