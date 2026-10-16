@@ -753,7 +753,7 @@ const {
 const { jobs } = useServiceJobs();
 const PRODUCT_SYNC_MDM_CONFIG_ID = "SYNC_SHOPIFY_PRODUCT";
 const PRODUCT_SYNC_ERROR_LOG_LIMIT = 10;
-const { downloadDataManagerFile, fetchLogDetails, currentMdmLog, errorLogs, fetchAllRecentFailedRecords, clearStorage, loading: isErrorLogsLoading } = useDataManager();
+const { downloadDataManagerFile, fetchLogDetails, currentMdmLog, errorLogs, fetchAllRecentFailedRecords, loading: isErrorLogsLoading } = useDataManager();
 /**
  * Recent product imports, LIVE from the cache.
  *
@@ -2343,11 +2343,9 @@ function openErrorDetailsModal(record: any) {
 }
 
 async function refreshErrorRecords() {
-  await clearStorage();
-  errorLogs.value = [];
   detailedErrorSearchQuery.value = "";
-  
-  // Re-fetch everything fresh
+
+  // Error files never change, so only an expired one is downloaded again
   if (recentMdmLogs.value.length) {
     await fetchAllRecentFailedRecords(PRODUCT_SYNC_MDM_CONFIG_ID, recentMdmLogs.value);
   }

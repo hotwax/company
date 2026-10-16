@@ -152,3 +152,9 @@ export function inventoryEventAreaDomains(shopId: string): Array<{ name: string;
  * 2026-10-12: 13,176 creation items and 12,823 receipts).
  */
 export const TRANSFER_ORDER_PAGE = 10;
+
+/**
+ * How long a downloaded DataManager error file is used before it is downloaded again. The
+ * `dataManagerErrorRecord` domain prunes rows past it, and screens hide them until then.
+ */
+export const ERROR_RECORD_TTL_MS = 2 * 60 * 60 * 1000;

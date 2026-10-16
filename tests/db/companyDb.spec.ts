@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { companyDb } from "@/db/companyDb";
 
 describe("company database declaration", () => {
-  it("composes exactly the 65 data stores Company declares", () => {
+  it("composes exactly the 66 data stores Company declares", () => {
     // 17 seed picks + 48 own.
-    expect(companyDb.tableNames.length).toBe(65);
+    expect(companyDb.tableNames.length).toBe(66);
   });
 
   it("names the database per OMS instance", () => {

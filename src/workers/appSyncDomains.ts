@@ -13,6 +13,7 @@ import type { SyncDomain } from "@common/db/types";
 import { commonDomains } from "@common/db/seed/seedDomains";
 
 import { dataManagerLogDomain } from "./domains/dataManagerLogDomain";
+import { dataManagerErrorRecordDomain } from "./domains/dataManagerErrorRecordDomain";
 import { systemMessageDomain } from "./domains/systemMessageDomain";
 import { systemMessageErrorDomain } from "./domains/systemMessageErrorDomain";
 import { shopifyBulkOperationDomain } from "./domains/shopifyBulkOperationDomain";
@@ -51,6 +52,7 @@ const companySeedDomains = Object.values(commonDomains).filter((domain) =>
 export const appSyncDomains: SyncDomain[] = [
   ...companySeedDomains,
   dataManagerLogDomain,
+  dataManagerErrorRecordDomain,
   systemMessageDomain,
   systemMessageErrorDomain,
   shopifyBulkOperationDomain,

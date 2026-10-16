@@ -13,7 +13,7 @@ describe("deleteLegacyCaches", () => {
     vi.restoreAllMocks();
   });
 
-  it("deletes both legacy databases", async () => {
+  it("deletes every legacy database", async () => {
     const deleteSpy = vi.spyOn(Dexie, "delete").mockResolvedValue(undefined);
 
     await deleteLegacyCaches();
@@ -21,6 +21,7 @@ describe("deleteLegacyCaches", () => {
     const deletedNames = deleteSpy.mock.calls.map((call) => call[0]);
     expect(deletedNames).toContain("DataManagerLogCacheDB");
     expect(deletedNames).toContain("CompanyCacheDB");
+    expect(deletedNames).toContain("ShopifySyncDB");
   });
 
   it("still attempts the second delete when the first rejects", async () => {
