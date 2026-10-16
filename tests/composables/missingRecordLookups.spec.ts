@@ -15,7 +15,6 @@ vi.mock("@common", () => ({
   useLiveEntity: () => ({ records: { value: [] }, hydrated: { value: true } }),
 }));
 vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: (...args: any[]) => mocks.refreshAfterMutation(...args) }));
-vi.mock("@/db/shopifySyncDb", () => ({ clearStorage: vi.fn(), getErrorRecords: vi.fn(), setErrorRecords: vi.fn() }));
 vi.mock("@/db/companyDb", () => ({
   companyDb: {
     tables: new Proxy({}, { get: (_target, table) => table }) as any,

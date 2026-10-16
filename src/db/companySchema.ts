@@ -529,6 +529,30 @@ export const companySchema = defineSchema({
     indexes: ["status", "systemMessageRemoteId", "completedAt"],
   }),
 
+  /**
+   * The failed records of one DataManager import, parsed from its error file (JSON or CSV) — class C,
+   * fetched when a screen asks for that import's errors.
+   *
+   * The records carry no id of their own, so `seqId` is each record's position in the file. A log's
+   * rows count as fresh for two hours from `fetchedAt`; the domain re-downloads after that and prunes
+   * every expired row whenever it writes. `raw` is the whole parsed record, which screens spread first.
+   */
+  dataManagerErrorRecords: defineEntity({
+    primaryKey: "logContentId,seqId",
+    fields: {
+      logContentId: "text",
+      seqId: "count",
+      numericId: "text",
+      title: "text",
+      handle: "text",
+      sku: "text",
+      error: "text",
+      fetchedAt: "date",
+      raw: "structured",
+    },
+    indexes: ["logContentId", "fetchedAt"],
+  }),
+
   // =============================================================================================
   // NetSuite order push — the rule-group export path (co.hotwax.netsuite.OrderServices)
   //
