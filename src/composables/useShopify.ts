@@ -927,10 +927,11 @@ export function useShopifyFacilityMappings(facilityId: string | undefined) {
  * find locations that exist on one side only. The OMS half comes from `useShopifyLocations`, so this
  * is the only request the audit needs.
  */
-export async function fetchLocationsFromShopify(shopId: string): Promise<any[]> {
+export async function fetchLocationsFromShopify(shopId: string, params?: { includeLegacy?: boolean }): Promise<any[]> {
   const resp: any = await api({
     url: `shopify/shops/${encodeURIComponent(shopId)}/shopify-locations`,
     method: "get",
+    params,
   });
 
   return (resp?.data?.locations?.edges ?? []).map((edge: any) => edge?.node).filter(Boolean);

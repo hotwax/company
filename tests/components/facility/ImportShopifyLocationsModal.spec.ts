@@ -248,4 +248,67 @@ describe("ImportShopifyLocationsModal", () => {
       associationFailed: true,
     });
   });
+
+  const appLocation = {
+    id: "gid://shopify/Location/303",
+    name: "Amazon Fulfillment Center",
+    isFulfillmentService: true,
+    fulfillmentService: { serviceName: "Amazon Fulfillment" },
+    address: { city: "Seattle", provinceCode: "WA", countryCode: "US" },
+  };
+
+  it("fetches locations with includeLegacy: true and leaves fulfillment-service locations unselected by default", async () => {
+    harness.fetchLocationsFromShopify.mockResolvedValue([
+      ...shopifyLocations,
+      appLocation,
+    ]);
+
+    const wrapper = await mountModal();
+
+    expect(harness.fetchLocationsFromShopify).toHaveBeenCalledWith("SHOP", { includeLegacy: true });
+
+    const checkboxes = wrapper.findAll("ion-checkbox");
+    expect(checkboxes).toHaveLength(3);
+
+    // Standard locations (index 0, 1) are checked by default
+    expect((checkboxes[0].element as HTMLInputElement).checked).toBe(true);
+    expect((checkboxes[1].element as HTMLInputElement).checked).toBe(true);
+
+    // Fulfillment-service location (index 2) is unchecked by default and listed last
+    expect((checkboxes[2].element as HTMLInputElement).checked).toBe(false);
+
+    // Shows fulfillment service label/badge and section divider
+    expect(wrapper.text()).toContain("Amazon Fulfillment");
+    expect(wrapper.text()).toContain("App / fulfillment-service locations");
+  });
+
+  it("imports fulfillment-service locations when explicitly selected by the user", async () => {
+    harness.fetchLocationsFromShopify.mockResolvedValue([appLocation]);
+    harness.importShopifyFacilities.mockResolvedValue({
+      data: [{ facilityId: "FAC_303" }],
+    });
+
+    const wrapper = await mountModal();
+
+    const checkbox = wrapper.find("ion-checkbox");
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false);
+
+    // Check the fulfillment-service location
+    await checkbox.trigger("ionChange", { detail: { checked: true } });
+    await flushPromises();
+
+    await importSelected(wrapper);
+
+    expect(harness.importShopifyFacilities).toHaveBeenCalledWith("SHOP", [
+      expect.objectContaining({
+        shopifyLocationId: "303",
+        name: "Amazon Fulfillment Center",
+        facilityTypeId: "RETAIL_STORE",
+      }),
+    ]);
+    expect(harness.dismiss).toHaveBeenCalledWith(expect.objectContaining({
+      imported: 1,
+      facilityIds: ["FAC_303"],
+    }));
+  });
 });
