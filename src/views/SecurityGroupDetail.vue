@@ -499,9 +499,20 @@ ion-card-header {
   display: flex;
   flex-direction: row;
   justify-content: space-between;
+  gap: 16px;
 }
 
-ion-card-header > ion-checkbox {
+ion-card-header > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+ion-card-header ion-card-title {
+  overflow-wrap: anywhere;
+}
+
+ion-card-header > ion-checkbox,
+ion-card-header > ion-spinner {
   flex-shrink: 0;
 }
 
@@ -522,15 +533,19 @@ ion-card-header > ion-checkbox {
 }
 
 ion-content > main {
-  max-width: 1110px;
-  margin-right: auto;
-  margin-left: auto;
+  margin: var(--spacer-base);
 }
 
 .group-detail {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   align-items: start;
+}
+
+@media screen and (max-width: 800px) {
+  section {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media screen and (min-width: 700px) {
