@@ -10,7 +10,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { IonApp, IonRouterOutlet, IonSplitPane, loadingController } from '@ionic/vue'
 import Menu from '@/components/common/Menu.vue'
 import { emitter, FastTravel, translate } from '@common'
@@ -119,8 +119,14 @@ onMounted(() => {
 // missed the common case: the app boots at /login while the session check is still pending, so
 // `isAuthenticated` is false at mount and flips true a moment later — the sync then never ran.
 // Watching also makes the trigger literally "on login". Fire-and-forget: never gates app start.
-watch(useAuth().isAuthenticated, (authenticated) => {
-  if (authenticated) void startAppDbSync()
+//
+// Gated on the app permission too. `isAuthenticated` turns true as soon as fetchUserProfile() sets
+// the user, BEFORE fetchPermissions() can reject the login for VITE_APP_PERMISSION_ID; a worker
+// started then kept syncing for a user the app turned away. `fetchStatus.permissions` is "success"
+// only once the permission passed, is reset in postLogin, and is persisted, so a reload still starts.
+const canSync = computed(() => useAuth().isAuthenticated.value && userStore.fetchStatus.permissions === 'success')
+watch(canSync, (ready) => {
+  if (ready) void startAppDbSync()
 }, { immediate: true })
 
 onUnmounted(() => {
