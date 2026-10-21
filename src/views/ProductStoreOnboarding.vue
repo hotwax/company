@@ -657,6 +657,7 @@
 </template>
 
 <script setup lang="ts">
+import { useShopifyLocations } from '@/composables/useShopifyLocations';
 import { DxpShopifyImg, commonUtil, logger, translate, useSolrSearch } from "@common"
 import {
   IonBackButton,
@@ -732,7 +733,6 @@ import { useCurrencies, useGoodIdentificationTypes, useOrganization, useTimeZone
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs"
 import {
   fetchLiveCatalogCounts,
-  fetchShopifyShopLocations,
   useOrderSyncLandmarkDates,
   useShopifyAccessScopes,
   useShopifyProductSyncRunState,
@@ -807,8 +807,7 @@ const localeInputRef = ref<any>(null)
 const timezoneInputRef = ref<any>(null)
 const orderNumberPrefixInputRef = ref<any>(null)
 const facilityImportTriggerRef = ref<any>(null)
-const shopifyLocationMappings = ref<any[]>([])
-const locationMappingFetchStatus = ref<"idle" | "pending" | "success" | "error">("idle")
+const { locations: shopifyLocationMappings, hydrated: locationMappingFetchStatus, load: loadShopifyLocations } = useShopifyLocations(linkedShopId)
 const timeZoneOptions = ref<any[]>([])
 const storeValidationAttempted = ref(false)
 const storeFieldTouched = reactive({ productStoreId: false, locale: false })
@@ -1980,10 +1979,8 @@ async function refreshLocationMappings() {
   }
 
   busy.locations = true
-  locationMappingFetchStatus.value = "pending"
   try {
-    shopifyLocationMappings.value = await fetchShopifyShopLocations(linkedShopId.value, 200)
-    locationMappingFetchStatus.value = "success"
+    await loadShopifyLocations(200)
     if(shopifyLocationMappings.value.length) {
       onboarding.markStepComplete("locations")
       setFeedback("locations", translate("Shopify location mappings are ready."), "success")
