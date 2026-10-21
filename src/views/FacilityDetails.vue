@@ -997,8 +997,9 @@ async function renameFacility() {
 
               commonUtil.showToast(translate("Facility name updated"));
             } catch (error) {
-              commonUtil.showToast(translate('Failed to update facility name.'));
-              logger.error('Failed to update facility name.', error);
+              const serverError = commonUtil.getErrorMessage(error);
+              commonUtil.showToast(`${translate('Failed to update facility name.')} ${serverError}`);
+              logger.error('Failed to update facility name', error);
             }
           }
         }
@@ -1022,8 +1023,9 @@ async function updateFacilityType() {
   } catch (error) {
     parentFacilityTypeId.value = getParentFacilityTypeId(current.value.facilityTypeId);
     facilityTypeId.value = current.value.facilityTypeId;
-    commonUtil.showToast(translate('Failed to update facility type.'));
-    logger.error('Failed to update facility type.', error);
+    const serverError = commonUtil.getErrorMessage(error);
+    commonUtil.showToast(`${translate('Failed to update facility type.')} ${serverError}`);
+    logger.error('Failed to update facility type', error);
   }
 }
 
@@ -1041,8 +1043,9 @@ async function closeFacility(event: any) {
     })
     commonUtil.showToast(translate('Facility has been marked as ', { status: isChecked ? 'closed' : 'open' }))
   } catch(err) {
-    commonUtil.showToast(translate('Failed to update facility.'))
-    logger.error('Failed to update facility.', err)
+    const serverError = commonUtil.getErrorMessage(err);
+    commonUtil.showToast(`${translate('Failed to update facility.')} ${serverError}`);
+    logger.error('Failed to update facility', err);
   }
   emitter.emit("dismissLoader");
 }
@@ -1098,8 +1101,9 @@ async function editMapUrl() {
               throw resp.data;
             }
           } catch (err) {
+            const serverError = commonUtil.getErrorMessage(err);
             logger.error("Failed to update Map URL", err);
-            commonUtil.showToast(translate("Failed to update Map URL"));
+            commonUtil.showToast(`${translate("Failed to update Map URL.")} ${serverError}`);
           }
         }
       }
@@ -1121,8 +1125,9 @@ async function deleteMapUrl() {
       throw resp.data;
     }
   } catch (err) {
-    logger.error('Failed to remove map url.', err);
-    commonUtil.showToast(translate('Failed to remove map url.'));
+    const serverError = commonUtil.getErrorMessage(err);
+    logger.error('Failed to remove map url', err);
+    commonUtil.showToast(`${translate('Failed to remove map url.')} ${serverError}`);
   }
 }
 
@@ -1272,8 +1277,9 @@ async function associateCalendarToFacility() {
       throw resp.data;
     }
   } catch (err) {
-    commonUtil.showToast(translate("Failed to associate calendar to the facility."));
-    logger.error(err);
+    const serverError = commonUtil.getErrorMessage(err);
+    logger.error("Failed to associate calendar to the facility", err);
+    commonUtil.showToast(`${translate("Failed to associate calendar to the facility.")} ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1344,7 +1350,8 @@ async function changeOrderLimitPopover(ev: Event) {
         throw resp.data;
       }
     } catch (err) {
-      commonUtil.showToast(translate('Failed to update fulfillment capacity for ', { facilityName: current.value.facilityName }));
+      const serverError = commonUtil.getErrorMessage(err);
+      commonUtil.showToast(`${translate('Failed to update fulfillment capacity for ', { facilityName: current.value.facilityName })} ${serverError}`);
       logger.error('Failed to update facility', err);
     }
     emitter.emit('dismissLoader');
@@ -1395,8 +1402,9 @@ async function updateSellInventoryOnlineSetting(event: any, facilityGroup: any) 
       throw resp.data;
     }
   } catch (err) {
-    commonUtil.showToast(translate("Failed to update sell inventory online setting"));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error("Failed to update sell inventory online setting", err);
+    commonUtil.showToast(`${translate("Failed to update sell inventory online setting.")} ${serverError}`);
   }
   emitter.emit("dismissLoader");
 }
@@ -1443,8 +1451,9 @@ async function updateFulfillmentSetting(event: any, facilityGroupId: string) {
       throw resp.data;
     }
   } catch (err) {
-    commonUtil.showToast(translate('Failed to update fulfillment setting'));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to update fulfillment setting', err);
+    commonUtil.showToast(`${translate('Failed to update fulfillment setting.')} ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1459,8 +1468,9 @@ async function updateDefaultDaysToShip() {
       throw resp.data;
     }
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to update default days to ship', err);
-    commonUtil.showToast(translate('Failed to update default days to ship'));
+    commonUtil.showToast(`${translate('Failed to update default days to ship.')} ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1499,8 +1509,9 @@ async function removeShopifyFacilityMapping(shopifyFacilityMapping: any) {
       throw resp.data;
     }
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to remove shopify mapping', err);
-    commonUtil.showToast(translate('Failed to remove shopify mapping'));
+    commonUtil.showToast(`${translate('Failed to remove shopify mapping.')} ${serverError}`);
   }
 }
 
@@ -1530,8 +1541,9 @@ async function removeFacilityMapping(mapping: any) {
       throw resp.data;
     }
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to remove facility mapping', err);
-    commonUtil.showToast(translate('Failed to remove facility mapping'));
+    commonUtil.showToast(`${translate('Failed to remove facility mapping.')} ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1557,8 +1569,9 @@ async function removeFacilityExternalID() {
       throw resp.data;
     }
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to remove facility external ID', err);
-    commonUtil.showToast(translate('Failed to remove facility external ID'));
+    commonUtil.showToast(`${translate('Failed to remove facility external ID.')} ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1589,8 +1602,9 @@ async function removePartyFromFacility(party: any) {
       throw resp.data;
     }
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to remove party from facility', err);
-    commonUtil.showToast(translate('Failed to remove party from facility'));
+    commonUtil.showToast(`${translate('Failed to remove party from facility.')} ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1640,8 +1654,9 @@ async function removeFacilityFromGroup(facilityGroupId: string) {
       throw resp.data;
     }
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to unlink group from facility', err);
-    commonUtil.showToast(translate('Failed to unlink group'));
+    commonUtil.showToast(`${translate('Failed to unlink group.')} ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1903,8 +1918,9 @@ async function saveTelecomNumber() {
     // `saveContact` has usually already toasted "Facility contact updated successfully" for the
     // address by the time this runs, so swallowing the error tells the user the phone saved when
     // it did not.
-    commonUtil.showToast(translate("Failed to update contact number."));
-    logger.error(err);
+    const serverError = commonUtil.getErrorMessage(err);
+    logger.error("Failed to update contact number", err);
+    commonUtil.showToast(`${translate("Failed to update contact number.")} ${serverError}`);
   }
 }
 
@@ -1936,8 +1952,9 @@ async function saveEmailAddress() {
       throw resp.data;
     }
   } catch (err) {
-    commonUtil.showToast(translate("Failed to update email address."));
-    logger.error(err);
+    const serverError = commonUtil.getErrorMessage(err);
+    logger.error("Failed to update email address", err);
+    commonUtil.showToast(`${translate("Failed to update email address.")} ${serverError}`);
   }
 }
 
@@ -1977,8 +1994,9 @@ async function saveContact() {
     } catch (err) {
       // Keep the modal open with the entered values so the user can correct and retry; closing it
       // here made a rejected address look like it had been dropped silently.
-      commonUtil.showToast(translate("Failed to update facility contact."));
-      logger.error(err);
+      const serverError = commonUtil.getErrorMessage(err);
+      commonUtil.showToast(`${translate("Failed to update facility contact.")} ${serverError}`);
+      logger.error("Failed to update facility contact", err);
       emitter.emit('dismissLoader');
       return;
     }
@@ -2066,8 +2084,9 @@ async function saveGeoPoint() {
       throw resp.data;
     }
   } catch (err) {
-    commonUtil.showToast(translate("Failed to update facility latitude and longitude."));
-    logger.error(err);
+    const serverError = commonUtil.getErrorMessage(err);
+    commonUtil.showToast(`${translate("Failed to update facility latitude and longitude.")} ${serverError}`);
+    logger.error("Failed to update facility latitude and longitude", err);
   }
 
   closeGeoPointModal();
@@ -2148,10 +2167,12 @@ async function saveParties() {
   );
 
   const responses = await Promise.allSettled([...removePromises, ...addPromises]);
-  const hasFailed = responses.some((response: any) => response.status === 'rejected');
+  const failedResponse = responses.find((response): response is PromiseRejectedResult => response.status === 'rejected');
 
-  if (hasFailed) {
-    commonUtil.showToast(translate("Failed to update some role(s)."));
+  if (failedResponse) {
+    const serverError = commonUtil.getErrorMessage(failedResponse.reason);
+    logger.error("Failed to update some role(s)", failedResponse.reason);
+    commonUtil.showToast(`${translate("Failed to update some role(s).")} ${serverError}`);
   } else {
     commonUtil.showToast(translate("Role(s) updated successfully."));
   }

@@ -219,8 +219,9 @@ export function useNetSuite(integrationTypeId?: any) {
               }
               commonUtil.showToast(translate("NetSuite ID updated successfully"));
             } catch (error) {
-              logger.error(error);
-              commonUtil.showToast(translate("Failed to update NetSuite ID"));
+              const serverError = commonUtil.getErrorMessage(error);
+              logger.error("Failed to update NetSuite ID", error);
+              commonUtil.showToast(`${translate("Failed to update NetSuite ID.")} ${serverError}`);
             }
             emitter.emit("dismissLoader");
           },
@@ -236,8 +237,9 @@ export function useNetSuite(integrationTypeId?: any) {
       await addMapping({ ...payload, integrationTypeId });
       commonUtil.showToast(translate("NetSuite ID added successfully"));
     } catch (error) {
-      logger.error(error);
-      commonUtil.showToast(translate("Failed to add NetSuite ID"));
+      const serverError = commonUtil.getErrorMessage(error);
+      logger.error("Failed to add NetSuite ID", error);
+      commonUtil.showToast(`${translate("Failed to add NetSuite ID.")} ${serverError}`);
     }
     emitter.emit("dismissLoader");
   };
@@ -248,8 +250,9 @@ export function useNetSuite(integrationTypeId?: any) {
       await updateMapping({ ...payload, integrationTypeId }, integrationMappingId);
       commonUtil.showToast(translate("NetSuite ID updated successfully"));
     } catch (error) {
-      logger.error(error);
-      commonUtil.showToast(translate("Failed to update NetSuite ID"));
+      const serverError = commonUtil.getErrorMessage(error);
+      logger.error("Failed to update NetSuite ID", error);
+      commonUtil.showToast(`${translate("Failed to update NetSuite ID.")} ${serverError}`);
     }
     emitter.emit("dismissLoader");
   };
@@ -260,8 +263,9 @@ export function useNetSuite(integrationTypeId?: any) {
       await removeMapping(integrationMappingId);
       commonUtil.showToast(translate("NetSuite ID removed successfully"));
     } catch (error) {
-      logger.error(error);
-      commonUtil.showToast(translate("Failed to remove NetSuite ID"));
+      const serverError = commonUtil.getErrorMessage(error);
+      logger.error("Failed to remove NetSuite ID", error);
+      commonUtil.showToast(`${translate("Failed to remove NetSuite ID.")} ${serverError}`);
     }
     emitter.emit("dismissLoader");
   };

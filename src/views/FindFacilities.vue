@@ -619,8 +619,9 @@ async function updateFacilityOrderLimit(maximumOrderLimit: number | string, faci
       throw resp.data;
     }
   } catch (err) {
-    commonUtil.showToast(translate('Failed to update fulfillment capacity for ', { facilityName: facility.facilityName }));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to update facility', err);
+    commonUtil.showToast(`${translate('Failed to update fulfillment capacity for ', { facilityName: facility.facilityName })} ${serverError}`);
   }
 }
 </script>

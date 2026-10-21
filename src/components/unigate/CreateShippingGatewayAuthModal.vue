@@ -157,7 +157,7 @@ import {
   modalController,
 } from "@ionic/vue";
 import { closeOutline, eyeOffOutline, eyeOutline } from "ionicons/icons";
-import { commonUtil, translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import {
   createShippingGatewayAuth,
   fetchShippingGatewayConfigs,
@@ -240,7 +240,9 @@ async function save() {
     }
     dismiss(true);
   } catch (err: any) {
-    commonUtil.showToast(translate(err?.message || "Failed to save carrier credentials."));
+    const serverError = commonUtil.getErrorMessage(err);
+    logger.error("Failed to save carrier credentials", err);
+    commonUtil.showToast(`${translate("Failed to save carrier credentials.")} ${serverError}`);
   } finally {
     isSaving.value = false;
   }

@@ -149,7 +149,8 @@ async function saveField(field: CalendarDateField, selector: string) {
       commonUtil.showToast(translate(CACHE_RECONCILIATION_ERROR_MESSAGE))
     } else {
       // Keep the picker open with the operator's choice so they can retry or cancel.
-      commonUtil.showToast(translate("Failed to update mapping"))
+      const serverError = commonUtil.getErrorMessage(error);
+      commonUtil.showToast(`${translate("Failed to update mapping.")} ${serverError}`);
     }
   } finally {
     saving.value = false

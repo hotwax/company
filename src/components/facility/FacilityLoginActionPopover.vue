@@ -55,7 +55,8 @@ async function sendResetPasswordEmail() {
       throw resp.data;
     }
   } catch (error) {
-    commonUtil.showToast(translate('Failed to send password reset email.'));
+    const serverError = commonUtil.getErrorMessage(error);
+    commonUtil.showToast(`${translate('Failed to send password reset email.')} ${serverError}`);
     logger.error('Failed to send password reset email', error);
   }
   emitter.emit('dismissLoader');
@@ -112,7 +113,8 @@ async function unlinkFacilityLogin() {
 
     // Parties are live per visit; the opener reloads them on dismiss.
   } catch (err) {
-    commonUtil.showToast(translate("Failed to remove facility login."));
+    const serverError = commonUtil.getErrorMessage(err);
+    commonUtil.showToast(`${translate("Failed to remove facility login.")} ${serverError}`);
     logger.error('Failed to remove facility login', err);
   }
   emitter.emit('dismissLoader');

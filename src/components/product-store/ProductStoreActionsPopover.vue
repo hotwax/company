@@ -49,8 +49,9 @@ const removeProductStoreRole = async () => {
     if(commonUtil.hasError(resp)) {throw resp.data;}
     commonUtil.showToast(translate("Role removed successfully."));
   } catch (error) {
-    commonUtil.showToast(translate("Something went wrong."));
-    logger.error(error);
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to remove product store role", error);
+    commonUtil.showToast(`${translate("Something went wrong.")} ${serverError}`);
   }
 
   const updatedUserProductStores = await userStore.getUserProductStores(selectedUser.value.partyId);

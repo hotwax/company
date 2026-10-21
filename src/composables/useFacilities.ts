@@ -538,7 +538,8 @@ export function useFacilitySellOnline() {
         sellOnline: groupInformation.some((group: any) => group.facilityGroupTypeId === "CHANNEL_FAC_GROUP"),
       };
     } catch (error) {
-      commonUtil.showToast(translate("Failed to update sell inventory online setting"));
+      const serverError = commonUtil.getErrorMessage(error);
+      commonUtil.showToast(`${translate("Failed to update sell inventory online setting.")} ${serverError}`);
       logger.error("Failed to update sell inventory online setting", error);
       return null;
     }

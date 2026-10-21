@@ -233,8 +233,9 @@ async function addAddress() {
       throw resp.data;
     }
   } catch (error) {
-    commonUtil.showToast(translate("Failed to create facility address."));
-    logger.error("Failed to create facility address.", error);
+    const serverError = commonUtil.getErrorMessage(error);
+    commonUtil.showToast(`${translate("Failed to create facility address.")} ${serverError}`);
+    logger.error("Failed to create facility address", error);
     return;
   }
 
@@ -248,8 +249,9 @@ async function addAddress() {
     } catch (err) {
       // The address already toasted success and we navigate on regardless, so without this the
       // phone silently vanishes from a form the user believes saved in full.
-      commonUtil.showToast(translate("Facility address saved, but the contact number could not be saved."));
-      logger.error("Failed to save phone.", err);
+      const serverError = commonUtil.getErrorMessage(err);
+      commonUtil.showToast(`${translate("Facility address saved, but the contact number could not be saved.")} ${serverError}`);
+      logger.error("Failed to save phone", err);
     }
   }
 
@@ -260,8 +262,9 @@ async function addAddress() {
         infoString: emailAddress.value
       });
     } catch (err) {
-      commonUtil.showToast(translate("Facility address saved, but the email address could not be saved."));
-      logger.error("Failed to save email.", err);
+      const serverError = commonUtil.getErrorMessage(err);
+      commonUtil.showToast(`${translate("Facility address saved, but the email address could not be saved.")} ${serverError}`);
+      logger.error("Failed to save email", err);
     }
   }
 

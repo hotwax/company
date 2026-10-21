@@ -132,7 +132,7 @@ import {
   modalController,
 } from "@ionic/vue";
 import { closeOutline } from "ionicons/icons";
-import { commonUtil, translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import {
   saveShippingCarrierBillingConfig,
   type ShippingCarrierBillingConfig,
@@ -200,7 +200,9 @@ async function save() {
     commonUtil.showToast(translate("Billing configuration saved successfully."));
     dismiss(true);
   } catch (err: any) {
-    commonUtil.showToast(translate(err?.message || "Failed to save billing configuration."));
+    const serverError = commonUtil.getErrorMessage(err);
+    logger.error("Failed to save billing configuration", err);
+    commonUtil.showToast(`${translate("Failed to save billing configuration.")} ${serverError}`);
   } finally {
     isSaving.value = false;
   }

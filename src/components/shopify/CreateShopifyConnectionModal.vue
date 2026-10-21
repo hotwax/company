@@ -158,8 +158,9 @@ async function saveConnection() {
     commonUtil.showToast(translate('Shopify connection created'))
     await modalController.dismiss({ shopId: form.shopId.trim() })
   } catch (error: any) {
-    logger.error('createShopifyConnection', error)
-    commonUtil.showToast(translate('Failed to create Shopify connection'))
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error('Failed to create Shopify connection', error);
+    commonUtil.showToast(`${translate('Failed to create Shopify connection.')} ${serverError}`);
   }
   emitter.emit('dismissLoader')
 }
