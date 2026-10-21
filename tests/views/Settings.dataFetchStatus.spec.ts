@@ -7,11 +7,12 @@ const status = vi.hoisted(() => ({ refreshDomain: vi.fn() }));
 
 vi.mock("@common", () => ({
   translate: (key: string) => key,
-  commonUtil: { isMoqui: () => true, getMaargURL: () => "" },
+  commonUtil: { isMoqui: () => true, getMaargURL: () => "", goToOms: vi.fn() },
   cookieHelper: () => ({ get: () => "test-oms" }),
 }));
 vi.mock("@common/composables/useAuth", () => ({
   useAuth: () => ({ isAuthenticated: ref(true), logout: vi.fn() }),
+  isMoquiOmsRef: ref(true),
 }));
 vi.mock("@/store/user", () => ({
   useUserStore: () => ({
