@@ -109,19 +109,11 @@ export function useGeos() {
 
   const countries = computed(() => seed.countries());
 
-  /**
-   * Countries in the DBIC association group.
-   *
-   * No dedicated fetch: `admin/geos/assocs?toGeoId=DBIC` was its own request, but the geoAssoc
-   * domain already snapshots that same endpoint unfiltered, so DBIC is just a slice of the cache.
-   */
-  const dbicCountries = computed(() => seed.dbicCountries());
-
   const statesOf = (countryGeoId: string) => seed.statesForCountry(countryGeoId);
 
   const hydrated = seedHydrated(() => seed.getGeos(), () => geos.value);
 
-  return { geos, countries, statesOf, dbicCountries, byId, hydrated };
+  return { geos, countries, statesOf, byId, hydrated };
 }
 
 // --- type tables ----------------------------------------------------------------------------
