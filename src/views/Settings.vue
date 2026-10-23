@@ -50,7 +50,7 @@
           <ion-card-content>
             {{ $t('This is the name of the OMS you are connected to right now. Make sure that you are connected to the right instance before proceeding.') }}
           </ion-card-content>
-          <ion-button v-if="!commonUtil.isMoqui()" :disabled="!userStore.hasPermission(Actions.APP_COMMERCE_VIEW)" @click="openOms" fill="clear">
+          <ion-button v-if="!isMoquiOmsRef" :disabled="!userStore.hasPermission(Actions.APP_COMMERCE_VIEW)" @click="commonUtil.goToOms" fill="clear">
             {{ $t('Go to OMS') }}
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
@@ -146,7 +146,7 @@ import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSu
 
 import { computed, onMounted, ref , defineProps} from "vue";
 import { useUserStore } from '@/store/user';
-import { useAuth } from '@common/composables/useAuth';
+import { useAuth, isMoquiOmsRef } from '@common/composables/useAuth';
 import TimeZoneModal from "@/components/common/TimezoneModal.vue";
 import Image from "@/components/common/Image.vue"
 import DxpAppVersionInfo from "@/components/common/DxpAppVersionInfo.vue"
@@ -169,8 +169,6 @@ const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componen
 
 const userProfile = computed(() => userStore.getUserProfile)
 const oms = computed(() => cookieHelper().get("oms") || userStore.oms || translate("Not set"))
-
-const openOms = () => window.open(commonUtil.getMaargURL(), '_blank')
 
 const omsVersionLabel = computed(() => omsVersion.value || translate("Not available"))
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)

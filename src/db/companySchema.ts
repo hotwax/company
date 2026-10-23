@@ -12,8 +12,8 @@
  * that chunk as a single iife.
  */
 
-import { defineEntity } from "@common/db/schema/defineEntity";
-import { defineSchema } from "@common/db/schema/defineSchema";
+import { defineEntity } from "@common/db/model/defineEntity";
+import { defineSchema } from "@common/db/model/defineSchema";
 
 /**
  * The columns both Shopify inventory ledgers store; the event model reads them in

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defineEntity } from "@common/db/schema/defineEntity";
+import { defineEntity } from "@common/db/model/defineEntity";
 import {
   diffStaleKeys,
   isEffectiveNow,
