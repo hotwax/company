@@ -152,7 +152,7 @@ const updateContactField = async () => {
           commonUtil.showToast(translate(`${OPTIONS[props.type].placeholder} updated successfully.`));
         } catch (error) {
           const serverError = commonUtil.getErrorMessage(error);
-          logger.error(`Failed to update ${props.type}`, error);
+          logger.error(error);
           commonUtil.showToast(`${translate(`Failed to update ${props.type === "email" ? "email" : (props.type === "phoneNumber" ? "phone number" : "external ID")}.`)} ${serverError}`);
         }
 
@@ -212,7 +212,7 @@ const deleteContactField = async () => {
           commonUtil.showToast(translate(`${OPTIONS[props.type].placeholder} removed successfully.`));
         } catch (error) {
           const serverError = commonUtil.getErrorMessage(error);
-          logger.error(`Failed to remove ${props.type}`, error);
+          logger.error(error);
           commonUtil.showToast(`${translate(`Failed to remove ${props.type === "email" ? "email" : (props.type === "phoneNumber" ? "phone number" : "external ID")}.`)} ${serverError}`);
         }
       }

@@ -112,7 +112,7 @@ async function addOperatingHours() {
     }
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to associate calendar to the facility", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to associate calendar to the facility.")} ${serverError}`);
   }
   modalController.dismiss();
@@ -143,7 +143,7 @@ async function updateOperatingHours() {
     }
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to associate calendar to the facility", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to associate calendar to the facility.")} ${serverError}`);
   }
   modalController.dismiss();

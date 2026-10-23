@@ -123,7 +123,7 @@ async function createFacilityGroup() {
     }
   } catch (error) {
     const serverError = commonUtil.getErrorMessage(error);
-    logger.error("Failed to create facility group", error);
+    logger.error(error);
     commonUtil.showToast(`${translate('Failed to create facility group.')} ${serverError}`);
   }
   modalController.dismiss();

@@ -91,7 +91,7 @@ export const useUserStore = defineStore("user", {
       } catch (error: any) {
         this.fetchStatus.profile = "error"
         const serverError = commonUtil.getErrorMessage(error);
-        commonUtil.showToast(`${translate("Failed to fetch user profile.")} ${serverError}`);
+        commonUtil.showToast(`${translate("Failed to fetch user profile")}. ${serverError}`);
         logger.error("Failed to fetch user profile", error);
 
         return Promise.reject(new Error(error))
@@ -149,14 +149,14 @@ export const useUserStore = defineStore("user", {
         if(resp?.status === 200) {
           this.current.timeZone = tzId
           Settings.defaultZone = tzId
-          commonUtil.showToast(translate("Time zone updated successfully."));
+          commonUtil.showToast(translate("Time zone updated successfully"));
         } else {
           throw resp
         }
       } catch (err) {
         const serverError = commonUtil.getErrorMessage(err);
         logger.error("Failed to update time zone", err)
-        commonUtil.showToast(`${translate("Failed to update time zone.")} ${serverError}`);
+        commonUtil.showToast(`${translate("Failed to update time zone")}. ${serverError}`);
 
         return Promise.reject("")
       }

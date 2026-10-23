@@ -241,7 +241,7 @@ async function save() {
     dismiss(true);
   } catch (err: any) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to save carrier credentials", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to save carrier credentials.")} ${serverError}`);
   } finally {
     isSaving.value = false;

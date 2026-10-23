@@ -50,7 +50,7 @@ const removeProductStoreRole = async () => {
     commonUtil.showToast(translate("Role removed successfully."));
   } catch (error) {
     const serverError = commonUtil.getErrorMessage(error);
-    logger.error("Failed to remove product store role", error);
+    logger.error(error);
     commonUtil.showToast(`${translate("Something went wrong.")} ${serverError}`);
   }
 

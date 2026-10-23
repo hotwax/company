@@ -55,8 +55,8 @@ const removeUserSecurityGroup = async () => {
     commonUtil.showToast(translate("Security group removed successfully."));
   } catch (error) {
     const serverError = commonUtil.getErrorMessage(error);
-    logger.error("Failed to remove security group", error);
-    commonUtil.showToast(`${translate("Failed to remove security group.")} ${serverError}`);
+    logger.error(error);
+    commonUtil.showToast(`${translate("Failed to remove security group")}. ${serverError}`);
   }
   // refetching security groups
   const userGroups = await userStore.getUserGroups(selectedUser.value.userId)

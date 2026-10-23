@@ -105,7 +105,7 @@ async function saveMapping() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to create external mapping', err);
-    commonUtil.showToast(`${translate('Failed to create external mapping.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to create external mapping')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -132,7 +132,7 @@ async function updateMapping() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to update external mapping', err);
-    commonUtil.showToast(`${translate('Failed to update external mapping.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to update external mapping')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }

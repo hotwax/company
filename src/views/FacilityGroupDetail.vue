@@ -423,7 +423,7 @@ async function saveEditGroup() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error("Failed to update group details", err);
-    commonUtil.showToast(`${translate("Failed to update group details.")} ${serverError}`);
+    commonUtil.showToast(`${translate("Failed to update group details")}. ${serverError}`);
   }
 }
 

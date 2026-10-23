@@ -201,7 +201,7 @@ async function save() {
     dismiss(true);
   } catch (err: any) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to save billing configuration", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to save billing configuration.")} ${serverError}`);
   } finally {
     isSaving.value = false;

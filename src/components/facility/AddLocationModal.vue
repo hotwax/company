@@ -119,7 +119,7 @@ async function addFacilityLocation() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to create facility location', err);
-    commonUtil.showToast(`${translate('Failed to create facility location.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to create facility location')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -138,7 +138,7 @@ async function updateFacilityLocation() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to update facility location', err);
-    commonUtil.showToast(`${translate('Failed to update facility location.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to update facility location')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }

@@ -1103,7 +1103,7 @@ async function editMapUrl() {
           } catch (err) {
             const serverError = commonUtil.getErrorMessage(err);
             logger.error("Failed to update Map URL", err);
-            commonUtil.showToast(`${translate("Failed to update Map URL.")} ${serverError}`);
+            commonUtil.showToast(`${translate("Failed to update Map URL")}. ${serverError}`);
           }
         }
       }
@@ -1278,7 +1278,7 @@ async function associateCalendarToFacility() {
     }
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to associate calendar to the facility", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to associate calendar to the facility.")} ${serverError}`);
   }
   emitter.emit('dismissLoader');
@@ -1404,7 +1404,7 @@ async function updateSellInventoryOnlineSetting(event: any, facilityGroup: any) 
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error("Failed to update sell inventory online setting", err);
-    commonUtil.showToast(`${translate("Failed to update sell inventory online setting.")} ${serverError}`);
+    commonUtil.showToast(`${translate("Failed to update sell inventory online setting")}. ${serverError}`);
   }
   emitter.emit("dismissLoader");
 }
@@ -1453,7 +1453,7 @@ async function updateFulfillmentSetting(event: any, facilityGroupId: string) {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to update fulfillment setting', err);
-    commonUtil.showToast(`${translate('Failed to update fulfillment setting.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to update fulfillment setting')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1470,7 +1470,7 @@ async function updateDefaultDaysToShip() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to update default days to ship', err);
-    commonUtil.showToast(`${translate('Failed to update default days to ship.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to update default days to ship')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1511,7 +1511,7 @@ async function removeShopifyFacilityMapping(shopifyFacilityMapping: any) {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to remove shopify mapping', err);
-    commonUtil.showToast(`${translate('Failed to remove shopify mapping.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to remove shopify mapping')}. ${serverError}`);
   }
 }
 
@@ -1543,7 +1543,7 @@ async function removeFacilityMapping(mapping: any) {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to remove facility mapping', err);
-    commonUtil.showToast(`${translate('Failed to remove facility mapping.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to remove facility mapping')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1571,7 +1571,7 @@ async function removeFacilityExternalID() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to remove facility external ID', err);
-    commonUtil.showToast(`${translate('Failed to remove facility external ID.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to remove facility external ID')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1604,7 +1604,7 @@ async function removePartyFromFacility(party: any) {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to remove party from facility', err);
-    commonUtil.showToast(`${translate('Failed to remove party from facility.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to remove party from facility')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1655,8 +1655,8 @@ async function removeFacilityFromGroup(facilityGroupId: string) {
     }
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error('Failed to unlink group from facility', err);
-    commonUtil.showToast(`${translate('Failed to unlink group.')} ${serverError}`);
+    logger.error(err);
+    commonUtil.showToast(`${translate('Failed to unlink group')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1919,7 +1919,7 @@ async function saveTelecomNumber() {
     // address by the time this runs, so swallowing the error tells the user the phone saved when
     // it did not.
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to update contact number", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to update contact number.")} ${serverError}`);
   }
 }
@@ -1953,7 +1953,7 @@ async function saveEmailAddress() {
     }
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to update email address", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to update email address.")} ${serverError}`);
   }
 }
@@ -1996,7 +1996,7 @@ async function saveContact() {
       // here made a rejected address look like it had been dropped silently.
       const serverError = commonUtil.getErrorMessage(err);
       commonUtil.showToast(`${translate("Failed to update facility contact.")} ${serverError}`);
-      logger.error("Failed to update facility contact", err);
+      logger.error(err);
       emitter.emit('dismissLoader');
       return;
     }
@@ -2086,7 +2086,7 @@ async function saveGeoPoint() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     commonUtil.showToast(`${translate("Failed to update facility latitude and longitude.")} ${serverError}`);
-    logger.error("Failed to update facility latitude and longitude", err);
+    logger.error(err);
   }
 
   closeGeoPointModal();

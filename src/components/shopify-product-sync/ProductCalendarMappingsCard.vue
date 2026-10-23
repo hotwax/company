@@ -150,7 +150,7 @@ async function saveField(field: CalendarDateField, selector: string) {
     } else {
       // Keep the picker open with the operator's choice so they can retry or cancel.
       const serverError = commonUtil.getErrorMessage(error);
-      commonUtil.showToast(`${translate("Failed to update mapping.")} ${serverError}`);
+      commonUtil.showToast(`${translate("Failed to update mapping")}. ${serverError}`);
     }
   } finally {
     saving.value = false

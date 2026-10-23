@@ -141,7 +141,7 @@ async function save() {
     dismiss(true);
   } catch (err: any) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to save Unigate connection", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to save Unigate connection.")} ${serverError}`);
   } finally {
     isSaving.value = false;

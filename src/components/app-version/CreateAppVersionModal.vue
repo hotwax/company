@@ -127,7 +127,7 @@ async function saveAppVersion() {
   } catch (error) {
     const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to register the app version", error);
-    commonUtil.showToast(`${translate("Failed to register the app version.")} ${serverError}`);
+    commonUtil.showToast(`${translate("Failed to register the app version")}. ${serverError}`);
   }
 }
 </script>

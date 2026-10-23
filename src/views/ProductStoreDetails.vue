@@ -446,7 +446,7 @@ async function saveProductStoreField(field: ProductStoreField, value: any) {
     }
   } catch(error: any) {
     const serverError = commonUtil.getErrorMessage(error);
-    logger.error("Failed to update product store settings", error);
+    logger.error(error);
     commonUtil.showToast(`${translate("Failed to update product store settings.")} ${serverError}`);
   }
   emitter.emit("dismissLoader")

@@ -160,7 +160,7 @@ async function saveConnection() {
   } catch (error: any) {
     const serverError = commonUtil.getErrorMessage(error);
     logger.error('Failed to create Shopify connection', error);
-    commonUtil.showToast(`${translate('Failed to create Shopify connection.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to create Shopify connection')}. ${serverError}`);
   }
   emitter.emit('dismissLoader')
 }

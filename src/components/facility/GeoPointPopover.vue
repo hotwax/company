@@ -59,7 +59,7 @@ async function regenerateLatitudeAndLongitude() {
     }
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to regenerate latitude and longitude for the facility", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to regenerate latitude and longitude for the facility.")} ${serverError}`);
   }
 
@@ -85,7 +85,7 @@ async function removeLatitudeAndLongitude() {
     }
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to remove facility latitude and longitude", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to remove facility latitude and longitude.")} ${serverError}`);
   }
 

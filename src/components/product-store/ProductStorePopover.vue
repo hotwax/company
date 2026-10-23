@@ -90,7 +90,7 @@ async function updatePrimaryStore(shopifyShopId = '') {
     if (commonUtil.hasError(resp)) throw resp.data;
   } catch (error) {
     const serverError = commonUtil.getErrorMessage(error);
-    commonUtil.showToast(`${translate('Failed to update primary product store.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to update primary product store')}. ${serverError}`);
     logger.error('Failed to update primary product store', error);
   }
 }

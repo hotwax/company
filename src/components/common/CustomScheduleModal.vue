@@ -156,7 +156,7 @@ async function addCustomSchedule(payload: any) {
     }
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to create calendar to the facility", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to create calendar to the facility.")} ${serverError}`);
   }
 }
@@ -205,7 +205,7 @@ async function saveCustomSchedule() {
       }
     } catch (err) {
       const serverError = commonUtil.getErrorMessage(err);
-      logger.error("Failed to update the schedule", err);
+      logger.error(err);
       commonUtil.showToast(`${translate("Failed to update the schedule.")} ${serverError}`);
     }
   } else {

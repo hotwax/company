@@ -72,7 +72,7 @@ const updateRejectionReason = async () => {
     }
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to update rejection reason", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to update rejection reason.")} ${serverError}`);
   }
 };

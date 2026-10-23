@@ -106,7 +106,7 @@ async function updateExternalId() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to update facility external ID', err);
-    commonUtil.showToast(`${translate('Failed to update facility external ID.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to update facility external ID')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }

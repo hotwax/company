@@ -165,7 +165,7 @@ export function useRejectionReasons() {
     const failedResponse = responses.find((response): response is PromiseRejectedResult => response.status === "rejected");
     if (failedResponse) {
       const serverError = commonUtil.getErrorMessage(failedResponse.reason);
-      logger.error("Failed to update sequence for some rejection reasons", failedResponse.reason);
+      logger.error(failedResponse.reason);
       commonUtil.showToast(`${translate("Failed to update sequence for some rejection reasons.")} ${serverError}`);
     } else {
       commonUtil.showToast(translate("Sequence for rejection reasons updated successfully."));
@@ -200,7 +200,7 @@ export function useRejectionReasons() {
       }
     } catch (error: any) {
       const serverError = commonUtil.getErrorMessage(error);
-      logger.error("Failed to update reason association with group", error);
+      logger.error(error);
       commonUtil.showToast(`${translate("Failed to update reason association with group.")} ${serverError}`);
     }
   };

@@ -339,7 +339,7 @@ async function save() {
     close();
   } catch (error: any) {
     const serverError = commonUtil.getErrorMessage(error);
-    logger.error("Failed to update inventory channel", error);
+    logger.error(error);
     commonUtil.showToast(`${translate("Failed to update the inventory channel.")} ${serverError}`);
   } finally {
     isSaving.value = false;
@@ -376,7 +376,7 @@ async function confirmExpire() {
     close();
   } catch (error: any) {
     const serverError = commonUtil.getErrorMessage(error);
-    logger.error("Failed to expire inventory channel", error);
+    logger.error(error);
     commonUtil.showToast(`${translate("Failed to expire the inventory channel.")} ${serverError}`);
   } finally {
     isSaving.value = false;

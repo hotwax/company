@@ -55,7 +55,7 @@ async function removeLocation() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to remove facility location', err);
-    commonUtil.showToast(`${translate('Failed to remove facility location.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to remove facility location')}. ${serverError}`);
   }
   popoverController.dismiss();
   emitter.emit('dismissLoader');

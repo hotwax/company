@@ -312,7 +312,7 @@ async function save() {
     dismiss(true);
   } catch (err: any) {
     const serverError = commonUtil.getErrorMessage(err);
-    logger.error("Failed to save carrier mapping", err);
+    logger.error(err);
     commonUtil.showToast(`${translate("Failed to save carrier mapping.")} ${serverError}`);
   } finally {
     isSaving.value = false;

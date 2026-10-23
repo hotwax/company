@@ -127,7 +127,7 @@ async function save() {
     emit("created", createdPartyId);
   } catch (error) {
     const serverError = commonUtil.getErrorMessage(error);
-    logger.error("Failed to create organization", error);
+    logger.error(error);
     await commonUtil.showToast(`${translate("Failed to create organization.")} ${serverError}`);
   } finally {
     saving.value = false;

@@ -120,7 +120,7 @@ async function saveMapping() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to create shopify mapping', err);
-    commonUtil.showToast(`${translate('Failed to create shopify mapping.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to create shopify mapping')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -145,7 +145,7 @@ async function updateMapping() {
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to update shopify mapping', err);
-    commonUtil.showToast(`${translate('Failed to update shopify mapping.')} ${serverError}`);
+    commonUtil.showToast(`${translate('Failed to update shopify mapping')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }

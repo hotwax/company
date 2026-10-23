@@ -539,7 +539,7 @@ export function useFacilitySellOnline() {
       };
     } catch (error) {
       const serverError = commonUtil.getErrorMessage(error);
-      commonUtil.showToast(`${translate("Failed to update sell inventory online setting.")} ${serverError}`);
+      commonUtil.showToast(`${translate("Failed to update sell inventory online setting")}. ${serverError}`);
       logger.error("Failed to update sell inventory online setting", error);
       return null;
     }
