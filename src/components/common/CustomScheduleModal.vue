@@ -155,8 +155,9 @@ async function addCustomSchedule(payload: any) {
       throw resp.data;
     }
   } catch (err) {
-    commonUtil.showToast(translate("Failed to create calendar to the facility."));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error(err);
+    commonUtil.showToast(`${translate("Failed to create calendar to the facility.")} ${serverError}`);
   }
 }
 
@@ -203,10 +204,9 @@ async function saveCustomSchedule() {
         throw resp.data;
       }
     } catch (err) {
-      // A failed remove means `addCustomSchedule` never runs, so the modal closes with the old
-      // schedule still in place and nothing to tell the user their edit was dropped.
-      commonUtil.showToast(translate("Failed to update the schedule."));
+      const serverError = commonUtil.getErrorMessage(err);
       logger.error(err);
+      commonUtil.showToast(`${translate("Failed to update the schedule.")} ${serverError}`);
     }
   } else {
     await addCustomSchedule(payload);
