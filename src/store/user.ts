@@ -253,9 +253,11 @@ export const useUserStore = defineStore("user", {
         const keywords = searchTerm.split(" ")
         solrPayload.json.query = `(${keywords.map((keyword: string) => `*${keyword}*`).join(" OR ")}) OR "${searchTerm}"^100`
       }
-      if (this.query.userGroupId) {solrPayload.json.filter += ` AND userGroupIds:${this.query.userGroupId}`}
+      if (this.query.userGroupId) {
+        solrPayload.json.filter.push(`userGroupIds:${this.query.userGroupId}`)
+      }
       if (this.query.status) {
-        solrPayload.json.filter += ` AND statusId:${this.query.status === "Y" ? "PARTY_ENABLED" : "PARTY_DISABLED"}`
+        solrPayload.json.filter.push(`statusId:${this.query.status === "Y" ? "PARTY_ENABLED" : "PARTY_DISABLED"}`)
       }
 
       let users = JSON.parse(JSON.stringify(this.users.list))
