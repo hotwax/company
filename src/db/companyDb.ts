@@ -9,9 +9,9 @@
  * This module must likewise never import `commonUtil`; `main.ts` registers the resolver.
  */
 
-import { defineAppDb } from "@common/db/model/defineAppDb";
-import { mergeSchemas } from "@common/db/model/defineSchema";
-import { commonSchema } from "@common/db/schema/commonSchema";
+import { defineAppDb } from "@common/db/schema/defineAppDb";
+import { mergeSchemas } from "@common/db/schema/defineSchema";
+import { commonSchema } from "@common/db/seed/seedSchema";
 import { companySchema } from "./companySchema";
 
 /**

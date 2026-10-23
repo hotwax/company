@@ -657,6 +657,7 @@
 </template>
 
 <script setup lang="ts">
+import { useShopifyShopLocations } from '@/composables/useShopify';
 import { DxpShopifyImg, commonUtil, logger, translate, useSolrSearch } from "@common"
 import {
   IonBackButton,
@@ -735,7 +736,6 @@ import {
   useOrderSyncLandmarkDates,
   useShopifyAccessScopes,
   useShopifyProductSyncRunState,
-  useShopifyShopLocations,
   useShopifyShopMutations,
   useShopifyShops,
   useShopifySyncContext
@@ -807,6 +807,8 @@ const localeInputRef = ref<any>(null)
 const timezoneInputRef = ref<any>(null)
 const orderNumberPrefixInputRef = ref<any>(null)
 const facilityImportTriggerRef = ref<any>(null)
+const linkedShopId = computed(() => String(linkedShopifyShop.value?.shopId || ""))
+const { locations: shopifyLocationMappings, hydrated: locationMappingFetchStatus, load: loadShopifyLocations } = useShopifyShopLocations(linkedShopId)
 const timeZoneOptions = ref<any[]>([])
 const storeValidationAttempted = ref(false)
 const storeFieldTouched = reactive({ productStoreId: false, locale: false })
@@ -861,8 +863,6 @@ const linkedShopifyShop = computed(() => {
 })
 // Never fall back to the persisted id here. Every downstream job/import action must use a shop
 // that the current cache or live setup response confirms is still assigned to this Product Store.
-const linkedShopId = computed(() => String(linkedShopifyShop.value?.shopId || ""))
-const { locations: shopifyLocationMappings, hydrated: locationMappingFetchStatus, load: loadShopifyLocations } = useShopifyShopLocations(linkedShopId)
 // A ShopifyShop row carries no systemMessageRemoteId; the remote is joined by internalId/remoteId.
 // useShopifySyncContext owns that join with the same rule the sync worker uses.
 const shopifySyncContext = useShopifySyncContext(() => linkedShopId.value)

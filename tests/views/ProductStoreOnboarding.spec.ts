@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from "@vue/test-utils"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { computed, nextTick, onMounted, reactive, ref, toRefs, toValue } from "vue"
+import { computed, nextTick, onMounted, reactive, ref, toRefs } from "vue"
 import { PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
 
 const harness = vi.hoisted(() => ({
@@ -92,30 +92,9 @@ vi.mock("@/composables/useProductStores", () => ({
 }))
 
 vi.mock("@/composables/useShopify", () => ({
+  useShopifyShopLocations: () => ({ locations: { value: [] }, hydrated: { value: "idle" }, load: () => {} }),
   fetchLiveCatalogCounts: vi.fn().mockResolvedValue({ shopifyProductCount: 0 }),
   fetchShopifyShopLocations: (...args: any[]) => harness.fetchShopifyShopLocations(...args),
-  useShopifyShopLocations: (shopIdSource: any) => {
-    const locations = ref<any[]>([]);
-    const hydrated = ref<"idle" | "pending" | "success" | "error">("idle");
-    const load = async (pageSize = 200) => {
-      const shopId = typeof shopIdSource === "function" ? shopIdSource() : toValue(shopIdSource);
-      if (!shopId) {
-        locations.value = [];
-        hydrated.value = "idle";
-        return [];
-      }
-      hydrated.value = "pending";
-      try {
-        locations.value = await harness.fetchShopifyShopLocations(shopId, pageSize);
-        hydrated.value = "success";
-        return locations.value;
-      } catch (err) {
-        hydrated.value = "error";
-        throw err;
-      }
-    };
-    return { locations, hydrated, load };
-  },
   useOrderSyncLandmarkDates: () => ({
     landmarkDates: harness.landmarkDates,
     load: harness.loadOrderLandmarkDates,

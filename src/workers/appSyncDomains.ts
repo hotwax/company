@@ -10,7 +10,7 @@
  * Worker-safe: it imports nothing the worker entry did not already import.
  */
 import type { SyncDomain } from "@common/db/types";
-import { commonDomains } from "@common/db/domain/commonDomains";
+import { commonDomains } from "@common/db/seed/seedDomains";
 
 import { dataManagerLogDomain } from "./domains/dataManagerLogDomain";
 import { dataManagerErrorRecordDomain } from "./domains/dataManagerErrorRecordDomain";
@@ -38,7 +38,7 @@ import { referenceDomains } from "./domains/referenceDomains";
 import { companyDb } from "@/db/companyDb";
 
 /**
- * Framework common domains for the seed tables Company's database actually has.
+ * Common seed domains for the seed tables Company's database actually has.
  *
  * Derived from the composed schema rather than listed by hand: a hand list registered twelve seed
  * domains whose tables Company never picked, and each one failed on every login sync.
@@ -47,7 +47,7 @@ import { companyDb } from "@/db/companyDb";
  */
 const OVERRIDDEN_SEED_TABLES = new Set(["carriers", "carrierShipmentMethods", "shopifyShops", "facilityGroups", "statuses"]);
 const companySeedDomains = Object.values(commonDomains).filter((domain) =>
-  domain.table && companyDb.frameworkTables.has(domain.table) && !OVERRIDDEN_SEED_TABLES.has(domain.table));
+  domain.table && companyDb.seedTables.has(domain.table) && !OVERRIDDEN_SEED_TABLES.has(domain.table));
 
 export const appSyncDomains: SyncDomain[] = [
   ...companySeedDomains,

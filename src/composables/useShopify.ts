@@ -812,43 +812,6 @@ export function useShopifyLocations(shopId: string | undefined) {
   return { locations: records, locationByFacility, records, hydrated };
 }
 
-/**
- * Live Shopify location mapping state for a shop, fetched on demand.
- *
- * For onboarding or setup flows that need to verify remote Shopify location mappings
- * immediately before and after changes rather than waiting for the background cache sync.
- */
-export function useShopifyShopLocations(shopIdSource: ShopIdSource) {
-  const locations = ref<any[]>([]);
-  const hydrated = ref<"idle" | "pending" | "success" | "error">("idle");
-
-  const load = async (pageSize = 200) => {
-    const shopId = String(toValue(shopIdSource) ?? "").trim();
-    if (!shopId) {
-      locations.value = [];
-      hydrated.value = "idle";
-      return [];
-    }
-
-    hydrated.value = "pending";
-    try {
-      locations.value = await fetchShopifyShopLocations(shopId, pageSize);
-      hydrated.value = "success";
-      return locations.value;
-    } catch (error) {
-      logger.error("Failed to load Shopify locations", error);
-      hydrated.value = "error";
-      throw error;
-    }
-  };
-
-  return {
-    locations,
-    hydrated,
-    load,
-  };
-}
-
 // ---------------------------------------------------------------------------------------------
 // Type mappings — one table backs every mapping page, sliced by shop + mappedTypeId
 // ---------------------------------------------------------------------------------------------
@@ -7574,3 +7537,32 @@ export type {
   QueuedFulfillmentRow,
   SyncedFulfillmentRow,
 } from "./useShopifyFulfillment";
+
+
+export function useShopifyShopLocations(shopId: Ref<string>) {
+  const locations = ref<any[]>([]);
+  const hydrated = ref<"idle" | "pending" | "success" | "error">("idle");
+
+  const load = async (pageSize = 200) => {
+    hydrated.value = "pending";
+    try {
+      if (shopId.value) {
+        locations.value = await fetchShopifyShopLocations(shopId.value, pageSize);
+        hydrated.value = "success";
+      } else {
+        hydrated.value = "error";
+        throw new Error("Missing shop ID");
+      }
+    } catch (error) {
+      logger.error('Failed to load Shopify locations', error);
+      hydrated.value = "error";
+      throw error;
+    }
+  };
+
+  return {
+    locations,
+    hydrated,
+    load
+  };
+}
