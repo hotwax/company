@@ -657,6 +657,7 @@
 </template>
 
 <script setup lang="ts">
+import { useShopifyShopLocations } from '@/composables/useShopify';
 import { DxpShopifyImg, commonUtil, logger, translate, useSolrSearch } from "@common"
 import {
   IonBackButton,
@@ -732,7 +733,6 @@ import { useCurrencies, useGoodIdentificationTypes, useOrganization, useTimeZone
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs"
 import {
   fetchLiveCatalogCounts,
-  fetchShopifyShopLocations,
   useOrderSyncLandmarkDates,
   useShopifyAccessScopes,
   useShopifyProductSyncRunState,
@@ -807,8 +807,8 @@ const localeInputRef = ref<any>(null)
 const timezoneInputRef = ref<any>(null)
 const orderNumberPrefixInputRef = ref<any>(null)
 const facilityImportTriggerRef = ref<any>(null)
-const shopifyLocationMappings = ref<any[]>([])
-const locationMappingFetchStatus = ref<"idle" | "pending" | "success" | "error">("idle")
+const linkedShopId = computed(() => String(linkedShopifyShop.value?.shopId || ""))
+const { locations: shopifyLocationMappings, hydrated: locationMappingFetchStatus, load: loadShopifyLocations } = useShopifyShopLocations(linkedShopId)
 const timeZoneOptions = ref<any[]>([])
 const storeValidationAttempted = ref(false)
 const storeFieldTouched = reactive({ productStoreId: false, locale: false })
@@ -863,7 +863,6 @@ const linkedShopifyShop = computed(() => {
 })
 // Never fall back to the persisted id here. Every downstream job/import action must use a shop
 // that the current cache or live setup response confirms is still assigned to this Product Store.
-const linkedShopId = computed(() => String(linkedShopifyShop.value?.shopId || ""))
 // A ShopifyShop row carries no systemMessageRemoteId; the remote is joined by internalId/remoteId.
 // useShopifySyncContext owns that join with the same rule the sync worker uses.
 const shopifySyncContext = useShopifySyncContext(() => linkedShopId.value)
@@ -1980,10 +1979,8 @@ async function refreshLocationMappings() {
   }
 
   busy.locations = true
-  locationMappingFetchStatus.value = "pending"
   try {
-    shopifyLocationMappings.value = await fetchShopifyShopLocations(linkedShopId.value, 200)
-    locationMappingFetchStatus.value = "success"
+    await loadShopifyLocations(200)
     if(shopifyLocationMappings.value.length) {
       onboarding.markStepComplete("locations")
       setFeedback("locations", translate("Shopify location mappings are ready."), "success")
