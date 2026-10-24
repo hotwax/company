@@ -91,6 +91,7 @@ vi.mock("@/composables/useProductStores", () => ({
 }))
 
 vi.mock("@/composables/useShopify", () => ({
+  useShopifyShopLocations: () => ({ locations: { value: [] }, hydrated: { value: "idle" }, load: () => {} }),
   fetchLiveCatalogCounts: vi.fn().mockResolvedValue({ shopifyProductCount: 0 }),
   fetchShopifyShopLocations: (...args: any[]) => harness.fetchShopifyShopLocations(...args),
   useOrderSyncLandmarkDates: () => ({
