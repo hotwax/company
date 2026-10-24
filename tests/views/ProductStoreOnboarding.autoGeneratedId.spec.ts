@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { flushPromises, mount } from "@vue/test-utils"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { computed, onMounted, reactive, ref } from "vue"
 
 const harness = vi.hoisted(() => ({
@@ -368,3 +368,5 @@ describe("ProductStoreOnboarding auto-generated Product Store ID", () => {
     expect((idInput(wrapper).element as any).disabled).toBeFalsy()
   })
 })
+
+enableAutoUnmount(afterEach);

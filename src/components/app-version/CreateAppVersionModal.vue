@@ -11,6 +11,7 @@
   </ion-header>
 
   <ion-content>
+    <p v-if="hostedVersionError" class="ion-padding" data-testid="hosted-versions-error">{{ translate("Failed to load app version information, please contact administrator.") }}</p>
     <ion-list>
       <ion-item>
         <ion-select v-model="selectedApp" :label="translate('App')" interface="popover">
@@ -49,9 +50,11 @@ import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, Ion
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import { useAppEnvironments, useAppVersionMutations, useAppVersions, useApps } from "@/composables/useAppVersion";
-import { hostedVersionsFor } from "@/utils/appVersionOptions";
+import { useHostedAppVersions } from "@/composables/useAppVersion";
 
 const { apps } = useApps();
+const { hostedVersionsFor, refreshHostedVersions, error: hostedVersionError } = useHostedAppVersions();
+void refreshHostedVersions();
 const { appEnvironments } = useAppEnvironments();
 const { byAppEnv } = useAppVersions();
 const { createAppVersion } = useAppVersionMutations();

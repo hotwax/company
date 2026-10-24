@@ -13,6 +13,7 @@
     </ion-header>
 
     <ion-content>
+      <p v-if="hostedVersionError" class="ion-padding" data-testid="hosted-versions-error">{{ translate("Failed to load app version information, please contact administrator.") }}</p>
       <div class="header ion-margin-top">
         <ion-item lines="none">
           <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
@@ -25,7 +26,7 @@
 
       <!-- Cold cache after login: the seed sync is still running, so show placeholders rather
            than an empty list that reads as "there is nothing here". -->
-      <template v-if="!hydrated">
+      <template v-if="!hydrated || hostedVersionsLoading">
         <div v-for="n in 4" :key="`sk-${n}`" class="list-item ion-padding-end">
           <ion-item lines="none">
             <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
@@ -70,13 +71,13 @@
 
 <script setup lang="ts">
 import { commonUtil, emitter, logger, translate } from "@common";
-import { IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonMenuButton, IonPage, IonSkeletonText, IonTitle, IonToolbar, alertController, modalController } from "@ionic/vue";
+import { IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonMenuButton, IonPage, IonSkeletonText, IonTitle, IonToolbar, alertController, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, shieldCheckmarkOutline, storefrontOutline } from "ionicons/icons";
 import { computed } from "vue";
 import CreateAppVersionModal from "@/components/app-version/CreateAppVersionModal.vue";
 import type { AppVersionRecord } from "@/composables/useAppVersion";
 import { useAppVersionMutations, useAppVersions } from "@/composables/useAppVersion";
-import { hostedVersionsFor } from "@/utils/appVersionOptions";
+import { useHostedAppVersions } from "@/composables/useAppVersion";
 
 const envColor: Record<string, string> = {
   AppEnvDev: "primary",
@@ -85,6 +86,8 @@ const envColor: Record<string, string> = {
 };
 
 const { appVersions, hydrated } = useAppVersions();
+const { hostedVersionsFor, refreshHostedVersions, loading: hostedVersionsLoading, error: hostedVersionError } = useHostedAppVersions();
+onIonViewWillEnter(refreshHostedVersions);
 const { updateAppVersion: applyUpdate, removeAppVersion: applyRemove } = useAppVersionMutations();
 
 /**

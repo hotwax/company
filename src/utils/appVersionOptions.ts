@@ -4,7 +4,8 @@ import { logger } from "@common";
  * Hosted app versions, per app AND per environment — the only versions the App Version screen
  * offers for pinning.
  *
- * ⚠️ HAND-MAINTAINED. A version is reachable only if it was built into that app's `dist/` and
+ * Legacy targets below are HAND-MAINTAINED. Job Manager UAT instead reads its deployment manifest.
+ * A version is reachable only if it was built into that app's `dist/` and
  * listed in that app's `firebase.json` rewrites for that hosting target. There is no OMS resource
  * that lists hosted versions, so this map mirrors those rewrites by hand: add an entry when a
  * version is hosted, remove it when a version is pruned.
@@ -19,7 +20,8 @@ import { logger } from "@common";
 const HOSTED_APP_VERSIONS: Record<string, Record<string, string[]>> = {
   JOB_MANAGER: {
     AppEnvDev: [],
-    AppEnvUAT: ["v3.3.0"],
+    // UAT is discovered from the deployment manifest by useHostedAppVersions.
+    AppEnvUAT: [],
     AppEnvProd: ["v3.3.0"]
   },
   COMPANY: {
@@ -90,3 +92,15 @@ export function hostedEnvironmentsFor(appId: string): string[] {
 
 /** The mapped app ids, for tests. */
 export const hostedAppVersionAppIds = Object.keys(HOSTED_APP_VERSIONS);
+
+/** Reject wrong-target manifests and HTML fallback responses before offering a pin. */
+export function versionsFromManifest(manifest: any, appId: string, environmentTypeId: string): string[] {
+  if(manifest?.schemaVersion !== 1 || manifest.appId !== appId || manifest.environmentTypeId !== environmentTypeId || !Array.isArray(manifest.versions)) {
+    throw new Error("Invalid hosted app version manifest");
+  }
+  if(manifest.versions.some((row: any) => typeof row?.version !== "string" || !HOSTED_VERSION_PATTERN.test(row.version) || row.environmentTypeId !== environmentTypeId)) {
+    throw new Error("Invalid hosted version record");
+  }
+
+  return sanitizeHostedVersions(appId, environmentTypeId, [...new Set<string>(manifest.versions.map((row: any) => row.version))]);
+}
