@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { type VueWrapper, flushPromises, mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { enableAutoUnmount, type VueWrapper, flushPromises, mount } from "@vue/test-utils";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref, toValue } from "vue";
 
 // Runs the REAL `useInventoryEvents` over cache-shaped rows: the ledger-to-row mapping is under test.
@@ -541,4 +541,11 @@ describe("ShopifyInventoryEventHistory - rows open their detail and their batch"
 
     expect((wrapper.vm as any).selectedBatch?.delivery.id).toBe("sent");
   });
+});
+
+enableAutoUnmount(afterEach);
+
+// Load the lazy view during setup, before the first test's assertion timeout.
+beforeAll(async () => {
+  await import("@/views/ShopifyInventoryEventHistory.vue");
 });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { reactive, ref } from "vue";
 
 const apiMock = vi.fn();
@@ -327,4 +327,11 @@ describe("ShopifyTransferSync - Summary Cards", () => {
     delete serviceState.errors.serviceJobRun;
     delete serviceState.errors.shopifyTransferSync;
   });
+});
+
+enableAutoUnmount(afterEach);
+
+// Load the lazy view during setup, before the first test's assertion timeout.
+beforeAll(async () => {
+  await import("@/views/ShopifyTransferSync.vue");
 });

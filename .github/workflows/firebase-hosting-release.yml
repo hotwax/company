@@ -10,7 +10,7 @@ jobs:
       config-path: .github/labeler.yml
       app: hotwax/company
       appDir: company
-      accxuiVersion: v1.10.0
+      accxuiVersion: 1b7caf1df647fdb229e7aba365a7716a07635ccf # tested AccxUI revision with shared database configuration
     secrets:
       envPAT: ${{ secrets.envPAT }}
       HOTWAX_PUBLIC_SECRET: ${{ secrets.HOTWAX_PUBLIC_SECRET }}
