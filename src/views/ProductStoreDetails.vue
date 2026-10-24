@@ -445,8 +445,9 @@ async function saveProductStoreField(field: ProductStoreField, value: any) {
       throw resp.data;
     }
   } catch(error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update product store settings."))
+    commonUtil.showToast(`${translate("Failed to update product store settings.")} ${serverError}`);
   }
   emitter.emit("dismissLoader")
 }
@@ -487,8 +488,9 @@ async function saveProductStoreSetting(setting: ProductStoreSettingConfig, setti
       throw resp.data;
     }
   } catch(error: any) {
-    logger.error(error);
-    commonUtil.showToast(translate("Failed to update product store settings."))
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to update product store settings", error);
+    commonUtil.showToast(`${translate("Failed to update product store settings.")} ${serverError}`);
   }
   emitter.emit("dismissLoader")
 }

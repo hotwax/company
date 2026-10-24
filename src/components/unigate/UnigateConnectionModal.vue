@@ -97,7 +97,7 @@ import {
   modalController,
 } from "@ionic/vue";
 import { closeOutline, eyeOffOutline, eyeOutline } from "ionicons/icons";
-import { commonUtil, translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import { updateUnigateConnection, useUnigate } from "@/composables/useUnigate";
 
 const props = defineProps<{
@@ -140,7 +140,9 @@ async function save() {
     commonUtil.showToast(translate("Unigate connection saved successfully."));
     dismiss(true);
   } catch (err: any) {
-    commonUtil.showToast(translate(err?.message || "Failed to save Unigate connection."));
+    const serverError = commonUtil.getErrorMessage(err);
+    logger.error(err);
+    commonUtil.showToast(`${translate("Failed to save Unigate connection.")} ${serverError}`);
   } finally {
     isSaving.value = false;
   }

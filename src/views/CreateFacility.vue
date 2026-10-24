@@ -195,8 +195,9 @@ async function createFacility() {
           positionId: "01"
         });
       } catch (locationError) {
-        logger.warn("Facility created, but default pick location setup failed.", locationError);
-        commonUtil.showToast(translate("Facility created, but default pick location could not be set up."));
+        const serverError = commonUtil.getErrorMessage(locationError);
+        logger.warn("Facility created, but default pick location setup failed", locationError);
+        commonUtil.showToast(`${translate("Facility created, but default pick location could not be set up.")} ${serverError}`);
       }
 
       router.replace(`/create-facility/address/${facilityId}`);
@@ -204,12 +205,9 @@ async function createFacility() {
       throw resp.data;
     }
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    if (error?.response?.data?.error?.message) {
-      commonUtil.showToast(error.response.data.error.message);
-    } else {
-      commonUtil.showToast(translate("Failed to create facility."));
-    }
+    commonUtil.showToast(`${translate("Failed to create facility.")} ${serverError}`);
   }
 }
 </script>

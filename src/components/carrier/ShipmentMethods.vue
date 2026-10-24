@@ -164,8 +164,9 @@ const editDeliveryDays = async (shipmentMethod: CarrierShipmentMethod) => {
               commonUtil.showToast(translate("Delivery days updated."));
               emit("mutation-complete");
             } catch (err) {
+              const serverError = commonUtil.getErrorMessage(err);
               logger.error("Failed to update delivery days", err);
-              commonUtil.showToast(translate("Failed to update delivery days."));
+              commonUtil.showToast(`${translate("Failed to update delivery days.")} ${serverError}`);
             } finally {
               localPendingMethods.value.delete(shipmentMethod.shipmentMethodTypeId);
             }
@@ -203,8 +204,9 @@ const editCarrierServiceCode = async (shipmentMethod: CarrierShipmentMethod) => 
               commonUtil.showToast(translate("Carrier code updated."));
               emit("mutation-complete");
             } catch (err) {
+              const serverError = commonUtil.getErrorMessage(err);
               logger.error("Failed to update carrier code", err);
-              commonUtil.showToast(translate("Failed to update carrier code."));
+              commonUtil.showToast(`${translate("Failed to update carrier code.")} ${serverError}`);
             } finally {
               localPendingMethods.value.delete(shipmentMethod.shipmentMethodTypeId);
             }
@@ -243,8 +245,9 @@ const toggleCarrierMethodAssociation = async (
     }
     emit("mutation-complete");
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error("Failed to toggle carrier shipment method association", err);
-    commonUtil.showToast(translate("Failed to update shipment method."));
+    commonUtil.showToast(`${translate("Failed to update shipment method.")} ${serverError}`);
   } finally {
     localPendingMethods.value.delete(typeId);
   }

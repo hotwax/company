@@ -151,8 +151,9 @@ const updateContactField = async () => {
           }
           commonUtil.showToast(translate(`${OPTIONS[props.type].placeholder} updated successfully.`));
         } catch (error) {
-          commonUtil.showToast(translate(`Failed to update ${props.type === "email" ? "email" : (props.type === "phoneNumber" ? "phone number" : "external ID")}.`));
+          const serverError = commonUtil.getErrorMessage(error);
           logger.error(error);
+          commonUtil.showToast(`${translate(`Failed to update ${props.type === "email" ? "email" : (props.type === "phoneNumber" ? "phone number" : "external ID")}.`)} ${serverError}`);
         }
 
         return true;
@@ -210,8 +211,9 @@ const deleteContactField = async () => {
           }
           commonUtil.showToast(translate(`${OPTIONS[props.type].placeholder} removed successfully.`));
         } catch (error) {
-          commonUtil.showToast(translate(`Failed to remove ${props.type === "email" ? "email" : (props.type === "phoneNumber" ? "phone number" : "external ID")}.`));
+          const serverError = commonUtil.getErrorMessage(error);
           logger.error(error);
+          commonUtil.showToast(`${translate(`Failed to remove ${props.type === "email" ? "email" : (props.type === "phoneNumber" ? "phone number" : "external ID")}.`)} ${serverError}`);
         }
       }
     }]

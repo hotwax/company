@@ -264,8 +264,9 @@ async function save() {
       closeModal({ dismissed: false, connection: created || payload });
     }
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to save Klaviyo connection"));
+    commonUtil.showToast(`${translate("Failed to save Klaviyo connection")}. ${serverError}`);
   } finally {
     isSaving.value = false;
   }

@@ -128,8 +128,9 @@ async function saveAppVersion() {
     commonUtil.showToast(translate("version created successfully", { appName: selectedAppName.value, environment: selectedEnvDesc.value }));
     modalController.dismiss({ fetchInfo: true });
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to register the app version", error);
-    commonUtil.showToast(translate("Failed to register the app version"));
+    commonUtil.showToast(`${translate("Failed to register the app version")}. ${serverError}`);
   }
 }
 </script>
