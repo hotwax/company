@@ -1,6 +1,7 @@
-import { api, commonUtil, useLiveEntity } from "@common";
+import { api, commonUtil, logger, useLiveEntity } from "@common";
 import { companyDb } from "@/db/companyDb";
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { hostedVersionsFor as legacyHostedVersionsFor, versionsFromManifest } from "@/utils/appVersionOptions";
 import { resyncDomain } from "@/db/appDbSync";
 import { useTypedEnums } from "./useSeed";
 
@@ -102,4 +103,41 @@ export function useAppVersionMutations() {
   }
 
   return { createAppVersion, updateAppVersion, removeAppVersion, refreshAppVersions };
+}
+
+// Public deployment metadata is not tenant data. Never attach OMS credentials to this request.
+export function useHostedAppVersions() {
+  const uatVersions = ref<string[]>([]);
+  const loading = ref(false);
+  const error = ref(false);
+  let request: Promise<void> | undefined;
+
+  const refreshHostedVersions = () => {
+    if(request) {return request;}
+    loading.value = true;
+    error.value = false;
+    uatVersions.value = [];
+    request = (async () => {
+      try {
+        const response = await fetch("https://job-manager-uat.web.app/hosted-versions.json", { credentials: "omit", cache: "no-store" });
+        if(!response.ok) {throw new Error("Could not load hosted versions");}
+        uatVersions.value = versionsFromManifest(await response.json(), "JOB_MANAGER", "AppEnvUAT");
+      } catch(cause) {
+        error.value = true;
+        logger.error(cause);
+      } finally {
+        loading.value = false;
+        request = undefined;
+      }
+    })();
+
+    return request;
+  };
+
+  const hostedVersionsFor = (appId: string, environmentTypeId: string) =>
+    appId === "JOB_MANAGER" && environmentTypeId === "AppEnvUAT"
+      ? uatVersions.value
+      : legacyHostedVersionsFor(appId, environmentTypeId);
+
+  return { hostedVersionsFor, refreshHostedVersions, loading, error };
 }
