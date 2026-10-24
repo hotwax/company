@@ -37,14 +37,12 @@ const HOSTED_APP_VERSIONS: Record<string, Record<string, string[]>> = {
  * fails it looks unversioned to the router guard, so it could never work as a pin. Duplicated
  * rather than exported from `common/` to keep this change inside `apps/company`.
  */
-const HOSTED_VERSION_PATTERN = /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const HOSTED_VERSION_PATTERN = /^v\d+\.\d+\.\d+$/;
 
 /** Newest-first. Safe only for values that passed `HOSTED_VERSION_PATTERN`. */
 function compareNewestFirst(a: string, b: string): number {
-  const [leftCore, ...leftPre] = a.slice(1).split("-");
-  const [rightCore, ...rightPre] = b.slice(1).split("-");
-  const left = leftCore.split(".").map(Number);
-  const right = rightCore.split(".").map(Number);
+  const left = a.slice(1).split(".").map(Number);
+  const right = b.slice(1).split(".").map(Number);
 
   for(let index = 0; index < 3; index += 1) {
     if(left[index] !== right[index]) {
@@ -52,10 +50,7 @@ function compareNewestFirst(a: string, b: string): number {
     }
   }
 
-  if(!leftPre.length && rightPre.length) {return -1;}
-  if(leftPre.length && !rightPre.length) {return 1;}
-
-  return rightPre.join("-").localeCompare(leftPre.join("-"), "en", { numeric: true });
+  return 0;
 }
 
 /**

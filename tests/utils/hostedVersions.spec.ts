@@ -3,8 +3,8 @@ vi.mock("@common", () => ({ logger: { warn: vi.fn() } }));
 import { versionsFromManifest, hostedVersionsFor } from "@/utils/appVersionOptions";
 const manifest = (versions: string[]) => ({ schemaVersion: 1, appId: "JOB_MANAGER", environmentTypeId: "AppEnvUAT", versions: versions.map(version => ({version, environmentTypeId: "AppEnvUAT"})) });
 describe("hosted versions", () => {
-  it("offers deployed candidates and rollback versions in newest-first order", () => {
-    expect(versionsFromManifest(manifest(["v3.3.0", "v3.5.0-rc.1", "v3.5.0-rc.10", "v3.5.0", "v3.3.0"]), "JOB_MANAGER", "AppEnvUAT")).toEqual(["v3.5.0", "v3.5.0-rc.10", "v3.5.0-rc.1", "v3.3.0"]);
+  it("offers deployed stable versions in newest-first order", () => {
+    expect(versionsFromManifest(manifest(["v3.3.0", "v3.4.1", "v3.5.0", "v3.3.0"]), "JOB_MANAGER", "AppEnvUAT")).toEqual(["v3.5.0", "v3.4.1", "v3.3.0"]);
   });
   it("rejects another environment or application", () => {
     expect(() => versionsFromManifest(manifest(["v3.3.0"]), "COMPANY", "AppEnvUAT")).toThrow();
