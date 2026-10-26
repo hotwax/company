@@ -1274,8 +1274,9 @@ async function executeClone() {
     commonUtil.showToast(translate("Settings cloned successfully"));
     closeCloneSettings();
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Cloning failed", error);
-    commonUtil.showToast(translate("Failed to clone settings"));
+    commonUtil.showToast(`${translate("Failed to clone settings")}. ${serverError}`);
   } finally {
     emitter.emit("dismissLoader");
   }
@@ -1365,8 +1366,9 @@ async function updateCredentials() {
     await refreshAfterMutation("shopifyShop", { shopId: shop.value.shopId });
     showCredentials.value = false;
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error('updateShopifyCredentials', error);
-    commonUtil.showToast(translate('Failed to update credentials'));
+    commonUtil.showToast(`${translate('Failed to update credentials')}. ${serverError}`);
   }
   emitter.emit('dismissLoader');
 }
@@ -1419,8 +1421,9 @@ async function onConnectionAccessScopeChange(accessScopeEnumId: string) {
     await setConnectionAccessScope(remoteId, accessScopeEnumId);
     commonUtil.showToast(translate('Connection access updated'));
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error('setConnectionAccessScope', error);
-    commonUtil.showToast(translate('Failed to update connection access'));
+    commonUtil.showToast(`${translate('Failed to update connection access')}. ${serverError}`);
   }
   isSavingAccessScope.value = false;
 }
@@ -1436,10 +1439,11 @@ async function refresh(isAutoFetch = false) {
       commonUtil.showToast(translate('Fetched {count} access scope(s) from Shopify', { count: granted.length }));
     }
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error('refreshAccessScopes', error);
     // Report a failure either way: opening the modal is a user action too, and an empty list alone
     // reads as "no scopes granted" rather than "could not reach Shopify".
-    commonUtil.showToast(translate('Failed to refresh access scopes'));
+    commonUtil.showToast(`${translate('Failed to refresh access scopes')}. ${serverError}`);
   } finally {
     isFetchingScopes.value = false;
     if(!isAutoFetch) {emitter.emit('dismissLoader');}
@@ -1482,8 +1486,9 @@ async function updateProductStoreMapping() {
       throw resp.data;
     }
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to link product store"));
+    commonUtil.showToast(`${translate("Failed to link product store")}. ${serverError}`);
   }
   emitter.emit("dismissLoader");
 }

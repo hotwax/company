@@ -346,8 +346,9 @@ const togglePermission = async (permission: any) => {
       throw resp.data;
     }
   } catch (error) {
-    commonUtil.showToast(translate("Failed to update user group permission association."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
+    commonUtil.showToast(`${translate("Failed to update user group permission association.")} ${serverError}`);
   }
 
   updatingPermissionIds.value[permission.userPermissionId] = false;
@@ -380,8 +381,9 @@ const updateUserGroup = async () => {
       throw resp.data;
     }
   } catch (error) {
-    commonUtil.showToast(translate("Failed to update user group."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
+    commonUtil.showToast(`${translate("Failed to update user group.")} ${serverError}`);
   }
 };
 
@@ -438,8 +440,9 @@ const saveArtifactAuthz = async () => {
       throw resp.data;
     }
   } catch (error) {
-    commonUtil.showToast(isEditMode.value ? translate("Failed to update authorization.") : translate("Failed to add authorization."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
+    commonUtil.showToast(`${isEditMode.value ? translate("Failed to update authorization.") : translate("Failed to add authorization.")} ${serverError}`);
   }
 };
 
@@ -457,8 +460,9 @@ const removeAuthorization = async (authorization: any) => {
       throw resp.data;
     }
   } catch (error) {
-    commonUtil.showToast(translate("Failed to remove authorization."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
+    commonUtil.showToast(`${translate("Failed to remove authorization.")} ${serverError}`);
   }
 };
 

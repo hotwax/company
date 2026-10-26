@@ -213,8 +213,9 @@ async function saveMapping(facilityId: string) {
       throw resp.data;
     }
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update mapping"));
+    commonUtil.showToast(`${translate("Failed to update mapping")}. ${serverError}`);
   }
   emitter.emit("dismissLoader");
 }
@@ -236,8 +237,9 @@ async function saveAllDirtyMappings() {
     await shopMutations.refreshLocations();
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to save some mappings"));
+    commonUtil.showToast(`${translate("Failed to save some mappings")}. ${serverError}`);
   }
   emitter.emit("dismissLoader");
 }
@@ -280,7 +282,9 @@ async function runAudit() {
       }).length
     }
   } catch (e) {
-    commonUtil.showToast(translate('Audit failed'))
+    const serverError = commonUtil.getErrorMessage(e);
+    logger.error(e);
+    commonUtil.showToast(`${translate('Audit failed')}. ${serverError}`);
   } finally {
     isAuditing.value = false
   }

@@ -1544,8 +1544,9 @@ async function requestInventoryEventFeedChange(event: Event) {
       ? translate("Inventory events set to real-time push. Restart every OMS node before relying on event capture.")
       : translate("Inventory events set to manual. Cached routing may take up to 15 minutes to expire."));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to update Shopify inventory event feed", error);
-    commonUtil.showToast(translate("Failed to update the inventory event feed."));
+    commonUtil.showToast(`${translate("Failed to update the inventory event feed.")} ${serverError}`);
   } finally {
     inventoryEventFeedSaving.value = false;
   }
@@ -1586,8 +1587,9 @@ async function requestLocationEventFeedChange(event: Event) {
       ? translate("Location events set to real-time push. Restart every OMS node before relying on event capture.")
       : translate("Location events set to manual. Cached routing may take up to 15 minutes to expire."));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to update Shopify location inventory event feed", error);
-    commonUtil.showToast(translate("Failed to update the location inventory event feed."));
+    commonUtil.showToast(`${translate("Failed to update the location inventory event feed.")} ${serverError}`);
   } finally {
     locationEventFeedSaving.value = false;
   }
@@ -1870,11 +1872,18 @@ async function openChannelFacilities(channel: any) {
       fromDate: facility.fromDate,
       thruDate: now,
     }));
-    const { failed } = await useFacilityGroupMutations(facilityGroupId).saveMembers(additions, expirations);
-    commonUtil.showToast(failed ? translate("Failed to update some facilities") : translate("Facilities updated"));
+    const { failed, results } = await useFacilityGroupMutations(facilityGroupId).saveMembers(additions, expirations);
+    if (failed) {
+      const failedResult: any = results?.find((r: any) => r.status === "rejected" || commonUtil.hasError(r?.value));
+      const serverError = failedResult ? commonUtil.getErrorMessage(failedResult.reason || failedResult.value) : "";
+      commonUtil.showToast(`${translate("Failed to update some facilities")}. ${serverError}`);
+    } else {
+      commonUtil.showToast(translate("Facilities updated"));
+    }
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to update Shopify inventory channel facilities", facilityGroupId, error);
-    commonUtil.showToast(translate("Failed to update some facilities"));
+    commonUtil.showToast(`${translate("Failed to update some facilities")}. ${serverError}`);
   } finally {
     savingGroupMembershipFor.value = "";
   }

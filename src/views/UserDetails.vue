@@ -745,8 +745,10 @@ const updateFavoriteProductStore = (event: any) => {
       .then(() => {
         getShopifyShops(selectedProductStoreId);
         commonUtil.showToast(translate("Favorite product store updated successfully."));
-      }).catch(() => {
-        commonUtil.showToast(translate("Failed to set favorite product store."));
+      }).catch((err) => {
+        const serverError = commonUtil.getErrorMessage(err);
+        logger.error(err);
+        commonUtil.showToast(`${translate("Failed to set favorite product store.")} ${serverError}`);
       });
   }
 };
@@ -762,8 +764,10 @@ const updateFavoriteShopifyShop = (event: any) => {
     userStore.setFavoriteShopifyShop({ "userId": selectedUser.value?.userId, "shopId": selectedShopId })
       .then(() => {
         commonUtil.showToast(translate("Favorite shopify shop updated successfully."));
-      }).catch(() => {
-        commonUtil.showToast(translate("Failed to set favorite shopify shop."));
+      }).catch((err) => {
+        const serverError = commonUtil.getErrorMessage(err);
+        logger.error(err);
+        commonUtil.showToast(`${translate("Failed to set favorite shopify shop.")} ${serverError}`);
       });
   }
 };
@@ -885,8 +889,9 @@ const addContactField = async (type: string) => {
           }
           commonUtil.showToast(translate(`${OPTIONS[type as "email" | "phoneNumber" | "externalId"].placeholder} added successfully.`));
         } catch (error) {
-          commonUtil.showToast(translate(`Failed to add ${type === "email" ? "email" : (type === "phoneNumber" ? "phone number" : "external ID")}.`));
+          const serverError = commonUtil.getErrorMessage(error);
           logger.error(error);
+          commonUtil.showToast(`${translate(`Failed to add ${type === "email" ? "email" : (type === "phoneNumber" ? "phone number" : "external ID")}.`)} ${serverError}`);
         }
 
         return true;
@@ -953,8 +958,9 @@ const createNewUserLogin = async () => {
       throw resp.data;
     }
   } catch (error) {
-    commonUtil.showToast(translate("Something went wrong."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
+    commonUtil.showToast(`${translate("Failed to create user login")}. ${serverError}`);
   }
 };
 
@@ -989,8 +995,9 @@ const resetPassword = async () => {
       throw resp.data;
     }
   } catch (error) {
-    commonUtil.showToast(translate("Failed to reset password."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
+    commonUtil.showToast(`${translate("Failed to reset password.")} ${serverError}`);
   }
   closeResetPasswordModal();
 };
@@ -1040,8 +1047,9 @@ const sendResetPasswordEmail = async () => {
       throw resp.data;
     }
   } catch (error) {
-    commonUtil.showToast(translate("Failed to send password reset email."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
+    commonUtil.showToast(`${translate("Failed to send password reset email.")} ${serverError}`);
   }
   closeResetPasswordModal();
 };
@@ -1086,8 +1094,9 @@ const forceLogout = async () => {
     await userStore.getSelectedUserDetails({ partyId: props.partyId, isFetchRequired: true });
     commonUtil.showToast(translate("User has been logged out."));
   } catch (error) {
-    commonUtil.showToast(translate("Failed to perform force logout."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
+    commonUtil.showToast(`${translate("Failed to perform force logout.")} ${serverError}`);
   }
 };
 
@@ -1121,8 +1130,9 @@ const updateUserLoginStatus = async (event: any) => {
             throw resp.data;
           }
         } catch (error) {
-          commonUtil.showToast(translate("Failed to update user login status."));
+          const serverError = commonUtil.getErrorMessage(error);
           logger.error(error);
+          commonUtil.showToast(`${translate("Failed to update user login status.")} ${serverError}`);
         }
       }
     }],
@@ -1194,12 +1204,12 @@ const selectFacility = async () => {
             roleTypeId: "WAREHOUSE_PICKER",
           });
           if(commonUtil.hasError(resp)) {
-            commonUtil.showToast(translate("Something went wrong."));
             throw resp.data;
           }
         } catch (error) {
+          const serverError = commonUtil.getErrorMessage(error);
           logger.error(error);
-
+          commonUtil.showToast(`${translate("Failed to update user role.")} ${serverError}`);
           return;
         }
       }
@@ -1211,9 +1221,11 @@ const selectFacility = async () => {
           roleTypeId: "WAREHOUSE_PICKER",
         })));
 
-      const hasFailedResponse = [...removeResponses, ...createResponses].some((response: any) => response.status === "rejected");
-      if(hasFailedResponse) {
-        commonUtil.showToast(translate("Failed to update some association(s)."));
+      const failedResponse: any = [...removeResponses, ...createResponses].find((response: any) => response.status === "rejected");
+      if(failedResponse) {
+        const serverError = commonUtil.getErrorMessage(failedResponse.reason);
+        logger.error(failedResponse.reason);
+        commonUtil.showToast(`${translate("Failed to update some association(s).")} ${serverError}`);
       } else {
         commonUtil.showToast(translate("Facility associations updated successfully."));
       }
@@ -1262,9 +1274,11 @@ const saveSecurityGroups = async () => {
         fromDate: DateTime.now().toMillis()
       })));
 
-    const hasFailedResponse = [...updateResponses, ...createResponses].some((response: any) => response.status === "rejected");
-    if(hasFailedResponse) {
-      commonUtil.showToast(translate("Failed to update some security group(s)."));
+    const failedResponse: any = [...updateResponses, ...createResponses].find((response: any) => response.status === "rejected");
+    if(failedResponse) {
+      const serverError = commonUtil.getErrorMessage(failedResponse.reason);
+      logger.error(failedResponse.reason);
+      commonUtil.showToast(`${translate("Failed to update some security group(s).")} ${serverError}`);
     } else {
       commonUtil.showToast(translate("Security group(s) updated successfully."));
     }
@@ -1275,8 +1289,9 @@ const saveSecurityGroups = async () => {
     isUserFulfillmentAdmin.value = updatedUserSecurityGroups.length ? await userStore.isUserFulfillmentAdmin(updatedUserSecurityGroups.map((group: any) => group.userGroupId)) : false;
     await userStore.indexEmployee(selectedUser.value.partyId);
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update some security group(s)."));
+    commonUtil.showToast(`${translate("Failed to update some security group(s).")} ${serverError}`);
   }
   closeSelectSecurityGroupModal();
 };
@@ -1321,12 +1336,12 @@ const selectProductStore = async () => {
             roleTypeId: "APPLICATION_USER",
           });
           if(commonUtil.hasError(resp)) {
-            commonUtil.showToast(translate("Something went wrong."));
             throw resp.data;
           }
         } catch (error) {
+          const serverError = commonUtil.getErrorMessage(error);
           logger.error(error);
-
+          commonUtil.showToast(`${translate("Failed to update user role.")} ${serverError}`);
           return;
         }
       }
@@ -1338,9 +1353,11 @@ const selectProductStore = async () => {
           roleTypeId: "APPLICATION_USER",
         })));
 
-      const hasFailedResponse = [...updateResponses, ...createResponses].some((response: any) => response.status === "rejected");
-      if(hasFailedResponse) {
-        commonUtil.showToast(translate("Failed to update some role(s)."));
+      const failedResponse: any = [...updateResponses, ...createResponses].find((response: any) => response.status === "rejected");
+      if(failedResponse) {
+        const serverError = commonUtil.getErrorMessage(failedResponse.reason);
+        logger.error(failedResponse.reason);
+        commonUtil.showToast(`${translate("Failed to update some role(s).")} ${serverError}`);
       } else {
         commonUtil.showToast(translate("Role(s) updated successfully."));
       }
@@ -1380,8 +1397,9 @@ const updatePickerRoleStatus = async (event: any) => {
       throw resp.data;
     }
   } catch (error) {
-    commonUtil.showToast(translate("Failed to update user role."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
+    commonUtil.showToast(`${translate("Failed to update user role.")} ${serverError}`);
   }
 };
 
@@ -1428,8 +1446,9 @@ const editName = async () => {
               throw resp.data;
             }
           } catch (err) {
-            commonUtil.showToast(translate("Failed to rename user."));
+            const serverError = commonUtil.getErrorMessage(err);
             logger.error(err);
+            commonUtil.showToast(`${translate("Failed to rename user.")} ${serverError}`);
           }
 
           emitter.emit("dismissLoader");
@@ -1471,8 +1490,9 @@ const updateUserStatus = async (event: any) => {
       throw resp.data;
     }
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error(err);
-    commonUtil.showToast(translate("Failed to update user status."));
+    commonUtil.showToast(`${translate("Failed to update user status.")} ${serverError}`);
   }
 
   emitter.emit("dismissLoader");
@@ -1525,8 +1545,9 @@ const uploadImage = async (event: any) => {
       throw resp.data;
     }
   } catch (error) {
-    commonUtil.showToast(translate("Failed to upload image."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Error uploading image:", error);
+    commonUtil.showToast(`${translate("Failed to upload image.")} ${serverError}`);
   }
 };
 

@@ -76,8 +76,9 @@ async function removeStoreFromFacility() {
       throw resp.data;
     }
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error(err);
-    commonUtil.showToast(translate('Store unlink failed.'));
+    commonUtil.showToast(`${translate('Store unlink failed.')} ${serverError}`);
   }
 
   popoverController.dismiss();

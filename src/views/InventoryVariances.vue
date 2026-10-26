@@ -228,8 +228,9 @@ async function addVarianceToGroup(enumId: any, event: any) {
   } catch (err) {
     // Reverting the checkbox shows *something* happened but not that it failed — a user who looks
     // away during the request sees only the original state and assumes the toggle never took.
-    commonUtil.showToast(translate("Failed to update variance reason"));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error(err);
+    commonUtil.showToast(`${translate("Failed to update variance reason")}. ${serverError}`);
     checkbox.checked = !checkbox.checked;
   }
   emitter.emit('dismissLoader');

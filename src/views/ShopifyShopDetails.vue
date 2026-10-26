@@ -130,8 +130,9 @@ async function saveShopDetails() {
       throw resp.data;
     }
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update shop details"));
+    commonUtil.showToast(`${translate("Failed to update shop details")}. ${serverError}`);
   }
   emitter.emit("dismissLoader");
 }

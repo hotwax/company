@@ -781,8 +781,9 @@ async function loadMessageErrors(systemMessageId: string, fresh = false) {
     // The domain stores the rows in systemMessageErrors, which `errorsFor` reads reactively.
     await (fresh ? refreshSystemMessageErrors(systemMessageId) : requestSystemMessageErrors(systemMessageId));
   } catch(error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Could not load fulfillment failure details", error);
-    void commonUtil.showToast(translate("Could not refresh failure details. Please try again."));
+    void commonUtil.showToast(`${translate("Could not refresh failure details. Please try again.")} ${serverError}`);
   } finally {
     loadingErrorIds.value = loadingErrorIds.value.filter((id) => id !== systemMessageId);
   }
@@ -1024,8 +1025,9 @@ async function downloadShopifySnapshot(source: SyncedFulfillmentRow) {
     settled.set(source.fulfillmentKey, { state: "loaded", details: result });
     fulfillmentDetails.value = settled;
   } catch(error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to download current Shopify fulfillment", error);
-    void commonUtil.showToast(translate("Could not download the current Shopify fulfillment. Please try again."));
+    void commonUtil.showToast(`${translate("Could not download the current Shopify fulfillment. Please try again.")} ${serverError}`);
   } finally {
     const remaining = new Set(downloadingSnapshots.value);
     remaining.delete(source.fulfillmentKey);

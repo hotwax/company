@@ -286,12 +286,9 @@ async function createVirtualFacility() {
       throw resp.data;
     }
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    if (error?.response?.data?.error?.message) {
-      commonUtil.showToast(error.response.data.error.message);
-    } else {
-      commonUtil.showToast(translate('Failed to create parking.'));
-    }
+    commonUtil.showToast(`${translate('Failed to create parking.')} ${serverError}`);
   }
   showCreateVirtualFacilityModal.value = false;
 }
@@ -317,8 +314,9 @@ async function openVirtualFacilityActionsPopover(event: Event, facility: any) {
           throw resp.data;
         }
       } catch (error) {
-        commonUtil.showToast(translate('Failed to rename parking.'));
+        const serverError = commonUtil.getErrorMessage(error);
         logger.error('Failed to rename parking.', error);
+        commonUtil.showToast(`${translate('Failed to rename parking.')} ${serverError}`);
       }
     } else if (result.data.action === "archive") {
       try {
@@ -329,8 +327,9 @@ async function openVirtualFacilityActionsPopover(event: Event, facility: any) {
           throw resp.data;
         }
       } catch (error) {
-        commonUtil.showToast(translate('Failed to archive parking.'));
+        const serverError = commonUtil.getErrorMessage(error);
         logger.error('Failed to archive parking.', error);
+        commonUtil.showToast(`${translate('Failed to archive parking.')} ${serverError}`);
       }
     }
   }
@@ -360,8 +359,9 @@ async function unarchiveFacility(archivedFacility: any) {
       throw resp.data;
     }
   } catch (err) {
-    commonUtil.showToast(translate("Failed to unarchive parking."));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error(err);
+    commonUtil.showToast(`${translate("Failed to unarchive parking.")} ${serverError}`);
   }
 }
 </script>

@@ -375,13 +375,15 @@ async function saveProductStores() {
 
   // The composable owns both directions (a removal is a POST closing the row with a thruDate) and
   // refreshes the cached associations afterwards.
-  const { failed: anyFailed } = await groupMutations.saveProductStores(
+  const { failed: anyFailed, results } = await groupMutations.saveProductStores(
     toAdd,
     toRemove.map((productStoreId) => ({ productStoreId, fromDate: associationByStoreId[productStoreId].fromDate })),
   );
 
   if (anyFailed) {
-    commonUtil.showToast(translate("Failed to update some product store associations"));
+    const failedResult: any = results?.find((r: any) => r.status === "rejected" || commonUtil.hasError(r?.value));
+    const serverError = failedResult ? commonUtil.getErrorMessage(failedResult.reason || failedResult.value) : "";
+    commonUtil.showToast(`${translate("Failed to update some product store associations")}. ${serverError}`);
   } else {
     commonUtil.showToast(translate("Product stores updated"));
   }
@@ -525,10 +527,12 @@ async function saveFacilityMemberships() {
       .map((facility: any) => ({ facilityId: facility.facilityId, fromDate: memberByFacilityId[facility.facilityId].fromDate, sequenceNum: facility.sequenceNum }))
   ];
 
-  const { failed: anyFailed } = await groupMutations.saveMembers(toCreate, toStore);
+  const { failed: anyFailed, results } = await groupMutations.saveMembers(toCreate, toStore);
 
   if (anyFailed) {
-    commonUtil.showToast(translate("Failed to update some facilities"));
+    const failedResult: any = results?.find((r: any) => r.status === "rejected" || commonUtil.hasError(r?.value));
+    const serverError = failedResult ? commonUtil.getErrorMessage(failedResult.reason || failedResult.value) : "";
+    commonUtil.showToast(`${translate("Failed to update some facilities")}. ${serverError}`);
   } else {
     commonUtil.showToast(translate("Facilities updated"));
     isFacilitiesModified.value = false;

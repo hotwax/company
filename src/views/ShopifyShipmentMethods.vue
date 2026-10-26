@@ -314,8 +314,9 @@ async function saveMapping(shipmentMethodTypeId: string) {
     await shopMutations.refreshCarrierShipments();
     editingItemKey.value = "";
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update mapping"));
+    commonUtil.showToast(`${translate("Failed to update mapping")}. ${serverError}`);
   }
   emitter.emit("dismissLoader");
 }
@@ -354,8 +355,9 @@ async function saveAllDirtyMappings() {
     await shopMutations.refreshCarrierShipments();
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to save some mappings"));
+    commonUtil.showToast(`${translate("Failed to save some mappings")}. ${serverError}`);
   }
   emitter.emit("dismissLoader");
 }
@@ -546,8 +548,9 @@ async function createShipmentMethod() {
 
     commonUtil.showToast(translate(resultMessage));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to create shipment method"));
+    commonUtil.showToast(`${translate("Failed to create shipment method")}. ${serverError}`);
     // Keep the modal open so the user can correct and retry.
 
     return;

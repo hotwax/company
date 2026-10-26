@@ -399,16 +399,20 @@ async function applyBulkCapacity(maximumOrderLimit: number | string) {
   // It used to re-refresh every success as well, which doubled the request count of a bulk edit —
   // 50 selected facilities meant 100 refetches, the second half of them strictly sequential.
   const failedNames: string[] = [];
+  let firstError: any = null;
   for (const [index, result] of results.entries() as any) {
     const facilityId = facilityIds[index];
     if (result.status !== "fulfilled" || commonUtil.hasError(result.value)) {
       failedNames.push(getFacilityName(facilityId));
-      logger.error("Failed to update facility", result.status === "rejected" ? result.reason : result.value?.data);
+      const err = result.status === "rejected" ? result.reason : result.value?.data;
+      if (!firstError) firstError = err;
+      logger.error("Failed to update facility", err);
     }
   }
 
   if (failedNames.length) {
-    commonUtil.showToast(translate("Failed to update fulfillment capacity for ", { facilityName: failedNames.join(", ") }));
+    const serverError = firstError ? commonUtil.getErrorMessage(firstError) : "";
+    commonUtil.showToast(`${translate("Failed to update fulfillment capacity for ", { facilityName: failedNames.join(", ") })} ${serverError}`);
   } else {
     commonUtil.showToast(translate("Fulfillment capacity updated successfully for ", { facilityName: facilityIds.map((facilityId: string) => getFacilityName(facilityId)).join(", ") }));
   }
@@ -438,6 +442,7 @@ async function applyBulkSellOnline(facilityGroupId: string, enable: boolean) {
   if (!facilityGroupId) return;
   const facilityIds = [...selectedFacilityIds.value];
   const failedNames: string[] = [];
+  let firstError: any = null;
 
   // Deliberately a SERVER read, not the cache: this guards against creating a duplicate
   // association, and the login-time cache could be stale if a membership changed elsewhere.
@@ -455,6 +460,7 @@ async function applyBulkSellOnline(facilityGroupId: string, enable: boolean) {
       }
       if (resp && commonUtil.hasError(resp)) throw resp.data;
     } catch (err) {
+      if (!firstError) firstError = err;
       failedNames.push(getFacilityName(facilityId));
       logger.error("Failed to update sell inventory online setting", err);
     }
@@ -474,7 +480,8 @@ async function applyBulkSellOnline(facilityGroupId: string, enable: boolean) {
 
   const groupName = inventoryGroups.value.find((group: any) => group.facilityGroupId === facilityGroupId)?.facilityGroupName || facilityGroupId;
   if (failedNames.length) {
-    commonUtil.showToast(translate("Failed to update sell inventory online setting"));
+    const serverError = firstError ? commonUtil.getErrorMessage(firstError) : "";
+    commonUtil.showToast(`${translate("Failed to update sell inventory online setting")}. ${serverError}`);
   } else {
     commonUtil.showToast(translate(enable ? "is now selling on" : "no longer sells on", { facilityName: facilityIds.map((facilityId: string) => getFacilityName(facilityId)).join(", "), facilityGroupId: groupName }));
   }

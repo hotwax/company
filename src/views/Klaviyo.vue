@@ -394,8 +394,9 @@ async function save() {
     commonUtil.showToast(translate("Unigate tenant updated"));
     closeUnigateConfig();
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update Unigate tenant"));
+    commonUtil.showToast(`${translate("Failed to update Unigate tenant")}. ${serverError}`);
   } finally {
     isSaving.value = false;
   }

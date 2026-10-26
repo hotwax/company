@@ -404,8 +404,9 @@ async function commitSubjectIfChanged(evt: any) {
     commonUtil.showToast(translate("Subject updated"));
     delete subjectDrafts.value[evt.emailType];
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update subject"));
+    commonUtil.showToast(`${translate("Failed to update subject")}. ${serverError}`);
   } finally {
     busyEvent.value = null;
   }
@@ -439,8 +440,9 @@ async function toggleEvent(evt: any, enabled: boolean) {
     }
     await fetchAllEmailSettings();
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update email event"));
+    commonUtil.showToast(`${translate("Failed to update email event")}. ${serverError}`);
   } finally {
     busyEvent.value = null;
   }
@@ -479,8 +481,9 @@ async function performDelete() {
     await hydrate();
     router.replace("/klaviyo");
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to disconnect Klaviyo"));
+    commonUtil.showToast(`${translate("Failed to disconnect Klaviyo")}. ${serverError}`);
   } finally {
     isDeleting.value = false;
   }

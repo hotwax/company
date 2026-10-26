@@ -763,8 +763,9 @@ async function configureSyncJobForShop() {
     await commonUtil.showToast(translate("Product sync job scheduled successfully."));
     await loadAssistant();
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to configure sync job", error);
-    await commonUtil.showToast(translate("Failed to schedule job."));
+    await commonUtil.showToast(`${translate("Failed to schedule job.")} ${serverError}`);
   } finally {
     isConfiguringSyncJob.value = false;
   }
@@ -777,8 +778,9 @@ async function enableJob(artifactCheck: any) {
     await commonUtil.showToast(translate("Job enabled successfully."));
     await loadAssistant();
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to enable job", error);
-    await commonUtil.showToast(translate("Failed to enable job."));
+    await commonUtil.showToast(`${translate("Failed to enable job.")} ${serverError}`);
   } finally {
     isEnablingJob.value[artifactCheck.id] = false;
   }
@@ -889,8 +891,9 @@ async function teardownItem(item: ProductSyncMigrationLegacyItem, kind: "type" |
     await commonUtil.showToast(translate("Artifact deactivated successfully."));
     await loadAssistant();
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(`Failed to teardown legacy ${kind} ${item.id}`, error);
-    await commonUtil.showToast(translate("Failed to deactivate artifact."));
+    await commonUtil.showToast(`${translate("Failed to deactivate artifact.")} ${serverError}`);
   } finally {
     isTeardownItemRunning.value[item.id] = false;
   }
@@ -917,8 +920,9 @@ async function teardownSection(kind: "type" | "job" | "message") {
     await commonUtil.showToast(translate("Section deactivated successfully."));
     await loadAssistant();
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(`Failed to teardown legacy section ${kind}`, error);
-    await commonUtil.showToast(translate("Failed to deactivate section."));
+    await commonUtil.showToast(`${translate("Failed to deactivate section.")} ${serverError}`);
   } finally {
     isTeardownSectionRunning.value[kind] = false;
   }

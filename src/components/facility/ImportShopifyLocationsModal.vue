@@ -332,8 +332,9 @@ async function importSelected() {
       : translate("Facility associations updated successfully."))
     modalController.dismiss(result)
   } catch (e: any) {
+    const serverError = commonUtil.getErrorMessage(e);
     logger.error(e)
-    commonUtil.showToast(translate("Import failed"))
+    commonUtil.showToast(`${translate("Import failed")}. ${serverError}`)
   } finally {
     isImporting.value = false
   }

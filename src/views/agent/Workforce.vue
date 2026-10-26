@@ -116,7 +116,7 @@ import {
   onIonViewWillLeave
 } from "@ionic/vue";
 import { addOutline, closeOutline, ellipse } from "ionicons/icons";
-import { translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import { computed, ref } from "vue";
 import ChatContainer from "@/components/chat/ChatContainer.vue";
 import ConversationItem from "@/components/chat/ConversationItem.vue";
@@ -173,24 +173,30 @@ onIonViewWillLeave(() => {
 async function onSendMessage(content: string) {
   try {
     await workforce.sendMessage(content);
-  } catch {
-    showToast(translate("Failed to send message"));
+  } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
+    showToast(`${translate("Failed to send message")}. ${serverError}`);
   }
 }
 
 async function onAllowTool(item: any) {
   try {
     await workforce.decideToolCall(item.permissionId, true);
-  } catch {
-    showToast(translate("Failed to record decision"));
+  } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
+    showToast(`${translate("Failed to record decision")}. ${serverError}`);
   }
 }
 
 async function onDenyTool(item: any) {
   try {
     await workforce.decideToolCall(item.permissionId, false);
-  } catch {
-    showToast(translate("Failed to record decision"));
+  } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
+    showToast(`${translate("Failed to record decision")}. ${serverError}`);
   }
 }
 
@@ -203,8 +209,10 @@ async function startConversation(agentId: string) {
   try {
     await workforce.startConversation(agentId);
     showNewConversationModal.value = false;
-  } catch {
-    showToast(translate("Failed to start conversation"));
+  } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
+    showToast(`${translate("Failed to start conversation")}. ${serverError}`);
   }
 }
 </script>

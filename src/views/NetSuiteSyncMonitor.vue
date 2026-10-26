@@ -282,8 +282,9 @@ async function setRuleEnabled(rule: any, enabled: boolean) {
     // The write returns the PK only, so the cache is refreshed from the worker rather than patched.
     await activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to change NetSuite rule status", rule.ruleId, error);
-    commonUtil.showToast(translate("Failed to update rule"));
+    commonUtil.showToast(`${translate("Failed to update rule")}. ${serverError}`);
   }
   pendingRuleId.value = undefined;
 }
@@ -295,8 +296,9 @@ async function runSelectedGroupNow() {
     await runNow(activeGroupId.value);
     commonUtil.showToast(translate("Order push scheduled"));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to run NetSuite order push", activeGroupId.value, error);
-    commonUtil.showToast(translate("Failed to start the order push"));
+    commonUtil.showToast(`${translate("Failed to start the order push")}. ${serverError}`);
   }
   isRunning.value = false;
 }

@@ -289,9 +289,10 @@ const loadSelectedApp = async () => {
   try {
     await loadAssignments()
   } catch (error) {
-    logger.error("Failed to load app permission assignments.", error instanceof Error ? error.message : String(error))
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
     loadError.value = true
-    commonUtil.showToast(translate("Something went wrong."))
+    commonUtil.showToast(`${translate("Failed to load app permission assignments")}. ${serverError}`)
   } finally {
     loading.value = false
   }
@@ -439,8 +440,9 @@ const saveManageGroups = async () => {
       commonUtil.showToast(translate("User group permission association successfully updated."))
     }
   } catch (error) {
-    logger.error("Failed to update app permission assignments.", error instanceof Error ? error.message : String(error))
-    commonUtil.showToast(translate("Failed to update user group permission association."))
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to update app permission assignments.", error)
+    commonUtil.showToast(`${translate("Failed to update user group permission association.")} ${serverError}`)
   } finally {
     closeManageGroups()
   }
@@ -469,8 +471,9 @@ const loadUsersForGroup = async (groupId: string) => {
     await loadGroupUsers(groupId)
   } catch (error) {
     failedUserGroups.value = [...failedUserGroups.value, groupId]
-    logger.error("Failed to load users with app permission access.", error instanceof Error ? error.message : String(error))
-    commonUtil.showToast(translate("Something went wrong."))
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
+    commonUtil.showToast(`${translate("Failed to load users with app permission access")}. ${serverError}`)
   } finally {
     loadingUserGroups.value = loadingUserGroups.value.filter((id) => id !== groupId)
   }

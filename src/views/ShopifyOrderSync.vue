@@ -1133,8 +1133,9 @@ async function searchOrders(after?: string) {
     endCursor.value = result.endCursor ?? "";
   } catch (error) {
     if (currentRequestId !== requestId) return;
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to search Shopify orders."));
+    commonUtil.showToast(`${translate("Failed to search Shopify orders.")} ${serverError}`);
     orders.value = [];
     hasNextPage.value = false;
   } finally {

@@ -851,10 +851,11 @@ async function loadConfiguration(target: string | Event = activeShopId.value, sh
     if (!isCurrentShopContext(targetShopId) || requestToken !== localLoadToken.value) return false;
     syncScheduleDraft(targetShopId);
     return true;
-  } catch (_error) {
-    logger.error("Failed to load Shopify Order Sync configuration");
+  } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to load Shopify Order Sync configuration", error);
     if (showRefreshFailure && isCurrentRouteShop(targetShopId)) {
-      commonUtil.showToast(translate("Order sync setup could not be refreshed."));
+      commonUtil.showToast(`${translate("Order sync setup could not be refreshed.")} ${serverError}`);
     }
     return false;
   } finally {

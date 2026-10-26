@@ -339,7 +339,7 @@ async function save() {
     close();
   } catch (error: any) {
     const serverError = commonUtil.getErrorMessage(error);
-    logger.error(error);
+    logger.error("updateInventoryChannel", error);
     commonUtil.showToast(`${translate("Failed to update the inventory channel.")} ${serverError}`);
   } finally {
     isSaving.value = false;

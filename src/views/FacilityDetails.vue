@@ -1161,8 +1161,11 @@ async function selectProductStores() {
       );
 
       const responses = await Promise.allSettled([...removePromises, ...createPromises]);
-      if (responses.some((response: any) => response.status === 'rejected')) {
-        commonUtil.showToast(translate('Failed to update some product stores'));
+      const failedResponse: any = responses.find((response: any) => response.status === 'rejected');
+      if (failedResponse) {
+        const serverError = commonUtil.getErrorMessage(failedResponse.reason);
+        logger.error(failedResponse.reason);
+        commonUtil.showToast(`${translate('Failed to update some product stores')}. ${serverError}`);
       } else {
         commonUtil.showToast(translate('Product stores updated successfully.'));
       }
@@ -1768,19 +1771,19 @@ async function updateGroups() {
 
   emitter.emit("presentLoader");
 
-  let isFacilityGroupRespHasError = false;
-
   const responses = await Promise.allSettled([
     ...groupsToAdd.value.map((groupId) => linkFacilityGroup(groupId)),
     ...groupsToRemove.value.map((groupId) => unlinkFacilityGroup(groupId))
   ]);
 
-  isFacilityGroupRespHasError = responses.some(
+  const failedResponse: any = responses.find(
     (response) => response.status === 'rejected'
   );
 
-  if (isFacilityGroupRespHasError) {
-    commonUtil.showToast(translate('Failed to update some groups for facility'));
+  if (failedResponse) {
+    const serverError = commonUtil.getErrorMessage(failedResponse.reason);
+    logger.error(failedResponse.reason);
+    commonUtil.showToast(`${translate('Failed to update some groups for facility')}. ${serverError}`);
   } else {
     commonUtil.showToast(translate('Updated groups for facility'));
   }
