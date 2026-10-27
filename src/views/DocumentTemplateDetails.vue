@@ -60,7 +60,7 @@
                 <div slot="content" class="history-detail"><p v-if="publication.reason">{{ publication.reason }}</p><ion-button v-if="canPublish && publication.manifestVersionName && publication.manifestVersionName !== currentPublished" fill="outline" size="default" :disabled="publishing || loading" :aria-label="translate('Review revision {revision} from {date} for restore', { revision: publication.manifestVersionName, date: displayDate(publication.changedAt) })" @click="reviewRollback(publication)" :data-testid="`document-template-restore-${publication.publicationEventId}-btn`">{{ translate("Review for restore") }}</ion-button></div>
               </ion-accordion>
             </ion-accordion-group>
-            <ion-button v-if="publications.length > 3" fill="clear" expand="block" size="default" :aria-expanded="historyExpanded" @click="historyExpanded = !historyExpanded" data-testid="document-template-history-expand-btn">{{ historyExpanded ? translate("Show recent changes") : translate("Show all {count} changes", { count: publications.length }) }}</ion-button>
+            <ion-button v-if="publications.length > 3" fill="clear" expand="block" size="default" @click="historyExpanded = !historyExpanded" data-testid="document-template-history-expand-btn">{{ historyExpanded ? translate("Show recent changes") : translate("Show all {count} changes", { count: publications.length }) }}</ion-button>
           </ion-card>
         </main>
       </template>

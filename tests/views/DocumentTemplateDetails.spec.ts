@@ -91,7 +91,7 @@ describe("document template review", () => {
     expect(wrapper.get('[data-testid="document-template-publication-old-row"]').text()).not.toContain("Now in use");
     await wrapper.get('[data-testid="document-template-history-expand-btn"]').trigger("click");
     expect(wrapper.find('[data-testid="document-template-publication-first-row"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="document-template-history-expand-btn"]').attributes("aria-expanded")).toBe("true");
+    expect(wrapper.get('[data-testid="document-template-history-expand-btn"]').text()).toBe("Show recent changes");
   });
   it("shows readable traits for the backend's structured example scenario", async () => {
     state.examples.mockResolvedValue({ examples: [{ sourceId: "source-a", label: "Order 1001", scenario: { wrappedLineCount: 1, componentLineCount: 2, hasShipment: false } }] });
