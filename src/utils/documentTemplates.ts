@@ -24,6 +24,16 @@ export interface DocumentArtifact {
   mimeType: string;
   pageNumber?: number;
   name?: string;
+  widthPoints?: number;
+  heightPoints?: number;
+}
+
+/** Describe the visible revision transition without guessing which server operation was used. */
+export function documentPublicationKind(publications: any[], index: number): "return" | "repeat" | "publication" {
+  const version = publications[index]?.manifestVersionName;
+  if (!version) return "publication";
+  if (publications[index + 1]?.manifestVersionName === version) return "repeat";
+  return publications.slice(index + 2).some((entry) => entry.manifestVersionName === version) ? "return" : "publication";
 }
 
 /** Publication is tied to the exact saved revision and to the examples the operator reviewed. */
