@@ -207,8 +207,9 @@ async function generateLatLong() {
       commonUtil.showToast(translate("Unable to find the latitude and longitude for the entered zip code."));
     }
   } catch (error) {
-    commonUtil.showToast(translate("Unable to find the latitude and longitude for the entered zip code."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Unable to generate lat/long.", error);
+    commonUtil.showToast(`${translate("Unable to find the latitude and longitude for the entered zip code.")} ${serverError}`);
   }
 }
 

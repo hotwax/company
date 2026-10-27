@@ -1498,7 +1498,9 @@ async function requestDocumentFeedAttachChange(doc: InventoryEventDocument, data
       ? translate("Event source enabled for {feed} events. It can take a few minutes to take effect.", copy)
       : translate("Event source disabled for {feed} events. Events already recorded are unaffected.", copy));
   } catch (error: any) {
-    commonUtil.showToast(error?.message || translate("Failed to update the event source."));
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to update the event source:", error);
+    commonUtil.showToast(`${translate("Failed to update the event source.")} ${serverError}`);
   } finally {
     savingDocumentKey.value = "";
     // The list was re-read above on success and left untouched on failure, so a redraw shows what is
@@ -1642,8 +1644,9 @@ async function requestShopInventoryPushChange(event: Event) {
       ? translate("Real-time inventory push enabled for this connection. Run a physical location QOH reset if stock moved while it was off.")
       : translate("Real-time inventory push disabled for this connection. Quantities already in Shopify are unaffected."));
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to update real-time inventory push for shop", shopId, error);
-    commonUtil.showToast(error?.message || translate("Failed to update real-time inventory push for this connection."));
+    commonUtil.showToast(`${translate("Failed to update real-time inventory push for this connection.")} ${serverError}`);
   } finally {
     shopInventoryPushSaving.value = false;
     // The shop row was re-read above on success and left untouched on failure, so a redraw shows what

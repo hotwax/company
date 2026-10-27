@@ -1425,7 +1425,7 @@ async function openFacilityOrderCountModal() {
       }));
     }
   } catch (error) {
-    console.error("Failed to fetch facility order counts", error);
+    logger.error("Failed to fetch facility order counts", error);
   } finally {
     isOrderCountLoading.value = false;
   }
@@ -2054,8 +2054,9 @@ async function generateLatLong() {
       throw resp;
     }
   } catch (err) {
-    commonUtil.showToast(translate("Unable to find the latitude and longitude for the entered zip code."));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error('Unable to find the latitude and longitude for the entered zip code.', err);
+    commonUtil.showToast(`${translate("Unable to find the latitude and longitude for the entered zip code.")} ${serverError}`);
   }
   isGeneratingLatLong.value = false;
 }

@@ -1,11 +1,11 @@
 import { computed, reactive, ref, type Ref, unref } from "vue";
-import { api, commonUtil } from "@common";
+import { api, commonUtil, logger } from "@common";
 import { refreshAfterMutation } from "@/db/appDbSync";
 import { onSessionCleared } from "./sessionScope";
 
 const log = {
-  error: (...args: any[]) => console.error(...args),
-  warn: (...args: any[]) => console.warn(...args),
+  error: (...args: any[]) => logger.error(...args),
+  warn: (...args: any[]) => logger.warn(...args),
 };
 
 const safeApi = async (req: any) => {

@@ -1575,7 +1575,7 @@ const fetchUserSecurityGroupAssoHistory = async () => {
     const expiredSecurityGroups = histories.filter((history: any) => history.thruDate);
     histories = currentSecurityGroups.concat(expiredSecurityGroups);
   } catch (error: any) {
-    console.error(error);
+    logger.error(error);
   }
   userGroupAssocHistories.value = histories;
 };
