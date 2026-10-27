@@ -144,6 +144,14 @@ onMounted(() => {
 const { hasPermission } = useAppAuth();
 const appPages = [
   {
+    title: "Document templates",
+    url: "/document-templates",
+    childRoutes: ["/document-templates/"],
+    permission: Actions.APP_DOCUMENT_TEMPLATES_VIEW,
+    iosIcon: albumsOutline,
+    mdIcon: albumsOutline,
+  },
+  {
     title: "Organizations",
     url: "/organizations",
     childRoutes: ["/organization-details/"],

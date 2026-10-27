@@ -51,6 +51,8 @@ const AppVersion = () => import("@/views/AppVersion.vue")
 const Organizations = () => import("@/views/Organizations.vue")
 const OrganizationDetails = () => import("@/views/OrganizationDetails.vue")
 const RejectionReasons = () => import("@/views/RejectionReasons.vue")
+const DocumentTemplates = () => import("@/views/DocumentTemplates.vue")
+const DocumentTemplateDetails = () => import("@/views/DocumentTemplateDetails.vue")
 
 const authGuard = () => {
   if(!useAuth().isAuthenticated.value) {
@@ -84,6 +86,8 @@ export function redirectLegacyProductStoreCreation(to: Pick<RouteLocationNormali
 }
 
 const routes: Array<RouteRecordRaw> = [
+  { path: "/document-templates", name: "DocumentTemplates", component: DocumentTemplates, beforeEnter: requirePermission(Actions.APP_DOCUMENT_TEMPLATES_VIEW) },
+  { path: "/document-templates/:documentTemplateId", name: "DocumentTemplateDetails", component: DocumentTemplateDetails, props: true, beforeEnter: requirePermission(Actions.APP_DOCUMENT_TEMPLATES_VIEW) },
   { path: "/", redirect: "/product-store" },
   { path: "/product-store", name: "ProductStore", component: ProductStore, beforeEnter: authGuard },
   {

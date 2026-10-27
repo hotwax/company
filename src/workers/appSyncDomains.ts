@@ -34,6 +34,7 @@ import { shopifyFulfillmentHealthDomain } from "./domains/shopifyFulfillmentHeal
 import { shopifyOrderSyncHistoryDomain } from "./domains/shopifyOrderSyncHistoryDomain";
 import { netSuiteOrderPushDomain } from "./domains/netSuiteOrderPushDomain";
 import { referenceDomains } from "./domains/referenceDomains";
+import { documentTemplateDomain, documentTemplateHistoryDomain } from "./domains/documentTemplateDomains";
 
 import { companyDb } from "@/db/companyDb";
 
@@ -50,6 +51,8 @@ const companySeedDomains = Object.values(commonDomains).filter((domain) =>
   domain.table && companyDb.frameworkTables.has(domain.table) && !OVERRIDDEN_SEED_TABLES.has(domain.table));
 
 export const appSyncDomains: SyncDomain[] = [
+  documentTemplateDomain,
+  documentTemplateHistoryDomain,
   ...companySeedDomains,
   dataManagerLogDomain,
   dataManagerErrorRecordDomain,

@@ -48,6 +48,24 @@ const INVENTORY_LEDGER_INDEXES = [
 ];
 
 export const companySchema = defineSchema({
+  /** Instance document configuration; histories are read through their native revision/audit service. */
+  documentTemplates: defineEntity({
+    primaryKey: "documentTemplateId",
+    fields: {
+      documentTemplateId: "text", documentType: "text", displayName: "text", scope: "text",
+      latestManifestVersionName: "text", publishedVersionName: "text", publicationSequence: "count",
+      canPublish: "structured", canEdit: "structured",
+    },
+    indexes: ["documentType"],
+  }),
+  documentTemplateHistories: defineEntity({
+    primaryKey: "documentTemplateId",
+    fields: {
+      documentTemplateId: "text", publishedVersionName: "text", latestManifestVersionName: "text",
+      publicationSequence: "count", revisions: "structured", publications: "structured",
+      canPublish: "structured", canEdit: "structured",
+    },
+  }),
   // --- class A: live, append-mostly (incremental cursor sync) ---
   //
   // COMPOUND INDEXES here are load-bearing for sync monitoring, which always asks a two-part

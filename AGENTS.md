@@ -136,6 +136,13 @@ One app-lifetime worker, started by `appDbSync`, runs every class. Class B seeds
 class A domains are polled only while a view has activated them through
 `activateSyncDomains(domains, owner)` / `deactivateSyncDomains(owner)`.
 
+Document templates use the class-B `documentTemplate` domain for instance configuration and the
+class-C `documentTemplateHistory` domain for each template's native revisions and publication audit.
+Their tables are `documentTemplates` and `documentTemplateHistories` (schema v7). The exact revision
+read used to prepare a preview, authorized example choices, private preview status, and artifact blob
+URLs are invocation-scoped operation state in `useDocumentTemplates` and the detail view. Publication
+and restore reconcile both metadata domains; no app table creates a second publication history.
+
 **The inventory sync area** is route-scoped class A:
 [`inventorySyncArea.ts`](src/services/inventorySyncArea.ts), driven by `router.afterEach`, activates the
 inventory event domains under its own owner for as long as the user is under
