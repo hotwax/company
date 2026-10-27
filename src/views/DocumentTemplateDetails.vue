@@ -19,7 +19,7 @@
           </ion-select></ion-item>
           <ion-item v-if="selectedHistory"><ion-label>{{ selectedHistory.summary || translate("Saved revision") }}<p>{{ displayDate(selectedHistory.createdAt || selectedHistory.versionDate) }}</p></ion-label></ion-item>
           <ion-item><ion-select v-model="selectedSources" multiple :disabled="publishing || loading" :label="translate('Example documents')" :placeholder="translate('Select documents to preview')" interface="alert" data-testid="document-template-examples-select">
-            <ion-select-option v-for="example in examples" :key="example.sourceId" :value="example.sourceId">{{ example.label }}{{ example.scenario ? ` · ${example.scenario}` : '' }}</ion-select-option>
+            <ion-select-option v-for="example in examples" :key="example.sourceId" :value="example.sourceId">{{ exampleLabel(example) }}</ion-select-option>
           </ion-select></ion-item>
           <ion-item v-if="!loading && !examples.length" data-testid="document-template-examples-empty"><ion-label>{{ translate("No eligible example documents were found. Add real source documents and refresh.") }}</ion-label></ion-item>
           <ion-item lines="none"><ion-button :disabled="!revision || !selectedSources.length || generating || publishing || previewPending || loading || loadError" @click="generatePreview" data-testid="document-template-preview-btn"><ion-spinner v-if="generating" name="crescent" />{{ translate("Generate preview") }}</ion-button></ion-item>
@@ -106,6 +106,15 @@ const canPublishSelected = computed(() => canPublish.value && !publishing.value 
 const displayDate = (value: any) => commonUtil.getDateAndTime(commonUtil.parseDateTimeValue(value)?.toMillis());
 const revisionLabel = (item: any) => translate("Revision {revision}", { revision: versionOf(item) }) +
   (versionOf(item) === currentPublished.value ? ` · ${translate("Current")}` : "");
+const exampleLabel = (example: any) => {
+  const scenario = example.scenario;
+  const traits = typeof scenario === "string" ? [scenario] : [
+    scenario?.wrappedLineCount > 0 ? translate("Gift wrapped") : "",
+    scenario?.componentLineCount > 0 ? translate("Contains kit components") : "",
+    scenario?.hasShipment === false ? translate("Before shipment") : "",
+  ];
+  return [example.label, ...traits].filter(Boolean).join(" · ");
+};
 
 function releaseArtifacts() {
   pageGeneration++;

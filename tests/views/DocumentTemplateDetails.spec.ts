@@ -56,6 +56,13 @@ beforeEach(() => {
   vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:preview"), revokeObjectURL: vi.fn() });
 });
 describe("document template review", () => {
+  it("shows readable traits for the backend's structured example scenario", async () => {
+    state.examples.mockResolvedValue({ examples: [{ sourceId: "source-a", label: "Order 1001", scenario: { wrappedLineCount: 1, componentLineCount: 2, hasShipment: false } }] });
+    const wrapper = await mountView();
+    const choices = wrapper.get('[data-testid="document-template-examples-select"]').text();
+    expect(choices).toContain("Order 1001 · Gift wrapped · Contains kit components · Before shipment");
+    expect(choices).not.toContain("[object Object]");
+  });
   it("keeps review available without showing publication controls to a viewer", async () => {
     state.permitted = false;
     const wrapper = await mountView();
