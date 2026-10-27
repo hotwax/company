@@ -4,6 +4,12 @@
       <ion-toolbar>
         <ion-menu-button slot="start" />
         <ion-title>{{ translate("Settings") }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button fill="clear" @click="openLogs()">
+            <ion-icon slot="start" :icon="documentTextOutline" />
+            {{ translate("View logs") }}
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
     
@@ -142,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonMenuButton, IonPage, IonSpinner, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonAvatar, IonButtons, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonMenuButton, IonPage, IonSpinner, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 
 import { computed, onMounted, ref , defineProps} from "vue";
 import { useUserStore } from '@/store/user';
@@ -151,9 +157,9 @@ import TimeZoneModal from "@/components/common/TimezoneModal.vue";
 import Image from "@/components/common/Image.vue"
 import DxpAppVersionInfo from "@/components/common/DxpAppVersionInfo.vue"
 import { DateTime } from "luxon";
-import { translate, commonUtil, cookieHelper } from '@common'
+import { translate, commonUtil, cookieHelper, DxpLogsModal } from '@common'
 import router from '@/router'
-import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
+import { openOutline, syncOutline, checkmarkCircle, closeCircle, documentTextOutline } from "ionicons/icons"
 
 import { getCurrentTime } from "../utils"
 import { catalogFrom, useDbStatus } from "@common/db";
@@ -293,6 +299,13 @@ async function logout() {
 
 function goToLaunchpad() {
   window.location.href = import.meta.env.VITE_LOGIN_URL || '/';
+}
+
+async function openLogs() {
+  const logsModal = await modalController.create({
+    component: DxpLogsModal
+  });
+  return logsModal.present();
 }
 </script>
 
