@@ -877,8 +877,10 @@ async function teardownLegacySync() {
       await commonUtil.showToast(translate("Legacy product sync teardown completed."));
     }
   } catch (error: any) {
-    teardownErrorMessage.value = error?.message || translate("Failed to deactivate the legacy product sync.");
-    await commonUtil.showToast(teardownErrorMessage.value);
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to deactivate the legacy product sync", error);
+    teardownErrorMessage.value = serverError || translate("Failed to deactivate the legacy product sync.");
+    await commonUtil.showToast(`${translate("Failed to deactivate the legacy product sync.")} ${serverError}`);
   } finally {
     isTeardownRunning.value = false;
   }

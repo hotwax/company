@@ -17,7 +17,11 @@ vi.mock("@ionic/vue", async (importOriginal) => ({
 }));
 
 vi.mock("@common", () => ({
-  commonUtil: { showToast: harness.showToast },
+  commonUtil: {
+    showToast: harness.showToast,
+    getErrorMessage: (err: any) => err?.message ?? "",
+  },
+  logger: { error: vi.fn() },
   translate: (key: string) => key,
 }));
 

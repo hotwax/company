@@ -2018,9 +2018,10 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
         ? translate("{job} created, paused. Open the row to set its schedule and activate it.", { job: created[0] })
         : translate("{count} jobs created, paused. Open each row entry to schedule and activate them.", { count: created.length }));
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to set up inventory sync job", kind, error);
     jobSetupError.value = error?.message || translate("The job could not be created.");
-    commonUtil.showToast(jobSetupError.value);
+    commonUtil.showToast(`${translate("The job could not be created.")} ${serverError}`);
   } finally {
     provisioningJobKind.value = "";
   }

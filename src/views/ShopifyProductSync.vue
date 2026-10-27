@@ -1760,9 +1760,10 @@ async function loadWizard() {
     }
 
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
     loadErrorMessage.value = getErrorMessage(error, translate("Failed to load product sync"));
-    commonUtil.showToast(translate("Failed to load product sync"));
+    commonUtil.showToast(`${translate("Failed to load product sync")}. ${serverError}`);
   } finally {
     isLoading.value = false;
   }
@@ -2372,8 +2373,9 @@ async function resyncProduct(record: any) {
     commonUtil.showToast(getSelectedProductSyncResultMessage(result, 1));
     await loadLatestSystemMessage();
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(getErrorMessage(error, translate("Failed to resync product.")));
+    commonUtil.showToast(`${translate("Failed to resync product.")} ${serverError}`);
   } finally {
     isSaving.value = false;
   }
@@ -2753,8 +2755,9 @@ async function persistProductStoreSelection() {
       throw resp.data;
     }
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(getErrorMessage(error, translate("Failed to link product store")));
+    commonUtil.showToast(`${translate("Failed to link product store")}. ${serverError}`);
   }
   isSaving.value = false;
   return false;
@@ -2996,8 +2999,9 @@ async function startProductSync() {
       await loadProgress();
     }
   } catch (err) {
-    commonUtil.showToast(getErrorMessage(err, translate("Failed to start product sync.")));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error(err);
+    commonUtil.showToast(`${translate("Failed to start product sync.")} ${serverError}`);
   } finally {
     isSaving.value = false;
   }
@@ -3064,8 +3068,9 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
     commonUtil.showToast(translate("Product sync run cancelled."));
     await refreshAfterSystemMessageAction();
   } catch (err) {
-    commonUtil.showToast(getErrorMessage(err, translate("Failed to {actionLabel}.", { actionLabel: translate("cancel the product sync run") })));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error(err);
+    commonUtil.showToast(`${translate("Failed to {actionLabel}.", { actionLabel: translate("cancel the product sync run") })} ${serverError}`);
   } finally {
     systemMessageActionLoadingId.value = "";
   }
