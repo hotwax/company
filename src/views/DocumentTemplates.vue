@@ -41,16 +41,14 @@
           </ion-card-header>
           <ion-list lines="none">
             <ion-item>
-              <ion-label>
+              <ion-label class="ion-text-wrap">
                 {{ translate("Live version {version}", { version: template.liveVersionName || "-" }) }}
-                <p>{{ commonUtil.getDateAndTime(template.liveVersionDate) }}</p>
+                <p v-if="template.liveVersionDate">{{ commonUtil.getDateAndTime(template.liveVersionDate) }}</p>
+                <p>{{ template.liveTemplateNames?.length ? translate("Same text as {templates}", { templates: template.liveTemplateNames.join(", ") }) : translate("Not from the library") }}</p>
               </ion-label>
-              <ion-badge slot="end" :color="template.liveTemplateNames?.length ? 'success' : 'medium'">
-                {{ template.liveTemplateNames?.length ? template.liveTemplateNames.join(", ") : translate("Not from the library") }}
-              </ion-badge>
             </ion-item>
             <ion-item>
-              <ion-label>{{ translate("{count} library templates", { count: template.templates?.length || 0 }) }}</ion-label>
+              <ion-label>{{ template.templates?.length === 1 ? translate("1 library template") : translate("{count} library templates", { count: template.templates?.length || 0 }) }}</ion-label>
             </ion-item>
           </ion-list>
         </ion-card>
@@ -61,7 +59,7 @@
 
 <script setup lang="ts">
 import { commonUtil, translate } from "@common";
-import { IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonProgressBar, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonProgressBar, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { refreshOutline, warningOutline } from "ionicons/icons";
 import { useDocumentTemplates } from "@/composables/useDocumentTemplates";
 

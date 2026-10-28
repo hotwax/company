@@ -24,26 +24,14 @@
       </div>
 
       <div v-else class="template-workspace">
-        <section>
-          <ion-card data-testid="document-template-live-card">
-            <ion-card-header>
-              <ion-card-subtitle>{{ translate("Live template") }}</ion-card-subtitle>
-              <ion-card-title>{{ translate("Version {version}", { version: documentTemplate.liveVersionName || "-" }) }}</ion-card-title>
-            </ion-card-header>
-            <ion-item lines="none">
-              <ion-label class="ion-text-wrap">
-                {{ commonUtil.getDateAndTime(documentTemplate.liveVersionDate) }}
-                <p v-if="documentTemplate.liveUserId">{{ translate("By {user}", { user: liveVersions.usernameFor(documentTemplate.liveUserId) }) }}</p>
-              </ion-label>
-              <ion-badge slot="end" :color="documentTemplate.liveTemplateNames?.length ? 'success' : 'medium'">
-                {{ documentTemplate.liveTemplateNames?.length ? documentTemplate.liveTemplateNames.join(", ") : translate("Not from the library") }}
-              </ion-badge>
-            </ion-item>
-            <ion-card-content>{{ translate("Printing always uses the live template. Publishing a library template copies it into the live template, and rolling back restores an earlier live version.") }}</ion-card-content>
-          </ion-card>
-
+        <section class="template-preview" ref="previewSection">
           <ion-card data-testid="document-template-preview-form-card">
-            <ion-card-header><ion-card-title>{{ translate("Preview") }}</ion-card-title></ion-card-header>
+            <ion-card-header>
+              <ion-card-title>{{ translate("Preview") }}</ion-card-title>
+              <ion-card-subtitle v-if="canAdmin" data-testid="document-template-preview-empty">
+                {{ translate("Choose a template and enter a {label} to see the PDF it prints.", { label: translate(sourceIdLabel(documentTypeId)) }) }}
+              </ion-card-subtitle>
+            </ion-card-header>
             <template v-if="canAdmin">
               <ion-item>
                 <ion-select v-model="selection.templateName" :label="translate('Template')" interface="popover" data-testid="document-template-template-select">
@@ -68,6 +56,79 @@
               </ion-button>
             </template>
             <ion-card-content v-else data-testid="document-template-view-only">{{ translate("You can view these templates. Previewing and publishing need template admin access.") }}</ion-card-content>
+          </ion-card>
+
+          <ion-card v-if="canAdmin && (previewLoading || result || publishError)" class="preview-card" data-testid="document-template-preview-card">
+            <ion-card-header>
+              <ion-card-subtitle>{{ selectionLabel }}</ion-card-subtitle>
+              <ion-card-title v-if="previewed">{{ translate(sourceIdLabel(documentTypeId)) }} {{ previewed.sourceId }}</ion-card-title>
+              <ion-card-title v-else>{{ translate("Preview") }}</ion-card-title>
+            </ion-card-header>
+
+            <ion-card-content v-if="previewLoading" data-testid="document-template-preview-loading">
+              <ion-skeleton-text animated style="width: 100%; height: 320px" />
+            </ion-card-content>
+            <template v-else-if="result">
+              <ion-item lines="none">
+                <ion-badge slot="start" :color="result.rendered ? 'success' : 'danger'" data-testid="document-template-preview-status">
+                  <template v-if="!result.rendered">{{ translate("No PDF") }}</template>
+                  <template v-else-if="result.pageCount === 1">{{ translate("1 page") }}</template>
+                  <template v-else>{{ translate("{count} pages", { count: result.pageCount || 0 }) }}</template>
+                </ion-badge>
+                <ion-label class="ion-text-wrap">
+                  <template v-if="!result.templateErrors.length">{{ translate("No template errors") }}</template>
+                  <template v-else-if="result.templateErrors.length === 1">{{ translate("1 template error that printing skips over") }}</template>
+                  <template v-else>{{ translate("{count} template errors that printing skips over", { count: result.templateErrors.length }) }}</template>
+                </ion-label>
+              </ion-item>
+              <ion-list lines="full">
+                <ion-item v-for="(problem, index) in result.errors" :key="`error-${index}`" data-testid="document-template-preview-error">
+                  <ion-icon slot="start" color="danger" :icon="alertCircleOutline" />
+                  <ion-label class="ion-text-wrap">{{ problem.message }}</ion-label>
+                </ion-item>
+                <ion-item v-for="(problem, index) in result.templateErrors" :key="`template-error-${index}`" data-testid="document-template-preview-template-error">
+                  <ion-icon slot="start" color="warning" :icon="warningOutline" />
+                  <ion-label class="ion-text-wrap">
+                    {{ problem.expression || problem.message }}
+                    <p>
+                      {{ templateErrorFile(problem) }}
+                      <template v-if="problem.line"> · {{ translate("line {line}, column {column}", { line: problem.line, column: problem.column || 0 }) }}</template>
+                    </p>
+                    <p v-if="problem.expression">{{ problem.message }}</p>
+                  </ion-label>
+                </ion-item>
+              </ion-list>
+              <iframe v-if="pdfUrl" class="pdf-frame" :src="pdfUrl" :title="translate('Preview PDF')" data-testid="document-template-preview-pdf" />
+            </template>
+
+            <ion-item v-if="publishError" lines="none" data-testid="document-template-publish-error">
+              <ion-icon slot="start" color="danger" :icon="alertCircleOutline" />
+              <ion-label class="ion-text-wrap">{{ publishError }}</ion-label>
+            </ion-item>
+            <ion-button v-if="publishAction && result" class="ion-margin" :disabled="!result.rendered || publishing || previewLoading"
+              :color="publishAction === 'rollback' ? 'warning' : 'primary'" data-testid="document-template-publish-btn" @click="confirmPublish()">
+              <ion-icon slot="start" :icon="publishAction === 'rollback' ? arrowUndoOutline : cloudUploadOutline" />
+              {{ publishAction === "rollback" ? translate("Roll back to version {version}", { version: selection.versionName }) : translate("Make live") }}
+            </ion-button>
+          </ion-card>
+        </section>
+
+        <section class="template-info">
+          <ion-card data-testid="document-template-live-card">
+            <ion-card-header>
+              <ion-card-subtitle>{{ translate("Live template") }}</ion-card-subtitle>
+              <ion-card-title>{{ translate("Version {version}", { version: documentTemplate.liveVersionName || "-" }) }}</ion-card-title>
+            </ion-card-header>
+            <ion-item lines="none">
+              <ion-label class="ion-text-wrap">
+                <template v-if="documentTemplate.liveVersionDate">{{ commonUtil.getDateAndTime(documentTemplate.liveVersionDate) }}</template>
+                <p v-if="documentTemplate.liveUserId">{{ translate("By {user}", { user: liveVersions.usernameFor(documentTemplate.liveUserId) }) }}</p>
+                <p data-testid="document-template-live-matches">
+                  {{ documentTemplate.liveTemplateNames?.length ? translate("Same text as {templates}", { templates: documentTemplate.liveTemplateNames.join(", ") }) : translate("Not from the library") }}
+                </p>
+              </ion-label>
+            </ion-item>
+            <ion-card-content>{{ translate("Printing always uses the live template. Publishing a library template copies it into the live template, and rolling back restores an earlier live version.") }}</ion-card-content>
           </ion-card>
 
           <ion-card data-testid="document-template-history-card">
@@ -112,61 +173,6 @@
             </ion-list>
           </ion-card>
         </section>
-
-        <section v-if="canAdmin">
-          <ion-card class="preview-card" data-testid="document-template-preview-card">
-            <ion-card-header>
-              <ion-card-subtitle>{{ selectionLabel }}</ion-card-subtitle>
-              <ion-card-title v-if="previewed">{{ translate(sourceIdLabel(documentTypeId)) }} {{ previewed.sourceId }}</ion-card-title>
-              <ion-card-title v-else>{{ translate("Preview") }}</ion-card-title>
-            </ion-card-header>
-
-            <ion-card-content v-if="previewLoading" data-testid="document-template-preview-loading">
-              <ion-skeleton-text animated style="width: 100%; height: 320px" />
-            </ion-card-content>
-            <ion-card-content v-else-if="!result" data-testid="document-template-preview-empty">
-              {{ translate("Choose a template and enter a {label} to see the PDF it prints.", { label: translate(sourceIdLabel(documentTypeId)) }) }}
-            </ion-card-content>
-            <template v-else>
-              <ion-item lines="none">
-                <ion-badge slot="start" :color="result.rendered ? 'success' : 'danger'" data-testid="document-template-preview-status">
-                  {{ result.rendered ? translate("{count} pages", { count: result.pageCount || 0 }) : translate("No PDF") }}
-                </ion-badge>
-                <ion-label class="ion-text-wrap">
-                  {{ result.templateErrors.length ? translate("{count} template errors that printing skips over", { count: result.templateErrors.length }) : translate("No template errors") }}
-                </ion-label>
-              </ion-item>
-              <ion-list lines="full">
-                <ion-item v-for="(problem, index) in result.errors" :key="`error-${index}`" data-testid="document-template-preview-error">
-                  <ion-icon slot="start" color="danger" :icon="alertCircleOutline" />
-                  <ion-label class="ion-text-wrap">{{ problem.message }}</ion-label>
-                </ion-item>
-                <ion-item v-for="(problem, index) in result.templateErrors" :key="`template-error-${index}`" data-testid="document-template-preview-template-error">
-                  <ion-icon slot="start" color="warning" :icon="warningOutline" />
-                  <ion-label class="ion-text-wrap">
-                    {{ problem.expression || problem.message }}
-                    <p>
-                      {{ templateErrorFile(problem) }}
-                      <template v-if="problem.line"> · {{ translate("line {line}, column {column}", { line: problem.line, column: problem.column || 0 }) }}</template>
-                    </p>
-                    <p v-if="problem.expression">{{ problem.message }}</p>
-                  </ion-label>
-                </ion-item>
-              </ion-list>
-              <iframe v-if="pdfUrl" class="pdf-frame" :src="pdfUrl" :title="translate('Preview PDF')" data-testid="document-template-preview-pdf" />
-            </template>
-
-            <ion-item v-if="publishError" lines="none" data-testid="document-template-publish-error">
-              <ion-icon slot="start" color="danger" :icon="alertCircleOutline" />
-              <ion-label class="ion-text-wrap">{{ publishError }}</ion-label>
-            </ion-item>
-            <ion-button v-if="publishAction && result" class="ion-margin" :disabled="!result.rendered || publishing || previewLoading"
-              :color="publishAction === 'rollback' ? 'warning' : 'primary'" data-testid="document-template-publish-btn" @click="confirmPublish()">
-              <ion-icon slot="start" :icon="publishAction === 'rollback' ? arrowUndoOutline : cloudUploadOutline" />
-              {{ publishAction === "rollback" ? translate("Roll back to version {version}", { version: selection.versionName }) : translate("Make live") }}
-            </ion-button>
-          </ion-card>
-        </section>
       </div>
     </ion-content>
   </ion-page>
@@ -176,7 +182,7 @@
 import { commonUtil, logger, translate } from "@common";
 import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
 import { alertCircleOutline, arrowUndoOutline, cloudUploadOutline, eyeOutline, refreshOutline, warningOutline } from "ionicons/icons";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import { useAuth } from "@/composables/useSecurity";
 import { useDocumentTemplate, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateVersions, useDocumentTemplates } from "@/composables/useDocumentTemplates";
 import { publishActionFor, sameSelection, serverErrorMessage, sourceIdLabel, templateErrorFile } from "@/utils/documentTemplates";
@@ -221,14 +227,18 @@ onIonViewWillEnter(() => {
 
 // A new template starts at its current version, unless a history row asked for another one.
 let pendingVersionName = "";
-function select(next: { templateName: string; versionName: string }) {
+const previewSection = ref<HTMLElement | null>(null);
+/** From a history or library row: select it, bring the preview into view, and preview it when an id is entered. */
+async function select(next: { templateName: string; versionName: string }) {
   if(next.templateName === selection.templateName) {
     selection.versionName = next.versionName;
-
-    return;
+  } else {
+    pendingVersionName = next.versionName;
+    selection.templateName = next.templateName;
   }
-  pendingVersionName = next.versionName;
-  selection.templateName = next.templateName;
+  await nextTick();
+  previewSection.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if(sourceId.value.trim()) {void runPreview();}
 }
 
 watch(() => selection.templateName, (templateName) => {
@@ -305,9 +315,18 @@ async function runPublish(action: "publish" | "rollback") {
   align-items: start;
 }
 
-@media (min-width: 991px) {
+/* One column, preview first, until there is room for the history beside a readable PDF (the menu takes ~270px). */
+@media (min-width: 1280px) {
   .template-workspace {
-    grid-template-columns: minmax(320px, 2fr) minmax(0, 3fr);
+    grid-template-columns: minmax(340px, 2fr) minmax(0, 3fr);
+  }
+
+  .template-info {
+    order: 1;
+  }
+
+  .template-preview {
+    order: 2;
   }
 }
 
