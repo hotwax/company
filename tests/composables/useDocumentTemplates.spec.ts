@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({ api: vi.fn(), refreshAfterMutation: vi.fn() })
 
 vi.mock("@common", () => ({
   api: (...args: any[]) => mocks.api(...args),
-  commonUtil: { hasError: (resp: any) => !!resp?.data?.error, getMaargBaseURL: () => "https://maarg.example.test" },
+  commonUtil: { hasError: (resp: any) => !!resp?.data?.error, getMaargURL: () => "https://maarg.example.test/rest/s1/" },
   logger: { error: vi.fn(), warn: vi.fn() },
   useLiveEntity: vi.fn(),
 }));

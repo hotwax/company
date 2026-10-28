@@ -150,7 +150,9 @@ export function useDocumentTemplatePreview() {
       const data = resp.data || {};
       let objectUrl = "";
       if(data.rendered && data.previewUrl) {
-        const pdf: any = await api({ baseURL: commonUtil.getMaargBaseURL(), url: data.previewUrl, method: "get", responseType: "blob" });
+        // getMaargURL() is always a full URL; getMaargBaseURL() is a bare instance name on some Moqui-only logins.
+        const maargHost = commonUtil.getMaargURL().replace(/\/rest\/s1\/?$/, "");
+        const pdf: any = await api({ baseURL: maargHost, url: data.previewUrl, method: "get", responseType: "blob" });
         if(commonUtil.hasError(pdf) || !(pdf.data instanceof Blob)) {throw pdf;}
         objectUrl = URL.createObjectURL(pdf.data);
       }
