@@ -66,8 +66,6 @@ vi.mock("@common", () => ({
     emit: (event: string, payload?: any) => { (harness.handlers[event] || []).forEach((handler) => handler(payload)); },
   },
   FastTravel: harness.stub("FastTravel"),
-  // App.vue starts Faro; this suite is about the loader, so it only has to exist.
-  faroUtil: { initialiseFaro: () => undefined, faroLoggerHook: { run: () => undefined } },
   translate: (value: string) => value,
 }));
 

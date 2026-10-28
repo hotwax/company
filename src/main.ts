@@ -29,8 +29,8 @@ import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import { useUserStore } from './store/user'
 import localeMessages from './locales'
 
-// Faro is started from App.vue, which can read the Maarg config composable it sends as context;
-// a .ts file cannot. The logger hook below is registered either way and does nothing until then.
+faroUtil.initialiseFaro()
+
 const pinia = createPinia().use(piniaPluginPersistedstate)
 const i18n = createDxpI18n(localeMessages)
 
