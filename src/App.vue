@@ -13,14 +13,26 @@
 import { onMounted, onUnmounted, watch } from 'vue'
 import { IonApp, IonRouterOutlet, IonSplitPane, loadingController } from '@ionic/vue'
 import Menu from '@/components/common/Menu.vue'
-import { emitter, FastTravel, translate } from '@common'
+import { emitter, FastTravel, faroUtil, translate } from '@common'
 import { Settings } from 'luxon'
 import { useAuth } from '@common/composables/useAuth'
 import { useUserStore } from '@/store/user'
+import { useMaargConfig } from '@/composables/useSeed'
 import { startReferenceSync } from '@/services/appCacheBootstrap'
 import router from "@/router"
 
 const userStore = useUserStore()
+
+// The user, OMS and Maarg instance come from the accxui context on their own; only the instance
+// name and purpose are Company's to supply. getContext runs on every capture, so it reports the
+// config as it stands then rather than whatever was loaded at startup.
+const maargConfig = useMaargConfig()
+faroUtil.initialiseFaro({
+  getContext: () => ({
+    maargInstanceName: maargConfig.instanceInfo.value?.instanceName,
+    maargInstancePurpose: maargConfig.instanceInfo.value?.instancePurpose
+  })
+})
 
 // The global loader is held as the PROMISE of its overlay, not the overlay. `create()` is async, and a
 // dismiss that landed while it was pending used to find nothing to dismiss: the overlay then presented

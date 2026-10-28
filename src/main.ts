@@ -1,8 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
-import { createDxpI18n, initialiseConfig, logger } from '@common'
-import { faroUtil } from '@/utils/faroUtil'
+import { createDxpI18n, faroUtil, initialiseConfig, logger } from '@common'
 
 import { IonicVue } from '@ionic/vue'
 
@@ -30,8 +29,8 @@ import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import { useUserStore } from './store/user'
 import localeMessages from './locales'
 
-faroUtil.initialiseFaro()
-
+// Faro is started from App.vue, which can read the Maarg config composable it sends as context;
+// a .ts file cannot. The logger hook below is registered either way and does nothing until then.
 const pinia = createPinia().use(piniaPluginPersistedstate)
 const i18n = createDxpI18n(localeMessages)
 
