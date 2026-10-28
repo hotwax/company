@@ -22,6 +22,15 @@ describe("transfer staging blockers", () => {
     expect(rows[0].action).toContain("correct Shopify variant mapping");
   });
 
+  it("classifies an item with no Shopify mapping so the page can offer to map it", () => {
+    const result = { blockedOrderList: [{ shopId: "10000", orderId: "M1105019", errors: [
+      "Order item [M1105019:51] product [M111323] has no ShopifyShopProduct mapping for shop [10000].",
+    ] }] };
+    const rows = transferStagingIssues({ jobRunId: "1", results: result }, "10000", "create");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ code: "missing-product-mapping", productId: "M111323", orderItemSeqId: "51", title: "Product not mapped to Shopify" });
+  });
+
   it("distinguishes the shipment blocker from dependent receipts", () => {
     const rows = transferStagingIssues({ jobRunId: "637469", hasError: "N", results: updateResult }, "100051", "update");
     expect(rows).toHaveLength(2);
@@ -48,6 +57,14 @@ describe("transfer staging blockers", () => {
 
   it.each(["{broken", null, [], {}, { blockedOrderCount: 1 }])("never reports an unreadable result as healthy: %j", (results) => {
     expect(transferStagingIssues({ results, hasError: "N" }, "100051", "create")[0].code).toBe("unreadable-results");
+  });
+
+  it.each(["create", "update"] as const)("reads a %s run skipped for native sync being off as that, not as unreadable", (stager) => {
+    const results = { skippedReason: "nativeTransferSyncDisabled", orderCount: 0, blockedOrderCount: 0, blockedOrderList: [], diagnostics: [] };
+    const issues = transferStagingIssues({ jobRunId: "R1", results, hasError: "N" }, "100051", stager);
+
+    expect(issues.map((row) => row.code)).toEqual(["native-sync-off"]);
+    expect(issues[0].title).toBe("Native Inventory Transfer Sync is off");
   });
 
   it("preserves unknown errors without guessing their cause", () => {

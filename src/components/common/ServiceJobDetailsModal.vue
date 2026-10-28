@@ -254,7 +254,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { commonUtil, translate } from '@common';
 import { formatDateTime } from '@/utils';
 import { useServiceJob } from '@/composables/useServiceJobs';
-import { isCacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { translateMutationError } from "@/utils/errorPresentation";
 import { formatLag } from "@/utils/inventoryEventTime";
 import { describeRunResult, serviceJobRunStatus } from "@/utils/serviceJobRun";
@@ -483,7 +483,7 @@ async function load() {
   try {
     const [details, runs, audits] = await Promise.all([
       fetchJobDetail(jobName),
-      fetchJobRuns(jobName, { pageSize: 5, pageIndex: 0 }, { fromServer: true }),
+      fetchJobRuns(jobName, { pageSize: 5, pageIndex: 0 }),
       fetchJobAuditHistory(jobName, { pageSize: 10, pageIndex: 0 }),
     ]);
     if (request !== loadGeneration) return;

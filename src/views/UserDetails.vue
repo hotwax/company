@@ -614,6 +614,7 @@ import { isValidPhone } from "@/utils";
 import { useUserGroups } from '@/composables/useSecurity';
 import { useShopifyShops } from '@/composables/useShopify';
 import { useRoleTypes } from '@/composables/useSeed';
+import { useUserProductStores } from '@/composables/useProductStores';
 import ContactActionsPopover from "@/components/common/ContactActionsPopover.vue";
 import ProductStoreActionsPopover from "@/components/product-store/ProductStoreActionsPopover.vue";
 import SecurityGroupActionsPopover from "@/components/security/SecurityGroupActionsPopover.vue";
@@ -656,7 +657,7 @@ const showPassword = ref(false);
 const isUserFulfillmentAdmin = ref(false);
 
 const selectedUser = computed(() => userStore.selectedUser);
-const userProductStores = computed(() => userStore.getSelectedUserProductStores);
+const { userProductStores } = useUserProductStores(() => userStore.getSelectedUserProductStores);
 const userSecurityGroups = computed(() => userStore.getSelectedUserSecurityGroups);
 // Role types are cached at login; this used to depend on `prefetchReferenceData` having run.
 const { descriptionById: roleTypeDescriptions } = useRoleTypes();
@@ -1217,7 +1218,13 @@ const selectFacility = async () => {
         commonUtil.showToast(translate("Facility associations updated successfully."));
       }
       const userFacilities = await userStore.getUserFacilities(selectedUser.value.partyId);
-      userStore.updateSelectedUser({ ...selectedUser.value, facilities: userFacilities });
+      // Adding a facility first ensures the WAREHOUSE_PICKER party role (we return above if that
+      // fails), so the picker toggle must reflect it now rather than only after a reload.
+      userStore.updateSelectedUser({
+        ...selectedUser.value,
+        facilities: userFacilities,
+        ...(facilitiesToAdd.length ? { isWarehousePicker: true } : {})
+      });
     }
   });
 

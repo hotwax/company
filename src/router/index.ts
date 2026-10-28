@@ -3,8 +3,6 @@ import { Login, commonUtil, translate } from "@common/index"
 import { createRouter, createWebHistory } from "@ionic/vue-router"
 import type { RouteLocationNormalized, RouteRecordRaw } from "vue-router"
 import Actions from "@/authorization/actions"
-import { useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard"
-import { followInventorySyncArea } from "@/services/inventorySyncArea"
 import { useUserStore } from "@/store/user"
 
 const FindFacilities = () => import("@/views/FindFacilities.vue")
@@ -52,6 +50,7 @@ const ResetPassword = () => import("@/views/ResetPassword.vue")
 const AppVersion = () => import("@/views/AppVersion.vue")
 const Organizations = () => import("@/views/Organizations.vue")
 const OrganizationDetails = () => import("@/views/OrganizationDetails.vue")
+const RejectionReasons = () => import("@/views/RejectionReasons.vue")
 
 const authGuard = () => {
   if(!useAuth().isAuthenticated.value) {
@@ -71,13 +70,12 @@ const requirePermission = (permissionId: string) => () => {
 }
 
 /**
- * `/create-product-store` is a compatibility command, not a resumable route. Reset before
- * redirecting so old links always start a clean setup. The canonical base route remains resumable,
- * and no transient query flag is left behind for a reload or later navigation to replay.
+ * `/create-product-store` is a compatibility command, not a resumable route. The onboarding page
+ * sees the redirect in `route.redirectedFrom` and starts a clean setup, so old links never resume a
+ * draft. The canonical base route remains resumable, and no transient query flag is left behind for
+ * a reload or later navigation to replay.
  */
 export function redirectLegacyProductStoreCreation(to: Pick<RouteLocationNormalized, "query" | "hash">) {
-  useProductStoreOnboardingWizard().startNewSetup()
-
   return {
     name: "ProductStoreOnboarding",
     query: to.query,
@@ -213,11 +211,16 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/login", name: "Login", component: Login },
   { path: "/reset-password", name: "ResetPassword", component: ResetPassword },
   { path: "/settings", name: "Settings", component: Settings, beforeEnter: authGuard },
+  { path: "/rejection-reasons", name: "RejectionReasons", component: RejectionReasons, beforeEnter: authGuard },
   { path: "/app-version", name: "AppVersion", component: AppVersion, beforeEnter: authGuard },
   { path: "/clone-product-store", name: "CloneProductStore", component: CloneProductStore, beforeEnter: authGuard },
   { path: "/mcp-setup", name: "McpSetup", component: McpSetup, beforeEnter: authGuard },
   { path: "/composer", name: "Composer", component: Composer, beforeEnter: authGuard },
   { path: "/workforce", name: "Workforce", component: Workforce, beforeEnter: authGuard },
+  // An unknown path matches nothing and renders an empty outlet; send it to the default page instead.
+  // Through "/" so the default lives in one place; its own guard still sends a signed-out user to login.
+  // The bad URL's query and hash are dropped: a redirect carries them over unless told otherwise.
+  { path: "/:pathMatch(.*)*", redirect: () => ({ path: "/", query: {}, hash: "" }) },
 ]
 
 const router = createRouter({
@@ -232,11 +235,6 @@ router.beforeEach(() => {
   if(useAuth().checkAppVersionRedirect()) {
     return false
   }
-})
-
-// Entering a shop's inventory sync pages starts that area's pollers; leaving them stops the worker.
-router.afterEach((to) => {
-  void followInventorySyncArea(to)
 })
 
 export default router

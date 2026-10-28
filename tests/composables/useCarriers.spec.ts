@@ -28,58 +28,73 @@ const harness = vi.hoisted(() => ({
     errors: {} as Record<string, string>,
   },
   resyncDomain: vi.fn(),
-  startReferenceSync: vi.fn(),
+  startAppDbSync: vi.fn(),
 }));
+
+const KIND_MAP: Record<string, string> = {
+  carriers: "carriers",
+  carrierShipmentMethods: "carrierMethods",
+  carrierFacilities: "carrierFacilities",
+  shipmentMethodTypes: "shipmentMethodTypes",
+  facilities: "facilities",
+  systemMessageRemotes: "remotes",
+  productStores: "productStores",
+  productStoreShippingMethods: "productStoreMethods",
+};
+
+function getKind(entity: any): string {
+  const raw = typeof entity === "string" ? entity : String(entity?.name ?? entity?.__kind ?? "");
+  return KIND_MAP[raw] || raw;
+}
 
 vi.mock("@common", () => ({
   api: vi.fn(),
   commonUtil: { hasError: vi.fn(() => false) },
+  useLiveEntity: (entity: any, optionsOrSelector: any = {}) => {
+    const kind = getKind(entity);
+    const list = harness.records[kind] ?? [];
+    let scope: any;
+    let equalsObj: any;
+
+    if (typeof optionsOrSelector === "function") {
+      const criteria = optionsOrSelector();
+      equalsObj = criteria?.equals;
+    } else if (optionsOrSelector) {
+      scope = optionsOrSelector.scope;
+      equalsObj = optionsOrSelector.equals;
+    }
+
+    let rows = list;
+    if (scope) {
+      rows = rows.filter((row: any) => row?.[scope.field] === scope.value);
+    }
+    if (equalsObj) {
+      rows = rows.filter((row: any) =>
+        Object.entries(equalsObj).every(([k, v]) => String(row?.[k]) === String(v))
+      );
+    }
+
+    const recordsRef = ref(rows);
+    return {
+      records: recordsRef,
+      rows: ref(rows.map((raw: any) => ({ ...raw, raw }))),
+      first: computed(() => rows[0]),
+      count: computed(() => rows.length),
+      hydrated: ref(harness.hydrated[kind] ?? true),
+      error: ref(null),
+    };
+  },
 }));
 
 vi.mock("@/utils", () => ({
   getResponseErrorMessage: (_error: any, fallback: string) => fallback,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  carrierCache: { __kind: "carriers" },
-  carrierShipmentMethodCache: { __kind: "carrierMethods" },
-  carrierFacilityCache: { __kind: "carrierFacilities" },
-  shipmentMethodTypeCache: { __kind: "shipmentMethodTypes" },
-  facilityCache: { __kind: "facilities" },
-  productStoreCache: { __kind: "productStores" },
-  productStoreShippingMethodCache: { __kind: "productStoreMethods" },
-  systemMessageRemoteCache: { __kind: "remotes" },
-}));
-
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/db/appDbSync", () => ({
   bootstrapState: harness.bootstrapState,
   refreshAfterMutation: vi.fn(),
   resyncDomain: (...args: any[]) => harness.resyncDomain(...args),
-  startReferenceSync: (...args: any[]) => harness.startReferenceSync(...args),
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: (entity: any, options: any = {}) => {
-    const kind = String(entity?.__kind ?? "");
-    const scope = options?.scope;
-    const rows = scope
-      ? harness.records[kind].filter((row: any) => row?.[scope.field] === scope.value)
-      : harness.records[kind];
-
-    return {
-      records: ref(rows),
-      rows: ref(rows.map((raw: any) => ({ ...raw, raw }))),
-      hydrated: ref(harness.hydrated[kind]),
-    };
-  },
-  useCachedRecord: (entity: any, keyField: string, id: string | undefined) => {
-    const records = harness.records[String(entity?.__kind ?? "")];
-
-    return {
-      record: computed(() => records.find((row: any) => String(row?.[keyField]) === String(id))),
-      hydrated: ref(harness.hydrated[String(entity?.__kind ?? "")]),
-    };
-  },
+  startAppDbSync: (...args: any[]) => harness.startAppDbSync(...args),
 }));
 
 import {
@@ -217,7 +232,7 @@ describe("carrier cache-backed reads", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     harness.resyncDomain.mockResolvedValue(undefined);
-    harness.startReferenceSync.mockResolvedValue(undefined);
+    harness.startAppDbSync.mockResolvedValue(undefined);
     Object.assign(harness.hydrated, {
       carriers: true,
       carrierMethods: true,
@@ -392,7 +407,7 @@ describe("carrier cache-backed reads", () => {
 
     await detail.refreshDetails();
 
-    expect(harness.startReferenceSync).not.toHaveBeenCalled();
+    expect(harness.startAppDbSync).not.toHaveBeenCalled();
     expect(harness.resyncDomain.mock.calls).toEqual([
       ["carrierFacility"],
       ["productStore"],
@@ -404,7 +419,7 @@ describe("carrier cache-backed reads", () => {
       __start: "cache worker failed to start",
       facility: "facility snapshot failed",
     };
-    harness.startReferenceSync.mockImplementationOnce(() => {
+    harness.startAppDbSync.mockImplementationOnce(() => {
       delete harness.bootstrapState.errors.__start;
 
       return Promise.resolve(undefined);
@@ -419,7 +434,7 @@ describe("carrier cache-backed reads", () => {
     expect(detail.readyForMutation.value).toBe(false);
     await detail.refreshDetails();
 
-    expect(harness.startReferenceSync).toHaveBeenCalledTimes(1);
+    expect(harness.startAppDbSync).toHaveBeenCalledTimes(1);
     expect(harness.resyncDomain.mock.calls).toEqual([["facility"]]);
     expect(harness.bootstrapState.errors).toEqual({});
   });
@@ -433,7 +448,7 @@ describe("carrier cache-backed reads", () => {
 
     await expect(detail.refreshDetails()).rejects.toThrow("cache worker failed to start");
 
-    expect(harness.startReferenceSync).toHaveBeenCalledTimes(1);
+    expect(harness.startAppDbSync).toHaveBeenCalledTimes(1);
     expect(harness.resyncDomain).not.toHaveBeenCalled();
     expect(detail.readyForMutation.value).toBe(false);
   });

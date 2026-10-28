@@ -124,9 +124,37 @@ export const INVENTORY_EVENT_DOMAINS = {
   bounds: "inventoryEventBounds",
 } as const;
 
+/**
+ * Status-card text for the inventory sync area's domains (and the monitor's job runs beside them),
+ * shared by the worker's domain declarations and the toolbar's `SyncStatusButton`.
+ */
+export const INVENTORY_SYNC_DOMAIN_LABELS: Record<string, string> = {
+  [INVENTORY_EVENT_DOMAINS.channelRows]: "Shopify channel inventory events",
+  [INVENTORY_EVENT_DOMAINS.channelMessages]: "Shopify channel inventory event deliveries",
+  [INVENTORY_EVENT_DOMAINS.locationRows]: "Shopify location inventory events",
+  [INVENTORY_EVENT_DOMAINS.locationMessages]: "Shopify location inventory event deliveries",
+  [INVENTORY_EVENT_DOMAINS.systemMessages]: "Unsettled inventory event batches",
+  [INVENTORY_EVENT_DOMAINS.products]: "Shopify products for inventory events",
+  [INVENTORY_EVENT_DOMAINS.bounds]: "Oldest inventory events on the server",
+  serviceJobRun: "Service job runs",
+};
+
 /** `bounds` is not polled: each history page asks for it once when it loads. */
 export function inventoryEventAreaDomains(shopId: string): Array<{ name: string; args: { shopId: string } }> {
   return Object.values(INVENTORY_EVENT_DOMAINS)
     .filter((name) => name !== INVENTORY_EVENT_DOMAINS.bounds)
     .map((name) => ({ name, args: { shopId } }));
 }
+
+/**
+ * Each outstanding list holds the first N transfer orders, read whole; "Load more" raises N by this
+ * step. Reading every outstanding row instead failed on a shop with thousands of them (gorjana,
+ * 2026-10-12: 13,176 creation items and 12,823 receipts).
+ */
+export const TRANSFER_ORDER_PAGE = 10;
+
+/**
+ * How long a downloaded DataManager error file is used before it is downloaded again. The
+ * `dataManagerErrorRecord` domain prunes rows past it, and screens hide them until then.
+ */
+export const ERROR_RECORD_TTL_MS = 2 * 60 * 60 * 1000;

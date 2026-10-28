@@ -30,12 +30,8 @@ vi.mock("@common", () => ({
     ),
 }));
 
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: (entity: any) => ({
-    records: entity.table === "inventoryChannels" ? cachedChannels : cachedJobs,
-    rows: entity.table === "inventoryChannels" ? cachedChannels : cachedJobs,
-    hydrated: ref(true),
-  }),
+vi.mock("@/composables/useServiceJobs", () => ({
+  useServiceJobs: () => ({ jobs: cachedJobs, hydrated: ref(true) }),
 }));
 
 vi.mock("@/composables/useShopify", () => ({
@@ -44,6 +40,7 @@ vi.mock("@/composables/useShopify", () => ({
   fetchLocationsFromShopify: (...args: any[]) => harness.fetchLocationsFromShopify(...args),
   fetchShopifyShopLocations: (...args: any[]) => harness.fetchShopifyShopLocations(...args),
   updateInventoryChannel: (...args: any[]) => harness.updateInventoryChannel(...args),
+  useInventoryChannels: () => ({ channels: cachedChannels, hydrated: ref(true) }),
 }));
 
 describe("EditInventoryChannelModal", () => {

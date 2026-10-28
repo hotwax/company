@@ -15,13 +15,14 @@
  *   6. Order sync schedule                                  — cron validation/preview (pure)
  *   7. Order sync session                                   — worker activation, not main-thread polling
  *
- * Everything reads from IndexedDB through `useCachedList`; the sync worker owns all cadence. The only
+ * Everything reads from IndexedDB through `useLiveEntity`; the sync worker owns all cadence. The only
  * live reads left are the ones that cannot be cached — Shopify GraphQL, webhook subscriptions, the
  * order-sync history projection, and landmark system properties.
  */
 
 
-import { api, commonUtil, logger, translate } from "@common";
+import { api, commonUtil, logger, translate, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
 import {
   type ComputedRef, type MaybeRefOrGetter, computed, onBeforeUnmount, reactive, ref, toRefs,
@@ -30,26 +31,13 @@ import {
 import Actions from "@/authorization/actions";
 import { type InventoryEventSourceRoot, sourceRootFor } from "@/utils/inventoryEventSourceRoots";
 import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation, syncDomainsError as workerError, syncNow } from "@/db/appDbSync";
+import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import {
   METAFIELD_DEFINITIONS_QUERY, SHOPIFY_METAFIELD_OWNER_TYPES, type ShopifyMetafieldDefinition, parseMetafieldDefinitionsPage,
 } from "@/utils/shopifyMetafieldDefinitions";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { parseDateTimeValue } from "@/utils";
-import {
-  dataManagerLogCache,
-  inventoryEventDocumentCache,
-  productStoreCache,
-  serviceJobCache,
-  shopifyBulkOperationCache,
-  shopifyCarrierShipmentCache,
-  shopifyLocationCache,
-  shopifyShopCache,
-  shopifyTypeMappingCache,
-  syncRunCache,
-  systemMessageCache,
-  systemMessageErrorCache,
-  systemMessageRemoteCache,
-} from "@/utils/cacheEntities";
+import { isShopifyLocationMapping } from "@/utils/shopifyShop";
 import {
   DATA_MANAGER_LOG_STATUS_IDS,
   logState as dataManagerLogState,
@@ -60,10 +48,9 @@ import {
   getSystemMessageBulkOperationId,
 } from "@/utils/shopifyBulkOperation";
 import { shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
-import type { ActiveDomain } from "@/workers/syncRegistry";
+import type { ActiveDomain } from "@common/db";
+import { serviceState } from "@common/db";
 import { onSessionCleared } from "./sessionScope";
-import { useCachedList, useCachedRecord } from "./useCachedList";
-import { useCacheSync } from "./useCacheSync";
 import { useDataManager } from "./useDataManager";
 import { useStatuses } from "./useSeed";
 import { useServiceJob } from "./useServiceJobs";
@@ -134,8 +121,9 @@ export function useShopifyUnsyncedProductCount(options: ShopifyUnsyncedProductCo
  * Shopify master entity — connections (shops) and everything scoped to a shop: inventory
  * locations, type mappings, and carrier/shipment mappings.
  *
- * Each of these tables holds EVERY shop's rows in one unscoped snapshot, so a page reads its
- * slice with a `shopId` scope instead of issuing a per-shop fetch.
+ * Reads come from the cache (`shopifyShops`, `shopifyLocations`, `shopifyTypeMappings`,
+ * `shopifyCarrierShipments`), so the connection pages open instantly with no request. Writes call
+ * the REST endpoints directly and then resync the affected domain so the UI updates.
  */
 
 // ---------------------------------------------------------------------------------------------
@@ -143,9 +131,23 @@ export function useShopifyUnsyncedProductCount(options: ShopifyUnsyncedProductCo
 // ---------------------------------------------------------------------------------------------
 
 export function useShopifyShops() {
-  const { records, hydrated } = useCachedList<any>(shopifyShopCache);
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyShops);
 
   return { shops: records, records, hydrated };
+}
+
+/** Every cached inventory channel, across shops; screens narrow by shop and effective dates. */
+export function useInventoryChannels() {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.inventoryChannels);
+
+  return { channels: records, records, hydrated };
+}
+
+/** The cached Moqui data feeds (the inventory event feeds among them). */
+export function useDataFeeds() {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.dataFeeds);
+
+  return { feeds: records, records, hydrated };
 }
 
 export const SHOPIFY_INVENTORY_EVENT_FEED_ID = "ShopifyInventoryChannelEventFeed";
@@ -298,8 +300,8 @@ function toInventoryEventDocuments(rows: any[]): InventoryEventDocument[] {
  * the OMS returned.
  */
 export function useInventoryEventDocuments() {
-  const { records, hydrated } = useCachedList<any>(inventoryEventDocumentCache);
-  const documents = computed(() => toInventoryEventDocuments(records.value.map((row: any) => row?.raw ?? row)));
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.inventoryEventDocuments);
+  const documents = computed(() => toInventoryEventDocuments(records.value));
 
   return { documents, hydrated };
 }
@@ -742,12 +744,17 @@ export async function ensureShopPhysicalAtpResetJob(shopId: string): Promise<str
  * only the param changes, so a view that reads this from a raw `props.id` stays pinned to the shop
  * it first mounted with while everything else on the page re-scopes.
  */
-export const useShopifyShop = (shopId: MaybeRefOrGetter<string | undefined>) =>
-  useCachedRecord(shopifyShopCache, "shopId", computed(() => toValue(shopId)));
+export const useShopifyShop = (shopId: MaybeRefOrGetter<string | undefined>) => {
+  const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyShops, () => {
+    const id = toValue(shopId);
+    return id ? { equals: { shopId: id } } : { filter: () => false };
+  });
+  return { record, hydrated };
+};
 
 export function useShopsForProductStore(productStoreId: string | undefined) {
-  const { records, hydrated } = useCachedList<any>(
-    shopifyShopCache,
+  const { records, hydrated } = useLiveEntity<any>(
+    companyDb.tables.shopifyShops,
     productStoreId ? { scope: { field: "productStoreId", value: productStoreId } } : {},
   );
 
@@ -776,9 +783,11 @@ function stableByShop<T extends Record<string, any>>(rows: readonly T[]): T[] {
 }
 
 export function useShopifyLocations(shopId: string | undefined) {
-  const { records: unordered, hydrated } = useCachedList<any>(
-    shopifyLocationCache,
-    shopId ? { scope: { field: "shopId", value: shopId } } : {},
+  const { records: unordered, hydrated } = useLiveEntity<any>(
+    companyDb.tables.shopifyLocations,
+    shopId
+      ? { scope: { field: "shopId", value: shopId }, filter: isShopifyLocationMapping }
+      : { filter: isShopifyLocationMapping },
   );
 
   // Stable order so an unscoped read's `find`/`reduce` winner does not vary — see `stableByShop`.
@@ -808,8 +817,8 @@ export function useShopifyLocations(shopId: string | undefined) {
 // ---------------------------------------------------------------------------------------------
 
 export function useShopifyTypeMappings(shopId: string | undefined, mappedTypeId: string) {
-  const { records: unordered, hydrated } = useCachedList<any>(
-    shopifyTypeMappingCache,
+  const { records: unordered, hydrated } = useLiveEntity<any>(
+    companyDb.tables.shopifyTypeMappings,
     shopId ? { scope: { field: "shopId", value: shopId } } : {},
   );
 
@@ -830,8 +839,8 @@ export function useShopifyTypeMappings(shopId: string | undefined, mappedTypeId:
 }
 
 export function useShopifyCarrierShipments(shopId: string | undefined) {
-  const { records: unordered, hydrated } = useCachedList<any>(
-    shopifyCarrierShipmentCache,
+  const { records: unordered, hydrated } = useLiveEntity<any>(
+    companyDb.tables.shopifyCarrierShipments,
     shopId ? { scope: { field: "shopId", value: shopId } } : {},
   );
 
@@ -883,11 +892,13 @@ export function useShopifyCarrierShipments(shopId: string | undefined) {
  * is a client-side join instead of a request: no new domain, no extra sync.
  */
 export function useShopifyFacilityMappings(facilityId: string | undefined) {
-  const { records: locations, hydrated } = useCachedList<any>(
-    shopifyLocationCache,
-    facilityId ? { scope: { field: "facilityId", value: facilityId } } : {},
+  const { records: locations, hydrated } = useLiveEntity<any>(
+    companyDb.tables.shopifyLocations,
+    facilityId
+      ? { scope: { field: "facilityId", value: facilityId }, filter: isShopifyLocationMapping }
+      : { filter: isShopifyLocationMapping },
   );
-  const { records: shops } = useCachedList<any>(shopifyShopCache);
+  const { records: shops } = useLiveEntity<any>(companyDb.tables.shopifyShops);
 
   const mappings = computed(() => {
     const shopById = shops.value.reduce((map: Record<string, any>, shop: any) => {
@@ -916,10 +927,11 @@ export function useShopifyFacilityMappings(facilityId: string | undefined) {
  * find locations that exist on one side only. The OMS half comes from `useShopifyLocations`, so this
  * is the only request the audit needs.
  */
-export async function fetchLocationsFromShopify(shopId: string): Promise<any[]> {
+export async function fetchLocationsFromShopify(shopId: string, params?: { includeLegacy?: boolean }): Promise<any[]> {
   const resp: any = await api({
     url: `shopify/shops/${encodeURIComponent(shopId)}/shopify-locations`,
     method: "get",
+    params,
   });
 
   return (resp?.data?.locations?.edges ?? []).map((edge: any) => edge?.node).filter(Boolean);
@@ -2010,9 +2022,9 @@ export interface ShopifySyncContext {
  * which remote a shop owns.
  */
 export function useShopifySyncContext(shopIdSource: ShopIdSource): ShopifySyncContext {
-  const { records: shops, hydrated: shopsHydrated } = useCachedList<any>(shopifyShopCache);
-  const { records: productStores, hydrated: storesHydrated } = useCachedList<any>(productStoreCache);
-  const { records: remotes, hydrated: remotesHydrated } = useCachedList<any>(systemMessageRemoteCache);
+  const { records: shops, hydrated: shopsHydrated } = useLiveEntity<any>(companyDb.tables.shopifyShops);
+  const { records: productStores, hydrated: storesHydrated } = useLiveEntity<any>(companyDb.tables.productStores);
+  const { records: remotes, hydrated: remotesHydrated } = useLiveEntity<any>(companyDb.tables.systemMessageRemotes);
 
   /**
    * Hydrated means EVERY table this context joins has emitted, not just the shop table.
@@ -2074,7 +2086,7 @@ export function useShopifySyncJob(
     error?: MaybeRefOrGetter<string | undefined>;
   } = {},
 ) {
-  const { records: jobs, hydrated } = useCachedList<any>(serviceJobCache);
+  const { records: jobs, hydrated } = useLiveEntity<any>(companyDb.tables.serviceJobs);
 
   const templateJob = computed<any>(() =>
     jobs.value.find((row: any) => String(row.jobName) === feature.templateJobName) ?? null);
@@ -2122,7 +2134,7 @@ export function useShopifySyncMessages(
   ctx: Pick<ShopifySyncContext, "remoteId"> & Partial<Pick<ShopifySyncContext, "remoteIds">>,
   options: { limit?: number; types?: readonly string[] } = {},
 ) {
-  const { records: messages, hydrated } = useCachedList<any>(systemMessageCache, { dateField: "initDate" });
+  const { records: messages, hydrated } = useLiveEntity<any>(companyDb.tables.systemMessages, { dateField: "initDate" });
 
   const wantedTypes = computed(() =>
     new Set((options.types?.length ? options.types : feature.messageTypeIds).map(String)));
@@ -2171,8 +2183,9 @@ export function useShopifySyncMessages(
  *   1. `syncRuns` says which runs this shop has and which import each became. It is the only
  *      shop-scoped source of that pairing, so it decides membership.
  *   2. The full SystemMessage and DataManagerLog come from their own cached tables.
- *   3. Anything still missing is fetched by id, written to the cache, and returned — so a miss
- *      resolves once and never again (terminal records are immutable).
+ *   3. Anything still missing once those tables have loaded is requested by id from its domain, and
+ *      appears through the live read when stored — so a miss resolves once and never again
+ *      (terminal records are immutable).
  *
  * Step 3 exists because the worker's enrichment is bounded per tick: a screen opened seconds after a
  * new run appears would otherwise render a hole. It is deduplicated and bounded here too, so a run
@@ -2183,14 +2196,14 @@ export function useShopifySyncRuns(
   systemMessageTypeIds: readonly string[],
   options: { limit?: number; hydrateMax?: number } = {},
 ) {
-  const { ensureSystemMessageById } = useSystemMessage();
-  const { ensureDataManagerLog } = useDataManager();
+  const { requestSystemMessage } = useSystemMessage();
+  const { requestDataManagerLog } = useDataManager();
 
-  // `rows`, not `records`: `shopId` is renamed from the document's `remoteInternalId` and so exists
+  // `records`, not `rows`: `shopId` is renamed from the document's `remoteInternalId` and so exists
   // only after projection. Filtering `records` by it compares against undefined and matches nothing.
-  const { rows: runRows, hydrated } = useCachedList<any>(syncRunCache, { dateField: "initDate" });
-  const { records: messages } = useCachedList<any>(systemMessageCache, { dateField: "initDate" });
-  const { records: logs } = useCachedList<any>(dataManagerLogCache, { dateField: "createdDate" });
+  const { records: runRows, hydrated } = useLiveEntity<any>(companyDb.tables.syncRuns, { dateField: "initDate" });
+  const { records: messages, hydrated: messagesHydrated } = useLiveEntity<any>(companyDb.tables.systemMessages, { dateField: "initDate" });
+  const { records: logs, hydrated: logsHydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, { dateField: "createdDate" });
 
   const wantedTypes = computed(() => new Set(systemMessageTypeIds.map(String)));
 
@@ -2233,7 +2246,9 @@ export function useShopifySyncRuns(
   /** Attempted ids, so a genuinely absent record is not re-requested on every render. */
   const attempted = new Set<string>();
 
-  watch(runs, (current) => {
+  watch([runs, messagesHydrated, logsHydrated], ([current, messagesReady, logsReady]) => {
+    // Before a table's first read every row looks missing; deciding then would request them all.
+    if(!messagesReady || !logsReady) {return;}
     const limit = options.hydrateMax ?? 5;
     let budget = limit;
 
@@ -2244,14 +2259,14 @@ export function useShopifySyncRuns(
       if(messageId && !run.systemMessage && !attempted.has(`m:${messageId}`)) {
         attempted.add(`m:${messageId}`);
         budget -= 1;
-        void ensureSystemMessageById(messageId);
+        void requestSystemMessage(messageId);
       }
 
       const logId = String(run.logId ?? "");
       if(logId && !run.mdmLog && !attempted.has(`l:${logId}`)) {
         attempted.add(`l:${logId}`);
         budget -= 1;
-        void ensureDataManagerLog(logId);
+        void requestDataManagerLog(logId);
       }
     }
   }, { immediate: true });
@@ -2274,7 +2289,7 @@ function isFailedImport(log: any): boolean {
  * pass over the cached table is cheaper than N filters — the join key is `systemMessageId`.
  */
 export function useShopifySyncImports(feature: ShopifySyncFeature) {
-  const { records: logs, hydrated } = useCachedList<any>(dataManagerLogCache, { dateField: "createdDate" });
+  const { records: logs, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, { dateField: "createdDate" });
 
   const wanted = new Set(feature.importConfigIds.map(String));
 
@@ -2308,8 +2323,8 @@ export const SHOPIFY_PAYMENT_METHOD_MAPPED_TYPE = "SHOPIFY_PAYMENT_TYPE";
  * carrier shipments for shipping), which is why this exists rather than each screen filtering twice.
  */
 export function useShopifySyncMappings(shopIdSource: ShopIdSource) {
-  const { records: typeMappings } = useCachedList<any>(shopifyTypeMappingCache);
-  const { records: carrierShipments, hydrated } = useCachedList<any>(shopifyCarrierShipmentCache);
+  const { records: typeMappings } = useLiveEntity<any>(companyDb.tables.shopifyTypeMappings);
+  const { records: carrierShipments, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyCarrierShipments);
 
   const shopId = computed(() => String(toValue(shopIdSource) ?? ""));
   const forShop = (rows: any[]) => rows.filter((row: any) => String(row.shopId) === shopId.value);
@@ -2376,8 +2391,9 @@ export interface ShopifySyncSessionOptions extends SyncFeatureDomainOptions {
  * The class-A domains ONE sync feature needs — its messages and the imports they produce.
  *
  * Exported because a page can render more than one feature (connection details shows both product
- * sync and order sync) and every `useCacheSync()` call owns its own worker. Composing two features'
- * domain lists into a single session is therefore the difference between one worker and two.
+ * sync and order sync) and there is ONE worker with ONE active domain set. Two features each
+ * calling `activateSyncDomains` would overwrite each other's scope, so composing their domain
+ * lists into a single activation is what lets both run.
  *
  * ⚠️ The message domain is scoped to THIS feature's types. The app config lists every type any screen
  * might want, and syncing all of them costs one request per (type × remote) per tick — twelve for a
@@ -2424,11 +2440,15 @@ export function useShopifySyncSession(
   feature: ShopifySyncFeature,
   options: ShopifySyncSessionOptions,
 ) {
-  const { start, stop, syncNow, error: workerError, domainStatus } = useCacheSync();
-
   const isPageActive = ref(false);
   /** True only during a manual/live refresh — never for observing cached progress. */
   const isRefreshing = ref(false);
+  /**
+   * A distinct owner per SESSION instance, not the shared feature id: both the polling session and
+   * the history session activate under `ORDER_SYNC_FEATURE`, so two simultaneously live sessions
+   * would otherwise share one owner string and defeat the teardown guard in `setupAppDbSync`.
+   */
+  const SYNC_OWNER = createSyncDomainOwner(feature.id);
 
   /**
    * The domain set, as a COMPUTED over everything that can change it.
@@ -2459,12 +2479,12 @@ export function useShopifySyncSession(
   async function activate() {
     isPageActive.value = true;
     if(!activeDomainSet.value.length) {
-      stop();
+      void deactivateSyncDomains(SYNC_OWNER);
 
       return;
     }
     try {
-      await start(activeDomainSet.value);
+      await activateSyncDomains(activeDomainSet.value, SYNC_OWNER);
     } catch (error) {
       logger.error(`Failed to activate ${feature.id} sync domains`, error);
       options.onError?.(error);
@@ -2473,18 +2493,18 @@ export function useShopifySyncSession(
 
   function deactivate() {
     isPageActive.value = false;
-    stop();
+    void deactivateSyncDomains(SYNC_OWNER);
   }
 
-  /** `start` swaps the domain set on the running worker rather than respawning it, so this is cheap. */
+  /** `activateSyncDomains` swaps the domain set on the running worker rather than respawning it. */
   watch(activeDomainSet, (domains) => {
     if(!isPageActive.value) {return;}
     if(!domains.length) {
-      stop();
+      void deactivateSyncDomains(SYNC_OWNER);
 
       return;
     }
-    void start(domains).catch((error) => {
+    void activateSyncDomains(domains, SYNC_OWNER).catch((error) => {
       logger.error(`Failed to re-scope ${feature.id} sync domains`, error);
     });
   });
@@ -2516,19 +2536,19 @@ export function useShopifySyncSession(
   onBeforeUnmount(() => deactivate());
 
   /**
-   * `domainStatus` is passed through because a cached projection cannot tell "this shop has nothing"
-   * from "the worker has not fetched this shop yet" on its own. `useCachedList`'s `hydrated` answers
+   * `syncedAt` is passed through because a cached projection cannot tell "this shop has nothing"
+   * from "the worker has not fetched this shop yet" on its own. `useLiveEntity`'s `hydrated` answers
    * that only for the app-wide seed (`bootstrapState.running`), which is long finished by the time a
-   * screen activates its own domains -- so a screen that needs the distinction reads the per-domain
-   * result here instead.
+   * screen activates its own domains -- so a screen that needs the distinction reads
+   * `serviceState.syncedAt` here instead.
    *
-   * `workerError` goes with it, and a screen waiting on `domainStatus` must read both: a failed start
-   * or a failed pass never records a `sync-end`, so a screen watching only for success waits forever.
-   * A failure is a real answer -- "we looked and could not tell" -- not a longer wait.
+   * `workerError` goes with it, and a screen waiting on `syncedAt` must read both: a failed start
+   * or a failed pass never records a sync-end timestamp, so a screen watching only for success waits
+   * forever. A failure is a real answer -- "we looked and could not tell" -- not a longer wait.
    */
   return {
     isPageActive, isRefreshing, manualRefresh, activate, deactivate,
-    domainStatus, workerError,
+    syncedAt: serviceState.syncedAt, workerError,
   };
 }
 
@@ -2688,8 +2708,7 @@ const escapeShopifyQueryValue = (value: string) => String(value).replace(/(["\\]
  *
  * The ONE part of the old product-sync dashboard that is genuinely a request: only Shopify knows what
  * changed on its side. `lastSyncedAt` comes from the cached run state, so the caller supplies it
- * rather than this re-deriving it with another round trip (the store version fell back to a whole
- * `fetchProductUpdateSyncRunState` when the date was missing).
+ * rather than this re-deriving it with another round trip.
  *
  * Returns 0 rather than throwing when there is no remote or no prior sync — a count is a display
  * value and a failure to obtain it must not take a page down.
@@ -2891,11 +2910,11 @@ export function productSyncExtraDomains(intervalMs: number, jobNames: readonly s
  * result of a fetch cascade.
  *
  * Two pieces stay ON DEMAND (class C) because they only matter for a run being inspected: the
- * message's ERRORS and the Shopify BULK OPERATION. `fetchSyncRun` primes both once; each writes
- * through to the cache, after which they are read reactively like everything else.
+ * message's ERRORS and the Shopify BULK OPERATION. `fetchSyncRun` requests whichever the live rows
+ * lack; each domain stores what it fetches, after which they are read reactively like everything else.
  */
 export function useShopifyProductSyncRun() {
-  const { ensureSystemMessageById, ensureSystemMessageErrors, fetchShopifyBulkOperation } = useSystemMessage();
+  const { requestSystemMessage, requestSystemMessageErrors, requestShopifyBulkOperation } = useSystemMessage();
   const { labelFor } = useStatuses();
 
   /** Which run is displayed. Set by `fetchSyncRun`; everything below derives from it. */
@@ -2905,10 +2924,10 @@ export function useShopifyProductSyncRun() {
 
   // One live subscription per table. Whole-table reads because the lookup key is reactive, and
   // re-subscribing on every id change would churn subscriptions for no gain at these volumes.
-  const { records: messages } = useCachedList<any>(systemMessageCache, { dateField: "initDate" });
-  const { records: bulkOperations } = useCachedList<any>(shopifyBulkOperationCache);
-  const { records: mdmLogs } = useCachedList<any>(dataManagerLogCache, { dateField: "createdDate" });
-  const { records: messageErrors } = useCachedList<any>(systemMessageErrorCache, { dateField: "errorDate" });
+  const { records: messages, hydrated: messagesHydrated } = useLiveEntity<any>(companyDb.tables.systemMessages, { dateField: "initDate" });
+  const { records: bulkOperations, hydrated: bulkOperationsHydrated } = useLiveEntity<any>(companyDb.tables.shopifyBulkOperations);
+  const { records: mdmLogs } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, { dateField: "createdDate" });
+  const { records: messageErrors, hydrated: messageErrorsHydrated } = useLiveEntity<any>(companyDb.tables.systemMessageErrors, { dateField: "errorDate" });
 
   /**
    * Status → colour, by string matching rather than a status-id map, because the three sources speak
@@ -3054,7 +3073,7 @@ export function useShopifyProductSyncRun() {
   });
 
   /**
-   * Point this composable at a run and prime the two on-demand pieces.
+   * Point this composable at a run and request what its live rows lack.
    *
    * Callers do NOT need to call this again to see progress — `currentSyncRun` keeps updating from the
    * cache on its own. It returns the derived run so existing `await fetchSyncRun(id)` sites keep
@@ -3067,22 +3086,28 @@ export function useShopifyProductSyncRun() {
     targetMessageId.value = id;
     loading.value = true;
     try {
-      // An exact deep link can target a run outside the current shop spine window. Hydrate that one
-      // message by id before joining its bulk operation and import; this is cache-first and uses the
-      // same existing SystemMessage read contract as spine enrichment.
-      const ensuredMessage = systemMessage.value ?? systemMessageData ??
-        await ensureSystemMessageById(id).catch(() => null);
+      // Decide from loaded tables only: before its first read every row looks missing.
+      const loaded = () => messagesHydrated.value && messageErrorsHydrated.value && bulkOperationsHydrated.value;
+      if(!loaded()) {
+        await new Promise<void>((resolve) => {
+          const stop = watch(loaded, (ready) => { if(ready) { stop(); resolve(); } });
+        });
+      }
+      if(targetMessageId.value !== id) {return currentSyncRun.value;}
 
-      // Cached after the first look, so this is a no-op on revisit.
-      await ensureSystemMessageErrors(id);
+      // An exact deep link can target a run outside the current shop spine window: request that one
+      // message by id, the same way spine enrichment does.
+      if(!systemMessage.value && !systemMessageData) {await requestSystemMessage(id);}
 
-      // Cache-first inside `fetchShopifyBulkOperation`, which short-circuits once the operation is
-      // terminal (immutable), so a finished run never hits Shopify again.
-      const message = systemMessage.value ?? ensuredMessage;
+      // Stored after the first look, so this asks nothing on revisit.
+      if(!systemMessageErrors.value.length) {await requestSystemMessageErrors(id).catch(() => undefined);}
+
+      // Only when it is not stored yet: once a run has an operation, opening it does not ask Shopify.
+      const message = systemMessage.value ?? systemMessageData;
       const operationId = getSystemMessageBulkOperationId(message);
       const remoteId = message?.systemMessageRemoteId;
       if(operationId && remoteId && !bulkOperation.value) {
-        await fetchShopifyBulkOperation(operationId, remoteId).catch(() => undefined);
+        await requestShopifyBulkOperation(operationId, remoteId).catch(() => undefined);
       }
 
       return currentSyncRun.value;
@@ -4797,7 +4822,7 @@ export function useShopifyOrderSync() {
       parameter.parameterName === "fromDate"
         ? { ...parameter, parameterValue: toJobTimestamp(fromDateIso) }
         : parameter);
-    await updateJob({ jobName, serviceJobParameters: swapped });
+    await writeParameters(jobName, swapped);
     try {
       const resp: any = await runJobNow(jobName);
       const result = { jobName, fromDate: fromDateIso, ...(resp?.data ?? {}) };
@@ -4805,8 +4830,22 @@ export function useShopifyOrderSync() {
 
       return result;
     } finally {
-      await updateJob({ jobName, serviceJobParameters: baseline });
-      await refreshAfterMutation("serviceJob", { jobName });
+      await writeParameters(jobName, baseline);
+    }
+  }
+
+  /**
+   * `updateJob` for the replay's swap and restore, where only a failed cache refresh after the PUT
+   * is tolerated: the PUT landed either way. Letting it throw skipped the run and the restore after
+   * the swap, pinning the replay window to the job, and after the restore reported a replay that
+   * ran as failed, inviting a second one. `updateJob` records the failure as a sync error.
+   */
+  async function writeParameters(jobName: string, serviceJobParameters: any[]) {
+    try {
+      await updateJob({ jobName, serviceJobParameters });
+    } catch (error) {
+      if(!isCacheReconciliationError(error)) throw error;
+      logger.warn(`Updated ${jobName}'s parameters, but its cached job row could not be refreshed`, error);
     }
   }
 
@@ -5449,12 +5488,12 @@ export interface ConnectionSyncSessionOptions {
 }
 
 /**
- * The Shopify connection details page's session — BOTH sync features on ONE worker.
+ * The Shopify connection details page's session — BOTH sync features on ONE activation.
  *
  * Why this exists instead of the page composing two separate sessions and
- * `useShopifyOrderSyncPolling` side by side: each `useCacheSync()` owns its own `SyncService`, so two
- * sessions spawn two workers with two independent timers, both polling on behalf of one screen. This
- * composes the two features' domain lists and hands them to a single session instead.
+ * `useShopifyOrderSyncPolling` side by side: there is one worker with one active domain set, so two
+ * sessions would each call `activateSyncDomains` and the second would silently drop the first's
+ * domains. This composes the two features' domain lists and activates them once instead.
  *
  * Cadence stays PER FEATURE. `intervalMs` is stamped on each `ActiveDomain` and `effectiveInterval`
  * prefers it over the registered default, so order sync can run its 10s active cadence while product
@@ -5848,15 +5887,6 @@ export interface ShopifyShopProductCount {
   lastSyncedAt?: string;
 }
 
-export interface ShopifyProductUpdateSyncRunState {
-  latestSystemMessage?: any;
-  latestConfirmedSystemMessage?: any;
-  latestConsumedSystemMessage?: any;
-  lastSyncedAt?: string;
-  systemMessageRemoteId: string;
-  systemMessages?: any[];
-}
-
 export interface ShopifyRunningBulkOperation {
   id: string;
   status: string;
@@ -5963,10 +5993,6 @@ interface ShopifyGraphqlResponse {
 interface SystemMessagesResponse {
   systemMessages?: any[];
   systemMessagesCount?: number;
-}
-
-interface SystemMessageRemotesResponse {
-  systemMessageRemoteList?: any[];
 }
 
 const PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID = "BulkQueryShopifyProductUpdates";
@@ -6306,40 +6332,38 @@ function getShopifyAccessStateFromCandidate(candidate: any): ShopifyProductSyncA
   };
 }
 
-/**
- * Candidate remotes for a shop, read from the cached remote list.
- *
- * This ran three times on a single connection-details load, each time re-fetching the whole remote
- * list to filter it client-side. The list is cached seed data, so the filtering happens locally and
- * the request disappears. Network fallback only while the cache is unpopulated.
- */
-async function fetchShopRemoteCandidates(payload: any) {
-  try {
-    const cached = await systemMessageRemoteCache.all();
-    if(cached.length) {
-      const remotes = cached.map((row: any) => row.raw);
-
-      return sortShopRemoteCandidates(getShopRemoteCandidates(remotes, payload));
-    }
-  } catch (error) {
-    logger.warn("System message remote cache unavailable; falling back to the server", error);
-  }
-
-  const response = await requestBackend<SystemMessageRemotesResponse>({
-    url: "oms/systemMessageRemotes",
-    method: "get"
-  });
-
-  return sortShopRemoteCandidates(getShopRemoteCandidates(response?.systemMessageRemoteList || [], payload));
+/** A shop's remotes out of a remote list, best access first. Screens pass their live remote rows. */
+export function shopRemoteCandidatesFor(remotes: any[], payload: any) {
+  return sortShopRemoteCandidates(getShopRemoteCandidates(remotes, payload));
 }
 
+/** The Shopify access a shop has, from its best remote — "unavailable" while it has none. */
+export function shopifyAccessStateFor(remotes: any[], payload: any): ShopifyProductSyncAccessState {
+  const [candidate] = shopRemoteCandidatesFor(remotes, payload);
+  if(!candidate) {
+    return {
+      systemMessageRemoteId: "",
+      accessScopeEnumId: "",
+      hasWriteAccess: false,
+      status: "unavailable",
+      label: "Unavailable"
+    };
+  }
+
+  return getShopifyAccessStateFromCandidate(candidate);
+}
+
+/**
+ * The remote a shop's product sync runs on: the first candidate with product-sync history on the
+ * server. `remotes` is the caller's live remote rows.
+ */
 export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any> => {
   const shopifyShopId = payload.shopifyShopId || payload.shop?.shopifyShopId;
   if(!shopifyShopId) {
     throw new Error("Shopify shop id is required to resolve SystemMessageRemote.remoteId.");
   }
 
-  const candidates = await fetchShopRemoteCandidates(payload);
+  const candidates = shopRemoteCandidatesFor(Array.isArray(payload.remotes) ? payload.remotes : [], payload);
   if(!candidates.length) {
     throw new Error(`No SystemMessageRemote found with remoteId ${shopifyShopId}.`);
   }
@@ -6387,26 +6411,6 @@ export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any>
   if(firstValid) {return firstValid;}
 
   return candidates[0].systemMessageRemoteId;
-};
-
-export const fetchShopifyAccessState = async (payload: any): Promise<ShopifyProductSyncAccessState> => {
-  const shopifyShopId = payload.shopifyShopId || payload.shop?.shopifyShopId;
-  if(!shopifyShopId) {
-    throw new Error("Shopify shop id is required to resolve Shopify access scope.");
-  }
-
-  const candidates = await fetchShopRemoteCandidates(payload);
-  if(!candidates.length) {
-    return {
-      systemMessageRemoteId: "",
-      accessScopeEnumId: "",
-      hasWriteAccess: false,
-      status: "unavailable",
-      label: "Unavailable"
-    };
-  }
-
-  return getShopifyAccessStateFromCandidate(candidates[0]);
 };
 
 
@@ -6468,34 +6472,27 @@ function getLatestSystemMessage(systemMessages: any[]) {
   }, undefined);
 }
 
-export const fetchProductUpdateSyncRunState = async (payload: any): Promise<ShopifyProductUpdateSyncRunState> => {
-  const systemMessageRemoteId = typeof payload === "string" ? payload : resolveSystemMessageRemoteId(payload);
-  const shopId = payload.shopId || payload.shop?.shopId;
+/**
+ * This shop's product-sync messages as the server's history document joins them, newest first.
+ *
+ * Only for what the live spine cannot answer yet: its rows land per shop, so mid-hydration a table
+ * holding OTHER shops' runs is "loaded" while this shop's are not. Observed live on a cold profile —
+ * a shop with months of sync history read as never synced and dropped into the first-time wizard.
+ * So an empty spine is confirmed here, which costs a request only for shops that truly have no runs.
+ */
+async function fetchServerProductSyncMessages(shopId: string, pageSize: number): Promise<any[]> {
   if(!shopId) {
     throw new Error("Shop ID is required to find product update sync system messages.");
   }
 
-  const systemMessageId = payload.systemMessageId;
-  const pageSize = systemMessageId ? 1 : 100;
-
-  // CACHE-FIRST — see `cachedSyncMessageHistory`; the DataDocument is only asked when the cache
-  // cannot answer.
-  const cachedHistory = await cachedSyncMessageHistory({
-    shopId,
-    systemMessageId,
-    systemMessageTypeId: "BulkQueryShopifyProductUpdates",
-    pageSize,
-  });
-
-  const systemMessages = cachedHistory ?? getEntityValueList(
+  return getEntityValueList(
     await requestBackend<any>({
       url: "oms/dataDocumentView",
       method: "post",
       data: {
         dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
         customParametersMap: {
-          systemMessageId,
-          systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+          systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
           remoteInternalId: shopId,
           remoteInternalIdType: "HOTWAX_SHOP_ID",
           orderByField: "-lastUpdatedStamp"
@@ -6506,116 +6503,23 @@ export const fetchProductUpdateSyncRunState = async (payload: any): Promise<Shop
     }),
     "Product sync system message history",
   );
-
-  const confirmedMessages = systemMessages.filter((systemMessage: any) => systemMessage.statusId === "SmsgConfirmed" || systemMessage.statusId === "SmsgConsumed");
-  const consumedMessages = systemMessages.filter((systemMessage: any) => {
-    const statusId = String(systemMessage.statusId || "").toLowerCase();
-    const isConsumed = statusId === "smsgconsumed" || statusId === "consumed" || statusId === "smsgconfirmed" || statusId === "confirmed";
-
-    return isConsumed && systemMessage.logId;
-  });
-  const latestConfirmedSystemMessage = getLatestSystemMessage(confirmedMessages);
-  const latestConsumedSystemMessage = getLatestSystemMessage(consumedMessages);
-  const latestSystemMessage = getLatestSystemMessage(systemMessages);
-
-
-  return {
-    latestSystemMessage,
-    latestConfirmedSystemMessage,
-    latestConsumedSystemMessage,
-    lastSyncedAt: getTimestampDate(latestConsumedSystemMessage?.initDate),
-    systemMessageRemoteId,
-    systemMessages
-  };
-};
+}
 
 /**
- * Local reproduction of `dataDocumentId: SYSTEM_MESSAGE_DATA_MANAGER_LOG`.
+ * When this shop last synced products: the caller's live date, else the server's.
  *
- * That DataDocument is a server-side join of SystemMessage ⋈ DataManagerLog, scoped by message type
- * and by the REMOTE's internal id (the shop id, `remoteInternalIdType: HOTWAX_SHOP_ID`). Every input
- * is already cached: messages and logs are class-A domains, and the shop→remote link lives on the
- * cached remote as `internalId`. So the document is DERIVED here rather than requested — it was the
- * largest cluster of calls on the product-sync page.
- *
- * Returns `null` when the cache cannot answer (no remote resolved, or nothing cached yet), which
- * callers treat as "fall back to the server" rather than "no results" — the distinction matters,
- * because an empty array is a legitimate answer.
+ * Counting with no date counts every product in the shop, so an empty live date — the last import
+ * outside the stored window, or not stored yet — is confirmed with the server first.
  */
-async function cachedSyncMessageHistory(query: {
-  shopId: string;
-  systemMessageTypeId: string;
-  systemMessageId?: string;
-  statusId?: string;
-  pageSize?: number;
-}): Promise<any[] | null> {
-  try {
-    const remotes = (await systemMessageRemoteCache.all()).map((row: any) => row.raw ?? row);
-    const remoteIds = new Set(remotes
-      .filter((remote: any) => String(remote?.internalId ?? "") === String(query.shopId))
-      .map((remote: any) => String(remote.systemMessageRemoteId)),);
-    if(!remoteIds.size) {return null;}
+async function resolveLastSyncedAt(payload: any) {
+  const live = payload.lastSyncedAt || payload.syncRunState?.lastSyncedAt;
+  if(live) {return live;}
 
-    const messages = (await systemMessageCache.all()).map((row: any) => row.raw ?? row);
-    if(!messages.length) {return null;}
+  const messages = await fetchServerProductSyncMessages(String(payload.shopId || payload.shop?.shopId || ""), 100);
+  const consumed = messages.filter((systemMessage: any) =>
+    CONSUMED_STATUSES.has(String(systemMessage.statusId || "").toLowerCase()) && systemMessage.logId);
 
-    const logs = (await dataManagerLogCache.all()).map((row: any) => row.raw ?? row);
-    const logByMessageId = new Map<string, any>();
-    for(const log of logs) {
-      const key = String(log?.systemMessageId ?? "");
-      if(key && !logByMessageId.has(key)) {logByMessageId.set(key, log);}
-    }
-
-    let rows = messages.filter((message: any) =>
-      remoteIds.has(String(message?.systemMessageRemoteId)) &&
-      String(message?.systemMessageTypeId) === query.systemMessageTypeId);
-
-    /**
-     * ⚠️ An EMPTY scoped result is "cannot answer", not "no runs".
-     *
-     * The message table hydrates per (remote, type), so mid-hydration it can hold SOME shops' rows
-     * while this shop's have not landed yet. Observed live on a cold profile: the first-ever visit to
-     * the product sync page read the cache after another remote's tick had committed, got zero rows
-     * for THIS shop, concluded `hasLinkedOmsProducts: false`, and dropped a shop with months of sync
-     * history into the first-time wizard — a reload "fixed" it, which is the signature of a
-     * hydration race. Deferring to the server document costs one request only for shops that
-     * genuinely have no runs (the real wizard case), and is correct for everyone else.
-     */
-    if(!rows.length) {return null;}
-
-    if(query.systemMessageId) {
-      rows = rows.filter((message: any) => String(message.systemMessageId) === String(query.systemMessageId));
-    }
-    if(query.statusId) {
-      rows = rows.filter((message: any) => String(message.statusId) === query.statusId);
-    }
-
-    // The document orders by `-lastUpdatedStamp`; messages carry none (verified live), so
-    // `processedDate` then `initDate` is the equivalent recency signal.
-    rows.sort((a: any, b: any) =>
-      Number(b.processedDate ?? b.initDate ?? 0) - Number(a.processedDate ?? a.initDate ?? 0));
-
-    // `logId` is the field callers test to decide whether a message actually imported anything.
-    const joined = rows.map((message: any) => {
-      const log = logByMessageId.get(String(message.systemMessageId));
-      if(!log) {return { ...message };}
-
-      return {
-        ...message,
-        logId: log.logId,
-        totalRecordCount: log.totalRecordCount,
-        failedRecordCount: log.failedRecordCount,
-        successRecordCount: log.successRecordCount,
-        finishDateTime: log.finishDateTime,
-      };
-    });
-
-    return query.pageSize ? joined.slice(0, query.pageSize) : joined;
-  } catch (error) {
-    logger.warn("Cached sync message history unavailable; falling back to the server", error);
-
-    return null;
-  }
+  return getTimestampDate(getLatestSystemMessage(consumed)?.initDate);
 }
 
 export const fetchLiveCatalogCounts = async (payload: any): Promise<ShopifyProductSyncReviewStats> => {
@@ -6678,19 +6582,21 @@ export const fetchRunningBulkOperation = async (payload: any): Promise<ShopifyRu
   }
 }
 
+/**
+ * The wizard's starting point. `syncRunState` and `shopifyAccessState` are the page's live reads,
+ * taken once its tables have loaded; a shop with no stored runs is confirmed with the server before
+ * it is treated as never synced.
+ */
 export const fetchSetupState = async (payload: any): Promise<ShopifyProductSyncSetupState> => {
-  const [syncRunState, shopifyAccessState] = await Promise.all([
-    fetchProductUpdateSyncRunState(payload),
-    fetchShopifyAccessState(payload).catch(() => ({
-      systemMessageRemoteId: "",
-      accessScopeEnumId: "",
-      hasWriteAccess: false,
-      status: "unavailable",
-      label: "Unavailable"
-    } as ShopifyProductSyncAccessState))
-  ]);
-
-  const hasLinkedOmsProducts = !!syncRunState.latestSystemMessage;
+  const shopifyAccessState: ShopifyProductSyncAccessState = payload.shopifyAccessState ?? {
+    systemMessageRemoteId: "",
+    accessScopeEnumId: "",
+    hasWriteAccess: false,
+    status: "unavailable",
+    label: "Unavailable"
+  };
+  const hasLinkedOmsProducts = !!payload.syncRunState?.latestSystemMessage ||
+    (await fetchServerProductSyncMessages(String(payload.shopId || payload.shop?.shopId || ""), 1)).length > 0;
 
   return validateSetupState({
     hasLinkedOmsProducts,
@@ -6708,8 +6614,7 @@ export const fetchShopifyShopProductCount = async (payload: any): Promise<Shopif
     throw new Error("Shopify systemMessageRemoteId is required to fetch unsynced product update counts.");
   }
 
-  const lastSyncedAt = payload.lastSyncedAt || payload.syncRunState?.lastSyncedAt ||
-    (await fetchProductUpdateSyncRunState(payload)).lastSyncedAt;
+  const lastSyncedAt = await resolveLastSyncedAt(payload);
   const response = await requestBackend<ShopifyGraphqlResponse>({
     url: "shopify/graphql",
     method: "post",
@@ -6736,8 +6641,7 @@ export const fetchUnsyncedProductUpdates = async (payload: any): Promise<Shopify
     throw new Error("Shopify systemMessageRemoteId is required to fetch unsynced product updates.");
   }
 
-  const lastSyncedAt = payload.lastSyncedAt || payload.syncRunState?.lastSyncedAt ||
-    (await fetchProductUpdateSyncRunState(payload)).lastSyncedAt;
+  const lastSyncedAt = await resolveLastSyncedAt(payload);
   const response = await requestBackend<ShopifyGraphqlResponse>({
     url: "shopify/graphql",
     method: "post",
@@ -7205,7 +7109,20 @@ export interface ShopifyProductMappingChoice {
   status?: string;
   shopifyProductId?: string;
   imageUrl?: string;
+  /** The Online Store is the one sales channel the app token can read; other channels need read_publications. */
+  onlineStorePublished?: boolean;
   available: boolean;
+}
+
+/** One mapped variant's recent Shopify orders. */
+export interface VariantOrderActivity {
+  orders: number;
+  units: number;
+  lastOrderAt?: string;
+  /** Order count per Shopify `sourceName` (web, pos, shopify_draft_order, or an app's id). */
+  channels: Record<string, number>;
+  /** More orders exist than were read; `orders` is a lower bound. */
+  capped: boolean;
 }
 
 /** Current shop-scoped mappings, independent of a historical staging diagnostic. */
@@ -7234,7 +7151,7 @@ const fetchTransferMappingChoices = async (shopId: string, productId: string): P
     const batch = mappings.slice(offset, offset + 100);
     const result = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
       shopId,
-      queryText: "query TransferMappingChoices($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id title sku barcode image { url } inventoryItem { id } product { id title status } } } }",
+      queryText: "query TransferMappingChoices($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id title sku barcode image { url } inventoryItem { id } product { id title status onlineStoreUrl } } } }",
       variables: { ids: batch.map(row => `gid://shopify/ProductVariant/${row.variantId}`) },
     } });
     if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !Array.isArray(result.response?.nodes)) {
@@ -7245,11 +7162,214 @@ const fetchTransferMappingChoices = async (shopId: string, productId: string): P
       if(!variant) {continue;}
       Object.assign(row, { title: variant.product?.title, variantTitle: variant.title, sku: variant.sku, barcode: variant.barcode,
         status: variant.product?.status, shopifyProductId: variant.product?.id?.split("/").pop(), imageUrl: variant.image?.url,
+        onlineStorePublished: Boolean(variant.product?.onlineStoreUrl),
         available: variant.inventoryItem?.id === `gid://shopify/InventoryItem/${row.inventoryItemId}` });
     }
   }
 
   return mappings;
+};
+
+const RECENT_ORDER_PAGES = 5;
+const RECENT_ORDERS_QUERY = "query TransferMappingRecentOrders($query: String!, $after: String) { orders(first: 100, after: $after, sortKey: CREATED_AT, reverse: true, query: $query) { pageInfo { hasNextPage endCursor } nodes { id createdAt sourceName lineItems(first: 50) { pageInfo { hasNextPage endCursor } nodes { sku quantity variant { id } } } } } }";
+const ORDER_LINE_ITEMS_QUERY = "query TransferMappingOrderLines($id: ID!, $after: String) { node(id: $id) { ... on Order { lineItems(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { sku quantity variant { id } } } } } }";
+
+function assertShopifyRead(result: any, data: any) {
+  if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !data) {
+    throw new Error(translate("Recent Shopify orders could not be loaded."));
+  }
+}
+
+/** Every line item of one order: the first page came with the order search, the rest are paged here. */
+async function allOrderLines(shopId: string, order: any): Promise<any[]> {
+  const lines = [...(order.lineItems?.nodes ?? [])];
+  let pageInfo = order.lineItems?.pageInfo;
+  while(pageInfo?.hasNextPage) {
+    const result: any = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+      shopId, queryText: ORDER_LINE_ITEMS_QUERY, variables: { id: order.id, after: pageInfo.endCursor },
+    } });
+    const page = result?.response?.node?.lineItems;
+    assertShopifyRead(result, Array.isArray(page?.nodes) ? page : undefined);
+    lines.push(...page.nodes);
+    pageInfo = page.pageInfo;
+  }
+
+  return lines;
+}
+
+/**
+ * Recent orders for each mapped variant, read from Shopify. Orders can only be searched by SKU, and
+ * duplicate listings usually share one, so each order is credited to the variant on its line item.
+ * Reads at most RECENT_ORDER_PAGES pages of 100 orders per SKU and marks the result capped beyond that.
+ * A variant without a SKU cannot be searched, so it gets no entry: its activity is unknown, not zero.
+ */
+const fetchRecentVariantOrders = async (shopId: string, choices: ShopifyProductMappingChoice[], days = 30): Promise<Record<string, VariantOrderActivity>> => {
+  const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const searchable = choices.filter(choice => choice.sku);
+  const activity: Record<string, VariantOrderActivity> = Object.fromEntries(searchable.map(choice =>
+    [choice.variantId, { orders: 0, units: 0, channels: {}, capped: false } as VariantOrderActivity]));
+  const counted = new Set<string>();
+  for(const sku of new Set(searchable.map(choice => choice.sku as string))) {
+    let after: string | null = null;
+    for(let page = 0; page < RECENT_ORDER_PAGES; page++) {
+      const result: any = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+        shopId, queryText: RECENT_ORDERS_QUERY, variables: { query: `sku:${JSON.stringify(sku)} created_at:>=${since}`, after },
+      } });
+      const orders = result?.response?.orders;
+      assertShopifyRead(result, Array.isArray(orders?.nodes) ? orders : undefined);
+      for(const order of orders.nodes) {
+        for(const line of await allOrderLines(shopId, order)) {
+          const variantId = String(line.variant?.id ?? "").split("/").pop() as string;
+          const entry = activity[variantId];
+          if(line.sku !== sku || !entry) {continue;}
+          entry.units += Number(line.quantity) || 0;
+          // One order can carry the same variant on several lines; count the order once.
+          if(counted.has(`${variantId}|${order.id}`)) {continue;}
+          counted.add(`${variantId}|${order.id}`);
+          entry.orders++;
+          const channel = String(order.sourceName || "unknown");
+          entry.channels[channel] = (entry.channels[channel] ?? 0) + 1;
+          if(!entry.lastOrderAt || order.createdAt > entry.lastOrderAt) {entry.lastOrderAt = order.createdAt;}
+        }
+      }
+      if(!orders.pageInfo?.hasNextPage) {break;}
+      after = orders.pageInfo.endCursor;
+      if(page === RECENT_ORDER_PAGES - 1) {
+        searchable.filter(choice => choice.sku === sku).forEach(choice => { activity[choice.variantId].capped = true; });
+      }
+    }
+  }
+
+  return activity;
+};
+
+/** The OMS side of an unmapped product, read from the product itself; the search index may not have it. */
+export interface OmsProductSummary {
+  productId: string;
+  name?: string;
+  internalName?: string;
+  productTypeId?: string;
+  sku?: string;
+  upc?: string;
+  imageUrl?: string;
+  createdDate?: number;
+}
+
+const fetchOmsProductSummary = async (productId: string): Promise<OmsProductSummary> => {
+  const [product, identifications] = await Promise.all([
+    requestBackend<any>({ url: `oms/products/${encodeURIComponent(productId)}`, method: "GET" }),
+    requestBackend<any>({ url: `oms/products/${encodeURIComponent(productId)}/identifications`, method: "GET", params: { pageSize: 100 } }),
+  ]);
+  if(!product || String(product.productId) !== productId) {throw new Error(translate("The OMS product could not be loaded."));}
+  const idValue = (type: string) => (Array.isArray(identifications) ? identifications : [])
+    .find((row: any) => row.goodIdentificationTypeId === type && row.idValue)?.idValue as string | undefined;
+
+  return {
+    productId, name: product.productName, internalName: product.internalName, productTypeId: product.productTypeId,
+    sku: idValue("SKU") || idValue("SHOPIFY_PROD_SKU"), upc: idValue("UPCA"),
+    imageUrl: product.mainImageUrl || product.smallImageUrl, createdDate: product.createdDate,
+  };
+};
+
+/** One Shopify variant offered as a mapping target, with the OMS products already mapped to it. */
+export interface ShopifyVariantCandidate {
+  variantId: string;
+  inventoryItemId: string;
+  shopifyProductId: string;
+  title?: string;
+  variantTitle?: string;
+  sku?: string;
+  barcode?: string;
+  status?: string;
+  imageUrl?: string;
+  tracked: boolean;
+  onlineStorePublished: boolean;
+  /** OMS products already mapped to this variant in the shop's product store. */
+  mappedProductIds: string[];
+}
+
+const VARIANT_SEARCH_QUERY = "query TransferMappingVariantSearch($query: String!) { productVariants(first: 20, query: $query) { nodes { id title sku barcode image { url } inventoryItem { id tracked } product { id title status onlineStoreUrl featuredMedia { preview { image { url } } } } } } }";
+
+/**
+ * Existing OMS mappings for these variants. PRODUCT_STORE_PRODUCT is the only reverse lookup by
+ * Shopify variant, and it is scoped by product store rather than shop, so it can over-report in a
+ * store with several shops. That only blocks a mapping, which is the safe direction.
+ */
+const fetchVariantMappings = async (productStoreId: string, variantIds: string[]): Promise<Map<string, string[]>> => {
+  const byVariant = new Map<string, string[]>();
+  if(!variantIds.length) {return byVariant;}
+  const response: any = await requestBackend<any>({ url: "oms/dataDocumentView", method: "POST", data: {
+    dataDocumentId: "PRODUCT_STORE_PRODUCT", pageIndex: 0, pageSize: 250,
+    customParametersMap: { productStoreId, shopifyProductId: variantIds }, fieldsToSelect: "productId,shopifyProductId",
+  } });
+  if(!Array.isArray(response?.entityValueList)) {throw new Error(translate("Existing product mappings could not be checked."));}
+  for(const row of response.entityValueList) {
+    const variantId = String(row.shopifyProductId);
+    byVariant.set(variantId, [...new Set([...(byVariant.get(variantId) ?? []), String(row.productId)])]);
+  }
+
+  return byVariant;
+};
+
+/** Search the shop's Shopify catalog for variants to map an OMS product to. */
+const searchShopifyVariants = async (shopId: string, productStoreId: string, query: string): Promise<ShopifyVariantCandidate[]> => {
+  if(!query.trim()) {return [];}
+  const result: any = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+    shopId, queryText: VARIANT_SEARCH_QUERY, variables: { query: query.trim() },
+  } });
+  const nodes = result?.response?.productVariants?.nodes;
+  if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !Array.isArray(nodes)) {
+    throw new Error(translate("Shopify could not be searched. Try again."));
+  }
+  const candidates: ShopifyVariantCandidate[] = nodes.filter(Boolean).map((node: any) => ({
+    variantId: String(node.id).split("/").pop() as string,
+    inventoryItemId: String(node.inventoryItem?.id ?? "").split("/").pop() as string,
+    shopifyProductId: String(node.product?.id ?? "").split("/").pop() as string,
+    title: node.product?.title, variantTitle: node.title, sku: node.sku, barcode: node.barcode, status: node.product?.status,
+    imageUrl: node.image?.url || node.product?.featuredMedia?.preview?.image?.url,
+    tracked: node.inventoryItem?.tracked === true, onlineStorePublished: Boolean(node.product?.onlineStoreUrl),
+    mappedProductIds: [],
+  }));
+  const mappings = await fetchVariantMappings(productStoreId, candidates.map(row => row.variantId));
+  candidates.forEach(row => { row.mappedProductIds = mappings.get(row.variantId) ?? []; });
+
+  return candidates;
+};
+
+/**
+ * Map an unmapped OMS product to one Shopify variant. The store endpoint upserts on
+ * (shopId, shopifyProductId), so a variant already mapped to another OMS product would be silently
+ * re-pointed; every precondition is re-read from the server immediately before the write.
+ */
+const addTransferProductMapping = async (shopId: string, productId: string, productStoreId: string, variantId: string) => {
+  if((await fetchTransferProductMappings(shopId, productId)).length) {
+    throw new Error(translate("This product was mapped since you opened this page. Recheck before changing it."));
+  }
+  if((await fetchVariantMappings(productStoreId, [variantId])).get(variantId)?.length) {
+    throw new Error(translate("That Shopify variant is already mapped to another OMS product. Resolve that mapping first."));
+  }
+  const result: any = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+    shopId, queryText: "query TransferMappingVariant($id: ID!) { productVariant(id: $id) { id inventoryItem { id tracked } } }",
+    variables: { id: `gid://shopify/ProductVariant/${variantId}` },
+  } });
+  const variant = result?.response?.productVariant;
+  const inventoryItemId = String(variant?.inventoryItem?.id ?? "").split("/").pop();
+  if(!variant || !inventoryItemId) {throw new Error(translate("That Shopify variant no longer exists. Search again."));}
+  if(variant.inventoryItem?.tracked !== true) {
+    throw new Error(translate("Shopify doesn't track inventory for that variant, so it can't be on a transfer. Turn on tracking in Shopify first."));
+  }
+  try {
+    const response: any = await api({ url: `sob/products/${encodeURIComponent(productId)}/shopifyShopProducts`, method: "POST",
+      data: { shopId, productId, shopifyProductId: variantId, shopifyInventoryItemId: inventoryItemId } });
+    if(!response || response.data == null || commonUtil.hasError(response)) {throw new Error("Mapping creation was rejected");}
+    const mappings = await fetchTransferProductMappings(shopId, productId);
+    if(mappings.length !== 1 || mappings[0].variantId !== variantId || mappings[0].inventoryItemId !== inventoryItemId) {
+      throw new Error("Unverified mapping change");
+    }
+  } catch {
+    // A lost response may follow a committed write; never invite blind replay of this action.
+    throw new Error(translate("The mapping could not be verified. Recheck the current mapping before trying again."));
+  }
 };
 
 const mappingFingerprint = (rows: ShopifyProductMappingChoice[]): string => {
@@ -7280,7 +7400,10 @@ const keepTransferProductMapping = async (shopId: string, productId: string, kee
 
 /** On-demand catalog evidence and explicit mapping corrections for transfer diagnostics. */
 export function useTransferMappingResolution() {
-  return { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping };
+  return {
+    fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping, fetchRecentOrders: fetchRecentVariantOrders,
+    fetchOmsProduct: fetchOmsProductSummary, searchVariants: searchShopifyVariants, addMapping: addTransferProductMapping,
+  };
 }
 
 /** Read every variant and its existing OMS mapping without re-running an import. */
@@ -7398,14 +7521,18 @@ export async function fetchProductFacilityActivations(shopId: string, params: {
 // implementation remains split into a focused submodule, but callers import it through this owner
 // so a screen does not assemble Shopify state from unrelated composable entry points.
 export {
+  useFulfillmentDiagnosis,
   useFulfillmentSyncHealth,
   useOmsShipmentContext,
   usePendingFulfillments,
   useQueuedFulfillments,
   useShopifyFulfillmentDetails,
+  useShopOrderSearch,
   useSyncedFulfillments,
 } from "./useShopifyFulfillment";
 export type {
+  FulfillmentDiagnosisQuery,
+  FulfillmentHoldRelease,
   OmsShipmentContext,
   QueuedFulfillmentRow,
   SyncedFulfillmentRow,

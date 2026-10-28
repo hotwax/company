@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ref } from "vue";
 
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
   hasError: vi.fn((_response: any) => false),
-  remotes: [] as any[],
 }));
 
 vi.mock("@common", () => ({
@@ -11,46 +11,31 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: (response: any) => harness.hasError(response), showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({
+  useLiveEntity: () => ({
     rows: { value: [] },
     records: { value: [] },
+    first: { value: undefined },
+    count: { value: 0 },
     hydrated: { value: true },
   }),
-  useCachedRecord: () => ({ record: { value: undefined }, hydrated: { value: true } }),
-  byDescription: () => 0,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  dataManagerLogCache: { __kind: "logs" },
-  productStoreCache: { __kind: "stores" },
-  serviceJobCache: { __kind: "jobs" },
-  shopifyBulkOperationCache: { __kind: "bulkOps" },
-  shopifyCarrierShipmentCache: { __kind: "carrierShipments" },
-  shopifyLocationCache: { __kind: "locations" },
-  shopifyShopCache: { __kind: "shops" },
-  shopifyTypeMappingCache: { __kind: "typeMappings" },
-  syncRunCache: { __kind: "syncRuns" },
-  systemMessageCache: { __kind: "messages" },
-  systemMessageErrorCache: { __kind: "errors" },
-  systemMessageRemoteCache: {
-    __kind: "remotes",
-    all: vi.fn(() => harness.remotes.map((raw) => ({ raw }))),
+vi.mock("@/db/companyDb", () => ({
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
+    entity: () => ({ all: vi.fn(async () => []) }),
   },
 }));
 
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
-    ensureSystemMessageById: vi.fn(),
-    ensureSystemMessageErrors: vi.fn(),
-    fetchShopifyBulkOperation: vi.fn(),
+    requestSystemMessage: vi.fn(),
+    requestSystemMessageErrors: vi.fn(),
+    requestShopifyBulkOperation: vi.fn(),
   }),
 }));
 
 vi.mock("@/composables/useDataManager", () => ({
-  useDataManager: () => ({ ensureDataManagerLog: vi.fn() }),
+  useDataManager: () => ({ requestDataManagerLog: vi.fn() }),
   useRecentDataManagerLogs: () => ({
     logs: { value: [] },
     totalFailedRecords: { value: 0 },
@@ -62,17 +47,17 @@ vi.mock("@/composables/useSeed", () => ({
   useStatuses: () => ({ labelFor: (statusId: string) => statusId }),
 }));
 
-vi.mock("@/composables/useCacheSync", () => ({
-  useCacheSync: () => ({ start: vi.fn(), stop: vi.fn() }),
-}));
-
 vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJob: () => ({ updateJob: vi.fn(), runNow: vi.fn() }),
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   bootstrapState: { running: false },
+  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  syncNow: vi.fn().mockResolvedValue(undefined),
+  syncDomainsError: ref(""),
 }));
 
 import {
@@ -81,9 +66,13 @@ import {
   refreshMappedProductSearchIndex,
   fetchShopSystemMessageRemoteId,
   fetchUpdateFilesToProcessCount,
+  fetchSetupState,
+  fetchShopifyShopProductCount,
+  fetchUnsyncedProductUpdates,
+  shopifyAccessStateFor,
 } from "@/composables/useShopify";
 
-const { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping } = useTransferMappingResolution();
+const { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping, fetchRecentOrders, searchVariants, addMapping } = useTransferMappingResolution();
 
 const SHOP_ID = "10000";
 const SHOPIFY_SHOP_ID = "6973849727";
@@ -101,8 +90,10 @@ function remote(systemMessageRemoteId: string) {
 beforeEach(() => {
   harness.api.mockReset();
   harness.hasError.mockReset().mockReturnValue(false);
-  harness.remotes = [remote("RemoteA"), remote("RemoteB")];
 });
+
+/** The screen's live remote rows for the shop. */
+const shopRemotes = () => [remote("RemoteA"), remote("RemoteB")];
 
 describe("refreshMappedProductSearchIndex", () => {
   it("indexes only the selected OMS product without an import or Shopify call", async () => {
@@ -140,6 +131,7 @@ describe("fetchShopSystemMessageRemoteId", () => {
     const selected = await fetchShopSystemMessageRemoteId({
       shopId: SHOP_ID,
       shopifyShopId: SHOPIFY_SHOP_ID,
+      remotes: shopRemotes(),
     });
 
     expect(selected).toBe("RemoteB");
@@ -167,7 +159,101 @@ describe("fetchShopSystemMessageRemoteId", () => {
     await expect(fetchShopSystemMessageRemoteId({
       shopId: SHOP_ID,
       shopifyShopId: SHOPIFY_SHOP_ID,
+      remotes: shopRemotes(),
     })).resolves.toBe("RemoteB");
+  });
+});
+
+describe("fetchShopSystemMessageRemoteId with the screen's live remotes", () => {
+  it("picks among the remotes it is given", async () => {
+    harness.api.mockResolvedValue({ data: { systemMessages: [{ systemMessageRemoteId: "LiveRemote" }] } });
+
+    await expect(fetchShopSystemMessageRemoteId({
+      shopId: SHOP_ID,
+      shopifyShopId: SHOPIFY_SHOP_ID,
+      remotes: [remote("LiveRemote")],
+    })).resolves.toBe("LiveRemote");
+  });
+});
+
+describe("shopifyAccessStateFor", () => {
+  it("reads the shop's best remote", () => {
+    expect(shopifyAccessStateFor([remote("RemoteA")], { shopId: SHOP_ID, shopifyShopId: SHOPIFY_SHOP_ID }))
+      .toMatchObject({ systemMessageRemoteId: "RemoteA", hasWriteAccess: true, status: "write" });
+  });
+
+  it("is unavailable for a shop with no remote, including before the remotes have loaded", () => {
+    expect(shopifyAccessStateFor([], { shopId: SHOP_ID, shopifyShopId: SHOPIFY_SHOP_ID }))
+      .toMatchObject({ systemMessageRemoteId: "", hasWriteAccess: false, status: "unavailable" });
+  });
+});
+
+/** The server's product-sync history document, answering for one shop. */
+function serverHistory(entityValueList: any[]) {
+  harness.api.mockImplementation(async (config: any) => {
+    if (config.url === "oms/dataDocumentView") return { data: { entityValueList, entityValueListCount: entityValueList.length } };
+    return { data: { data: { productsCount: { count: 7, precision: "EXACT" }, products: { nodes: [] } } } };
+  });
+}
+const documentCalls = () => harness.api.mock.calls.filter(([config]) => config.url === "oms/dataDocumentView");
+const shopifyQuery = () => harness.api.mock.calls.find(([config]) => config.url === "shopify/graphql")?.[0].data.queryText ?? "";
+
+describe("fetchSetupState — the wizard decision", () => {
+  const accessState = { systemMessageRemoteId: "RemoteA", accessScopeEnumId: "SHOP_RW_ACCESS", hasWriteAccess: true, status: "write", label: "Write access" };
+
+  it("trusts the live runs of a shop that has some, asking the server nothing", async () => {
+    serverHistory([]);
+    const state = await fetchSetupState({ shopId: SHOP_ID, syncRunState: { latestSystemMessage: { systemMessageId: "M1" } }, shopifyAccessState: accessState });
+
+    expect(state).toMatchObject({ hasLinkedOmsProducts: true, productStoreLocked: true, identifierLocked: true, shopifyAccessState: accessState });
+    expect(documentCalls()).toHaveLength(0);
+  });
+
+  it("confirms an empty live spine with the server before treating the shop as never synced", async () => {
+    // The cold-profile race: this shop's runs are on the server but not stored yet.
+    serverHistory([{ systemMessageId: "M9", statusId: "SmsgConsumed" }]);
+    const state = await fetchSetupState({ shopId: SHOP_ID, syncRunState: { latestSystemMessage: null } });
+
+    expect(state).toMatchObject({ hasLinkedOmsProducts: true, productStoreLocked: true, identifierLocked: true });
+    expect(documentCalls()).toHaveLength(1);
+    expect(documentCalls()[0][0].data).toMatchObject({ pageSize: 1, customParametersMap: { remoteInternalId: SHOP_ID } });
+  });
+
+  it("opens the wizard unlocked only when the server agrees the shop has never synced", async () => {
+    serverHistory([]);
+    const state = await fetchSetupState({ shopId: SHOP_ID, syncRunState: { latestSystemMessage: null } });
+
+    expect(state).toMatchObject({ hasLinkedOmsProducts: false, productStoreLocked: false, identifierLocked: false, shopifyAccessState: { status: "unavailable" } });
+  });
+});
+
+describe("unsynced product counts — the last-sync date", () => {
+  it("counts from the live date without asking the server for one", async () => {
+    serverHistory([]);
+    await fetchShopifyShopProductCount({ shopId: SHOP_ID, systemMessageRemoteId: "RemoteA", lastSyncedAt: "2026-07-01T00:00:00Z" });
+
+    expect(documentCalls()).toHaveLength(0);
+    expect(shopifyQuery()).toContain("updated_at:>'2026-07-01T00:00:00");
+  });
+
+  it("asks the server for the last import when there is no live date, rather than counting every product", async () => {
+    serverHistory([
+      { systemMessageId: "M3", statusId: "SmsgConsumed", initDate: "2026-06-01T00:00:00Z" },
+      { systemMessageId: "M2", statusId: "SmsgConsumed", logId: "L2", initDate: "2026-05-01T00:00:00Z" },
+    ]);
+    await fetchShopifyShopProductCount({ shopId: SHOP_ID, systemMessageRemoteId: "RemoteA" });
+
+    expect(documentCalls()).toHaveLength(1);
+    // M3 imported nothing (no log), so the last sync is M2's.
+    expect(shopifyQuery()).toContain("updated_at:>'2026-05-01T00:00:00");
+  });
+
+  it("counts every product only when the server has no import either", async () => {
+    serverHistory([]);
+    await fetchUnsyncedProductUpdates({ shopId: SHOP_ID, systemMessageRemoteId: "RemoteA" });
+
+    expect(documentCalls()).toHaveLength(1);
+    expect(shopifyQuery()).not.toContain("updated_at");
   });
 });
 
@@ -233,6 +319,14 @@ describe("transfer product mapping resolution", () => {
     expect(harness.api.mock.calls.every(([request]) => request.method !== "DELETE")).toBe(true);
   });
 
+  it("reports whether each listing is published on the Online Store", async () => {
+    const published = variants();
+    published.data.response.nodes[0].product.onlineStoreUrl = "https://example.test/products/carbon";
+    harness.api.mockResolvedValueOnce({ data: [row("1"), row("2")] }).mockResolvedValueOnce(published);
+    const choices = await fetchTransferMappingChoices("100051", "100198");
+    expect(choices.map(choice => choice.onlineStorePublished)).toEqual([true, false]);
+  });
+
   it("rejects a mapping read that includes another shop or product", async () => {
     harness.api.mockResolvedValueOnce({ data: [{ ...row("1"), shopId: "other-shop" }] });
     await expect(fetchTransferMappingChoices("100051", "100198")).rejects.toThrow("could not be verified");
@@ -263,5 +357,138 @@ describe("transfer product mapping resolution", () => {
     harness.api.mockResolvedValueOnce({ data: [row("1"), row("2")] }).mockResolvedValueOnce(variants()).mockResolvedValueOnce({ data: { errors: ["Denied"] } });
     harness.hasError.mockReturnValue(true);
     await expect(keepTransferProductMapping("100051", "100198", "1", [mapped("1"), mapped("2")])).rejects.toThrow("could not be fully verified");
+  });
+});
+
+describe("recent orders for duplicate transfer mappings", () => {
+  const choice = (variantId: string, sku = "same-sku") => ({ productId: "100198", variantId, inventoryItemId: `9${variantId}`, sku, available: true });
+  const line = (variantId: string, quantity = 1, sku = "same-sku") => ({ sku, quantity, variant: { id: `gid://shopify/ProductVariant/${variantId}` } });
+  const page = (orders: any[], hasNextPage = false) => ({ data: { statusCode: 200, response: { orders: {
+    pageInfo: { hasNextPage, endCursor: hasNextPage ? "next" : null }, nodes: orders,
+  } } } });
+
+  it("credits each order to the variant on its line item, since both listings share the SKU", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce(page([
+      { id: "o1", createdAt: "2026-10-01T10:00:00Z", sourceName: "pos", lineItems: { nodes: [line("1", 2)] } },
+      { id: "o2", createdAt: "2026-10-03T10:00:00Z", sourceName: "web", lineItems: { nodes: [line("1"), line("1")] } },
+      { id: "o3", createdAt: "2026-10-02T10:00:00Z", sourceName: "1528379", lineItems: { nodes: [line("2"), line("9", 1, "other-sku")] } },
+    ]));
+    const activity = await fetchRecentOrders("100051", [choice("1"), choice("2")], 30);
+
+    // o2 has the variant on two lines: one order, two units.
+    expect(activity["1"]).toEqual({ orders: 2, units: 4, lastOrderAt: "2026-10-03T10:00:00Z", channels: { pos: 1, web: 1 }, capped: false });
+    expect(activity["2"]).toEqual({ orders: 1, units: 1, lastOrderAt: "2026-10-02T10:00:00Z", channels: { "1528379": 1 }, capped: false });
+    // One search per shared SKU, scoped to the window.
+    expect(harness.api).toHaveBeenCalledTimes(1);
+    expect(harness.api.mock.calls[0][0].data.variables.query).toMatch(/^sku:"same-sku" created_at:>=\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("marks the counts as a lower bound when more pages remain than it reads", async () => {
+    harness.api.mockReset();
+    for(let i = 0; i < 5; i++) {
+      harness.api.mockResolvedValueOnce(page([{ id: `o${i}`, createdAt: "2026-10-01T10:00:00Z", sourceName: "pos", lineItems: { nodes: [line("1")] } }], true));
+    }
+    const activity = await fetchRecentOrders("100051", [choice("1"), choice("2")], 30);
+
+    expect(harness.api).toHaveBeenCalledTimes(5);
+    expect(activity["1"].orders).toBe(5);
+    expect(activity["1"].capped).toBe(true);
+    expect(activity["2"].capped).toBe(true);
+  });
+
+  it("fails loudly instead of reporting no orders when Shopify refuses the read", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce({ data: { statusCode: 200, graphqlErrors: [{ message: "Access denied" }], response: {} } });
+    await expect(fetchRecentOrders("100051", [choice("1"), choice("2")], 30)).rejects.toThrow("could not be loaded");
+  });
+
+  it("reports a variant without a SKU as unknown rather than as zero orders", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce(page([{ id: "o1", createdAt: "2026-10-01T10:00:00Z", sourceName: "pos", lineItems: { nodes: [line("1")] } }]));
+    const activity = await fetchRecentOrders("100051", [choice("1"), { ...choice("2"), sku: "" }], 30);
+
+    expect(activity["1"].orders).toBe(1);
+    // No entry: the panel shows "can't be checked" instead of "0 orders".
+    expect(activity["2"]).toBeUndefined();
+    expect(harness.api).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the rest of an order's line items before deciding a variant did not sell on it", async () => {
+    harness.api.mockReset();
+    const firstLines = Array.from({ length: 50 }, (_, index) => line(`x${index}`, 1, `other-${index}`));
+    harness.api
+      .mockResolvedValueOnce(page([{ id: "o1", createdAt: "2026-10-01T10:00:00Z", sourceName: "web",
+        lineItems: { pageInfo: { hasNextPage: true, endCursor: "lines-2" }, nodes: firstLines } }]))
+      .mockResolvedValueOnce({ data: { statusCode: 200, response: { node: { lineItems: {
+        pageInfo: { hasNextPage: false, endCursor: null }, nodes: [line("2", 3)],
+      } } } } });
+    const activity = await fetchRecentOrders("100051", [choice("1"), choice("2")], 30);
+
+    expect(harness.api.mock.calls[1][0].data.variables).toEqual({ id: "o1", after: "lines-2" });
+    expect(activity["2"]).toEqual({ orders: 1, units: 3, lastOrderAt: "2026-10-01T10:00:00Z", channels: { web: 1 }, capped: false });
+    expect(activity["1"].orders).toBe(0);
+  });
+});
+
+describe("mapping an unmapped transfer product", () => {
+  const variantNode = (id: string, tracked = true) => ({ id: `gid://shopify/ProductVariant/${id}`, title: "Default Title", sku: "PKG390", barcode: "840270834802",
+    inventoryItem: { id: `gid://shopify/InventoryItem/9${id}`, tracked }, product: { id: `gid://shopify/Product/8${id}`, title: "Standard Ecomm Box", status: "ACTIVE", onlineStoreUrl: null } });
+  const reverse = (rows: Array<[string, string]>) => ({ data: { entityValueList: rows.map(([shopifyProductId, productId]) => ({ shopifyProductId, productId })) } });
+  const variantRead = (id: string, tracked = true) => ({ data: { statusCode: 200, response: { productVariant: { id: `gid://shopify/ProductVariant/${id}`, inventoryItem: { id: `gid://shopify/InventoryItem/9${id}`, tracked } } } } });
+  const mappingRow = (variantId: string) => ({ shopId: "10000", productId: "M111323", shopifyProductId: variantId, shopifyInventoryItemId: `9${variantId}` });
+  const posts = () => harness.api.mock.calls.filter(([request]) => request.method === "POST" && String(request.url).includes("shopifyShopProducts"));
+
+  beforeEach(() => { harness.api.mockReset(); });
+
+  it("flags search results that are untracked or already mapped to another OMS product", async () => {
+    harness.api
+      .mockResolvedValueOnce({ data: { statusCode: 200, response: { productVariants: { nodes: [variantNode("1"), variantNode("2", false), variantNode("3")] } } } })
+      .mockResolvedValueOnce(reverse([["3", "12199"]]));
+    const rows = await searchVariants("10000", "STORE", "sku:\"PKG390\"");
+
+    expect(rows.map(row => [row.variantId, row.tracked, row.mappedProductIds])).toEqual([["1", true, []], ["2", false, []], ["3", true, ["12199"]]]);
+    expect(harness.api.mock.calls[1][0].data.customParametersMap).toEqual({ productStoreId: "STORE", shopifyProductId: ["1", "2", "3"] });
+  });
+
+  it("writes the mapping with the variant's own inventory item and verifies it afterwards", async () => {
+    harness.api
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce(reverse([]))
+      .mockResolvedValueOnce(variantRead("1"))
+      .mockResolvedValueOnce({ data: { shopifyProductId: "1" } })
+      .mockResolvedValueOnce({ data: [mappingRow("1")] });
+    await addMapping("10000", "M111323", "STORE", "1");
+
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0][0].data).toEqual({ shopId: "10000", productId: "M111323", shopifyProductId: "1", shopifyInventoryItemId: "91" });
+  });
+
+  it("refuses a variant another OMS product already holds, since the write would re-point it", async () => {
+    harness.api.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce(reverse([["1", "12199"]]));
+    await expect(addMapping("10000", "M111323", "STORE", "1")).rejects.toThrow("already mapped to another OMS product");
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("refuses an untracked variant, which Shopify would reject on the transfer", async () => {
+    harness.api.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce(reverse([])).mockResolvedValueOnce(variantRead("1", false));
+    await expect(addMapping("10000", "M111323", "STORE", "1")).rejects.toThrow("doesn't track inventory");
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("stops when the product gained a mapping after the page opened", async () => {
+    harness.api.mockResolvedValueOnce({ data: [mappingRow("7")] });
+    await expect(addMapping("10000", "M111323", "STORE", "1")).rejects.toThrow("mapped since you opened");
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("reports an unverified write instead of claiming success", async () => {
+    harness.api
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce(reverse([]))
+      .mockResolvedValueOnce(variantRead("1"))
+      .mockResolvedValueOnce({ data: { shopifyProductId: "1" } })
+      .mockResolvedValueOnce({ data: [] });
+    await expect(addMapping("10000", "M111323", "STORE", "1")).rejects.toThrow("could not be verified");
   });
 });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { type VueWrapper, flushPromises, mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { enableAutoUnmount, type VueWrapper, flushPromises, mount } from "@vue/test-utils";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref, toValue } from "vue";
 
 // Runs the REAL `useInventoryEvents` over cache-shaped rows: the ledger-to-row mapping is under test.
@@ -16,6 +16,8 @@ const serviceJobs = ref<any[]>([]);
 const bounds = ref<any[]>([]);
 const ledgerHydrated = ref(true);
 const areaFailures = ref<Record<string, string>>({});
+const ledgerReading = ref(false);
+const manualRefreshing = ref(false);
 const routeQuery = ref<Record<string, string>>({});
 
 const harness = vi.hoisted(() => ({ replace: vi.fn(), resolveSources: vi.fn(), syncNow: vi.fn(), loadEventsFrom: vi.fn(), loadLedgerBounds: vi.fn(), ledgerOptions: undefined as any }));
@@ -31,54 +33,38 @@ vi.mock("@common", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (key: string, values: Record<string, unknown> = {}) =>
     Object.entries(values).reduce((message, [name, value]) => message.replace(`{${name}}`, String(value)), key),
-}));
-
-vi.mock("@/services/inventorySyncArea", () => ({
-  useInventorySyncArea: () => ({
-    ready: ref(true), error: ref(""), failingDomains: areaFailures, busy: ref(false), manualRefreshing: ref(false),
-    syncNow: harness.syncNow, afterMutation: vi.fn(), loadEventsFrom: harness.loadEventsFrom, loadLedgerBounds: harness.loadLedgerBounds,
-  }),
-}));
-
-function asCachedRows(records: { value: any[] }, keyField?: string, keyOf?: (raw: any) => string) {
-  return computed(() => records.value.map((raw: any) => ({
-    ...raw,
-    ...(keyField && keyOf ? { [keyField]: keyOf(raw) } : {}),
-    raw,
-    cachedAt: raw.cachedAt ?? 0,
-  })));
-}
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: (cache: any, options?: any) => {
-    const table = String(cache?.table ?? "");
+  // Stored rows are the projected server rows themselves, with no synthetic key beside them.
+  useLiveEntity: (table: string, options?: any) => {
     if(table.endsWith("AdjustmentDetails")) {harness.ledgerOptions = options;}
-    const list = (records: { value: any[] }, hydrated = ref(true), keyField?: string, keyOf?: (raw: any) => string) =>
-      ({ records, rows: asCachedRows(records, keyField, keyOf), hydrated });
-    if(table === "shopifyInventoryAdjustmentDetails") {
-      return list(
-        channelDetails, ledgerHydrated, "adjustmentKey",
-        (raw) => [raw.eventTypeId, raw.eventReferenceId, raw.inventoryChannelId, raw.shopifyInventoryItemId].join("|")
-      );
-    }
-    if(table === "shopifyLocationInventoryAdjustmentDetails") {
-      return list(
-        locationDetails, ledgerHydrated, "locationAdjustmentKey",
-        (raw) => [raw.eventTypeId, raw.eventReferenceId, raw.shopId, raw.shopifyLocationId, raw.shopifyInventoryItemId].join("|")
-      );
-    }
+    const list = (source: { value: any[] }, hydrated = ref(true)) => {
+      const records = computed(() => {
+        const filter = toValue(options)?.filter;
+
+        return filter ? source.value.filter(filter) : source.value;
+      });
+
+      return { records, first: computed(() => records.value[0]), count: computed(() => records.value.length), hydrated };
+    };
+    if(table === "shopifyInventoryAdjustmentDetails") {return list(channelDetails, ledgerHydrated);}
+    if(table === "shopifyLocationInventoryAdjustmentDetails") {return list(locationDetails, ledgerHydrated);}
     if(table === "systemMessages") {return list(messages);}
     if(table === "shopifyLocations") {return list(shopLocations);}
     if(table === "facilities") {return list(facilities);}
     if(table === "inventoryChannels") {return list(channels);}
     if(table === "serviceJobs") {return list(serviceJobs);}
     if(table === "inventoryLedgerBounds") {return list(bounds);}
-    if(table === "shopifyInventoryItems") {
-      return list(inventoryItems, ref(true), "itemKey", (raw) => `${raw.shopId}|${raw.shopifyInventoryItemId}`);
-    }
+    if(table === "shopifyInventoryItems") {return list(inventoryItems);}
 
     return list(ref([]));
   },
+}));
+
+vi.mock("@/composables/useInventorySyncArea", () => ({
+  useInventorySyncArea: () => ({
+    ready: ref(true), error: ref(""), failingDomains: areaFailures, busy: ref(false), manualRefreshing,
+    syncNow: harness.syncNow, afterMutation: vi.fn(), loadEventsFrom: harness.loadEventsFrom, loadLedgerBounds: harness.loadLedgerBounds,
+    ledgerReading: () => ledgerReading,
+  }),
 }));
 
 vi.mock("@/composables/useSeed", () => ({
@@ -87,10 +73,13 @@ vi.mock("@/composables/useSeed", () => ({
 
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
-    ensureSystemMessageById: vi.fn().mockResolvedValue(null),
-    ensureSystemMessageErrors: vi.fn().mockResolvedValue([]),
+    requestSystemMessage: vi.fn().mockResolvedValue(undefined),
+    requestSystemMessageErrors: vi.fn().mockResolvedValue(undefined),
+    refreshSystemMessageErrors: vi.fn().mockResolvedValue(undefined),
     resendSystemMessage: vi.fn(),
   }),
+  useSystemMessageRecord: () => ({ record: ref(undefined), hydrated: ref(true) }),
+  useSystemMessageErrors: () => ({ errors: ref([]), errorText: ref(""), hydrated: ref(true) }),
 }));
 
 vi.mock("@/composables/useShopify", () => ({
@@ -160,6 +149,8 @@ beforeEach(() => {
   harness.loadEventsFrom.mockReset();
   harness.loadLedgerBounds.mockReset().mockResolvedValue(1);
   ledgerHydrated.value = true;
+  ledgerReading.value = false;
+  manualRefreshing.value = false;
   areaFailures.value = {};
   routeQuery.value = {};
   harness.replace.mockReset();
@@ -199,7 +190,7 @@ describe("ShopifyInventoryEventHistory - never claims empty over unreadable data
   });
 
   it.each([
-    { stamp: undefined, says: "Live updates are off" },
+    { stamp: undefined, says: "Shopify connector is older than v4.4.0" },
     { stamp: 1_000, says: "kept current with every event and batch" },
   ])("shows the rows either way, and says whether they are live (stamp $stamp)", async ({ stamp, says }) => {
     locationDetails.value = [locationRow({ detailLastUpdatedStamp: stamp })];
@@ -302,8 +293,8 @@ describe("ShopifyInventoryEventHistory - delivery, read from the freshest cached
   });
 
   it("lets the message poller's later read override the row's joined status", async () => {
-    channelDetails.value = [channelRow({ systemMessageId: "M1", systemMessageStatusId: "SmsgProduced", cachedAt: 5 })];
-    messages.value = [{ systemMessageId: "M1", statusId: "SmsgSent", processedDate: 1_000_000 + 2 * MINUTE, cachedAt: 50 }];
+    channelDetails.value = [channelRow({ systemMessageId: "M1", systemMessageStatusId: "SmsgProduced", syncedAt: 5 })];
+    messages.value = [{ systemMessageId: "M1", statusId: "SmsgSent", processedDate: 1_000_000 + 2 * MINUTE, syncedAt: 50 }];
     const wrapper = await mountHistory("channel");
 
     expect(rows(wrapper)[0].text()).toContain("Status SmsgSent");
@@ -405,11 +396,120 @@ describe("ShopifyInventoryEventHistory - date pickers", () => {
     expect(harness.loadEventsFrom).not.toHaveBeenCalled();
   });
 
+  it("loads a To date older than the cache from the server's oldest row, with no From date", async () => {
+    routeQuery.value = { to: "2026-09-23" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    await mountHistory("location");
+
+    expect(harness.loadEventsFrom).toHaveBeenCalledWith("location", Date.parse("2026-09-22T13:00:00"));
+  });
+
+  it("loads from the To date's own day while the server's oldest row is still unknown", async () => {
+    routeQuery.value = { to: "2026-09-23" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    await mountHistory("location");
+
+    expect(harness.loadEventsFrom).toHaveBeenCalledWith("location", Date.parse("2026-09-23T00:00:00"));
+  });
+
+  it("loads everything up to a To date the cache already reaches, back to the server's oldest row", async () => {
+    routeQuery.value = { to: "2026-09-26" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    await mountHistory("location");
+
+    // Not only when To is older than the cache: the first batch pulls the cache past To mid-load.
+    expect(harness.loadEventsFrom).toHaveBeenCalledWith("location", Date.parse("2026-09-22T13:00:00"));
+  });
+
+  it("says the list starts at the cache when no date asks for older events", async () => {
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    const wrapper = await mountHistory("location");
+
+    expect(harness.loadEventsFrom).not.toHaveBeenCalled();
+    expect(wrapper.text()).toMatch(/Showing events since .*\. The OMS has events back to .*; choose an earlier From or To date to load them\./);
+  });
+
+  it("runs a progress bar while older events load, then drops it and the coverage note once the range is reached", async () => {
+    let finish!: (written: number) => void;
+    harness.loadEventsFrom.mockReturnValue(new Promise<number>((resolve) => { finish = resolve; }));
+    routeQuery.value = { from: "2026-09-23" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    const wrapper = await mountHistory("location");
+
+    expect(wrapper.findComponent({ name: "IonProgressBar" }).exists()).toBe(true);
+    expect(wrapper.text()).toContain("Loading events back to");
+    // Rows already on screen stay; the bar is what says more are coming.
+    expect(rows(wrapper)).toHaveLength(1);
+
+    // A page lands mid-load: the list and the progress line move with it.
+    locationDetails.value = [...locationDetails.value, locationRow({ eventReferenceId: "OLDER", createdDate: Date.parse("2026-09-24T09:00:00") })];
+    await flushPromises();
+    expect(rows(wrapper)).toHaveLength(2);
+    expect(wrapper.text()).toMatch(/2 shown so far, back to .*Sep 24/);
+
+    finish(0);
+    await flushPromises();
+
+    expect(wrapper.findComponent({ name: "IonProgressBar" }).exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Only events since");
+    expect(wrapper.text()).not.toContain("Showing events since");
+  });
+
+  it("says a From range is only partly loaded when the load could not reach it", async () => {
+    harness.loadEventsFrom.mockRejectedValue(new Error("boom"));
+    routeQuery.value = { from: "2026-09-23" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    const wrapper = await mountHistory("location");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("the rest of this range has not been read from the OMS.");
+  });
+
   it("says nothing about purging when the OMS has no purge job for this ledger", async () => {
     locationDetails.value = [locationRow()];
     const wrapper = await mountHistory("location");
 
     expect(wrapper.text()).not.toContain("The purge job");
+  });
+});
+
+describe("ShopifyInventoryEventHistory - how current the list is", () => {
+  it("shows the cache as loading, not as an OMS without live updates, until this visit's first read lands", async () => {
+    ledgerReading.value = true;
+    // Rows an earlier visit cached from an older connector: no update stamps.
+    locationDetails.value = [locationRow()];
+    const wrapper = await mountHistory("location");
+
+    expect(wrapper.text()).toContain("Reading the newest events from the OMS.");
+    expect(wrapper.findComponent({ name: "IonProgressBar" }).exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("older than v4.4.0");
+
+    ledgerReading.value = false;
+    await flushPromises();
+
+    expect(wrapper.findComponent({ name: "IonProgressBar" }).exists()).toBe(false);
+    expect(wrapper.text()).toContain("This OMS's Shopify connector is older than v4.4.0");
+  });
+
+  it("says nothing about the connector when the rows carry update stamps", async () => {
+    locationDetails.value = [locationRow({ detailLastUpdatedStamp: 1_000_000 })];
+    const wrapper = await mountHistory("location");
+
+    expect(wrapper.text()).not.toContain("older than v4.4.0");
+    expect(wrapper.findComponent({ name: "IonProgressBar" }).exists()).toBe(false);
+  });
+
+  it("runs the progress bar during a manual refresh", async () => {
+    manualRefreshing.value = true;
+    locationDetails.value = [locationRow({ detailLastUpdatedStamp: 1_000_000 })];
+    const wrapper = await mountHistory("location");
+
+    expect(wrapper.text()).toContain("Refreshing events from the OMS.");
   });
 });
 
@@ -441,4 +541,11 @@ describe("ShopifyInventoryEventHistory - rows open their detail and their batch"
 
     expect((wrapper.vm as any).selectedBatch?.delivery.id).toBe("sent");
   });
+});
+
+enableAutoUnmount(afterEach);
+
+// Load the lazy view during setup, before the first test's assertion timeout.
+beforeAll(async () => {
+  await import("@/views/ShopifyInventoryEventHistory.vue");
 });

@@ -1,15 +1,10 @@
 import { computed } from "vue";
-import { isEffectiveNow } from "@/utils/cacheProjection";
+import { isEffectiveNow } from "@common/db";
 import { alertController } from "@ionic/vue";
-import { api, commonUtil, emitter, logger } from "@common";
+import { api, commonUtil, emitter, logger, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { translate } from "@/i18n";
-import {
-  enumGroupMemberCache,
-  facilityIdentificationCache,
-  integrationTypeMappingCache,
-} from "@/utils/cacheEntities";
-import { resyncDomain } from "@/services/appCacheBootstrap";
-import { useCachedList } from "./useCachedList";
+import { resyncDomain } from "@/db/appDbSync";
 
 /**
  * NetSuite master entity — the whole integration surface in one composable.
@@ -34,8 +29,8 @@ import { useCachedList } from "./useCachedList";
  * This is the table every NetSuite mapping screen edits.
  */
 export function useIntegrationTypeMappings(integrationTypeId?: string) {
-  const { records, hydrated } = useCachedList<any>(
-    integrationTypeMappingCache,
+  const { records, hydrated } = useLiveEntity<any>(
+    companyDb.tables.integrationTypeMappings,
     integrationTypeId ? { scope: { field: "integrationTypeId", value: integrationTypeId } } : {},
   );
 
@@ -63,15 +58,19 @@ export function useIntegrationTypeMappings(integrationTypeId?: string) {
   return { mappings: records, valueByKey, mappingByKey, byType, records, hydrated };
 }
 
-/** Members of the NetSuite variance-reason enum group. */
-export function useEnumGroupMembers() {
-  const { records, hydrated } = useCachedList<any>(enumGroupMemberCache);
-  return { members: records, records, hydrated };
+/** Enum group members for one group (e.g. sales channel / variance reason sets). */
+export function useEnumGroupMembers(enumerationGroupId?: string) {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.enumGroupMembers);
+  // The stored field is `enumerationGroupId`; with no group named, every cached member is returned.
+  const members = computed(() => enumerationGroupId
+    ? records.value.filter((row: any) => row.enumerationGroupId === enumerationGroupId)
+    : records.value);
+  return { members, hydrated };
 }
 
-/** Facility identifications NetSuite uses as departments. */
+/** Facility identifications (party/facility external-id mappings). */
 export function useFacilityIdentifications() {
-  const { records, hydrated } = useCachedList<any>(facilityIdentificationCache);
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.facilityIdentifications);
 
   /**
    * Only identifications in force right now. `oms/facilities/identifications` returns thru-dated
@@ -84,7 +83,7 @@ export function useFacilityIdentifications() {
    */
   const active = computed<any[]>(() => {
     const now = Date.now();
-    return records.value.filter((row: any) => isEffectiveNow(row.raw ?? row, now));
+    return records.value.filter((row: any) => isEffectiveNow(row, now));
   });
 
   /** facilityId → identification value, the shape the departments screen edits. */
@@ -183,7 +182,7 @@ export function useNetSuite(integrationTypeId?: any) {
    * configuration rather than reference data — so there is no resync to follow.
    */
   async function updateSftpConfig(payload: any) {
-    const resp: any = await api({ url: "updateSftp", method: "post", data: payload });
+    const resp: any = await api({ url: "netsuite/sftpConfig", method: "post", data: payload });
     if (commonUtil.hasError(resp)) throw resp;
     return resp;
   }

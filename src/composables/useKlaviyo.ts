@@ -27,7 +27,7 @@
 
 import { computed, reactive, ref } from "vue";
 import { api, commonUtil, logger } from "@common";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { refreshAfterMutation } from "@/db/appDbSync";
 import { getResponseErrorMessage } from "@/utils";
 import { onSessionCleared } from "./sessionScope";
 

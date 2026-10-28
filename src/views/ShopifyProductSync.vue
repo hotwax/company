@@ -636,6 +636,7 @@ import {
   IonToggle,
   IonToolbar,
   alertController,
+  onIonViewDidLeave,
   onIonViewWillEnter,
 } from "@ionic/vue";
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
@@ -662,10 +663,9 @@ import {
 } from "@/utils/shopifyProductSyncWizard";
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from "@/utils";
 import { getSafeSyncRunQueryId } from "@/utils/syncRunRoute";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation } from "@/db/appDbSync";
 import { useServiceJob, useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useDataManager, useRecentDataManagerLogs } from "@/composables/useDataManager";
-import { useCacheSync } from "@/composables/useCacheSync";
 import { useProductUpdateHistories } from "@/composables/useProductUpdateHistory";
 import {
   cancelSystemMessage,
@@ -695,8 +695,10 @@ import {
   useShopifyShop,
   useShopifyShopMutations,
   useShopifyShops,
+  shopifyAccessStateFor,
   type ShopifyProductSyncProductSearchResult,
 } from "@/composables/useShopify";
+import { useSystemMessageRemotes } from "@/composables/useSystemMessage";
 import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 import { getProductSyncFsmState, type ProductSyncFsmActionId } from "@/utils/shopifyProductSyncFsm";
 import { useStatuses } from "@/composables/useSeed";
@@ -734,7 +736,6 @@ const props = defineProps(["id"]);
 const userStore = useUserStore();
 const {
   fetchJobDetail,
-  fetchJobRuns,
   fetchJobAuditHistory,
   updateJob,
   runNow
@@ -752,7 +753,7 @@ const {
 const { jobs } = useServiceJobs();
 const PRODUCT_SYNC_MDM_CONFIG_ID = "SYNC_SHOPIFY_PRODUCT";
 const PRODUCT_SYNC_ERROR_LOG_LIMIT = 10;
-const { downloadDataManagerFile, fetchLogDetails, currentMdmLog, errorLogs, fetchAllRecentFailedRecords, clearStorage, loading: isErrorLogsLoading } = useDataManager();
+const { downloadDataManagerFile, fetchLogDetails, currentMdmLog, errorLogs, fetchAllRecentFailedRecords, loading: isErrorLogsLoading } = useDataManager();
 /**
  * Recent product imports, LIVE from the cache.
  *
@@ -779,7 +780,25 @@ const BULK_OPERATION_POLL_JOB_NAME = "poll_ShopifyBulkOperationResult";
 const {
   runState: spineRunState,
   pendingRequests: spinePendingRequests,
+  hydrated: spineHydrated,
 } = useShopifyProductSyncRunState(() => props.id);
+
+/**
+ * Resolves once the run state and the shop's remotes have loaded. Decisions made before that read
+ * every row as missing: no runs means the wizard, no last-sync date means counting every product.
+ */
+function whenSpineLoaded(): Promise<void> {
+  const loaded = () => spineHydrated.value && remotesHydrated.value;
+  if(loaded()) {return Promise.resolve();}
+
+  return new Promise((resolve) => {
+    const stop = watch(loaded, (ready) => {
+      if(!ready) {return;}
+      stop();
+      resolve();
+    });
+  });
+}
 const { logs: recentMdmLogs } = useRecentDataManagerLogs(
   PRODUCT_SYNC_MDM_CONFIG_ID,
   PRODUCT_SYNC_ERROR_LOG_LIMIT,
@@ -905,6 +924,32 @@ const progressState = ref<any>({
   queuedJobsAhead: 0
 });
 
+/**
+ * Show the latest run in "Track sync progress" once the run spine arrives.
+ *
+ * The dashboard load picks the displayed run from `latestSystemMessage` once. On a cold cache (the
+ * first visit after login) the worker has not committed the spine yet, so that load clears the run
+ * and the card says "No recent sync history" until the page is reopened. Fill it when the spine
+ * lands instead, without replacing a deep-linked run, a different run already shown, or a
+ * just-started sync the spine has not caught up with.
+ *
+ * The spine row arrives before its message enrichment, and `fetchSyncRun` needs the enriched
+ * `systemMessageRemoteId` and `remoteMessageId` to look up the Shopify bulk operation. So this also
+ * re-runs for the same run when those land; `fetchSyncRun` is cache-first, so the repeat is cheap.
+ */
+watch(() => [
+  latestSystemMessage.value?.systemMessageId,
+  latestSystemMessage.value?.systemMessageRemoteId,
+  latestSystemMessage.value?.remoteMessageId
+], ([latestId]) => {
+  const shownId = currentSyncRun.value?.systemMessageId;
+  if(!latestId || requestedSystemMessageId.value || (shownId && shownId !== latestId)) {return;}
+  const trackedId = progressState.value?.systemMessageId;
+  if(trackedId && trackedId !== latestId && !progressState.value?.completed) {return;}
+
+  void fetchSyncRun(latestId, latestSystemMessage.value);
+});
+
 const syncJobRecentRuns = computed(() => cachedRunsFor(syncJobObj.value?.jobName));
 const detailedErrorSearchQuery = ref("");
 const selectedErrorRecord = ref<any>(null);
@@ -925,7 +970,7 @@ const isWebhookSupported = ref(false);
 const currentTimeMs = ref(Date.now());
 let labelClock: number | undefined;
 
-const { start: startSyncDomains, stop: stopSyncDomains } = useCacheSync();
+const SYNC_OWNER = createSyncDomainOwner("shopifyProductSyncView");
 
 const { shops: cachedShops, hydrated: shopsHydrated } = useShopifyShops();
 const { record: shopRecord } = useShopifyShop(props.id);
@@ -992,15 +1037,9 @@ const selectedIdentifierLabel = computed(() => {
 const productStoreHasLinkedProducts = computed(() => {
   return relatedShops.value.some((relatedShop: any) => relatedShop.shopId !== props.id);
 });
-const shopifyAccessState = computed(() => {
-  return setupState.value.shopifyAccessState || {
-    systemMessageRemoteId: "",
-    accessScopeEnumId: "",
-    hasWriteAccess: false,
-    status: "unavailable",
-    label: "Unavailable"
-  };
-});
+// Live from the shop's remotes, so a changed access scope shows without reloading the wizard.
+const { remotes: systemMessageRemotes, hydrated: remotesHydrated } = useSystemMessageRemotes();
+const shopifyAccessState = computed(() => shopifyAccessStateFor(systemMessageRemotes.value, { shopId: props.id, shop: shop.value }));
 const hasShopifyWriteAccess = computed(() => {
   return !!shopifyAccessState.value.hasWriteAccess;
 });
@@ -1673,6 +1712,10 @@ function whenHydrated(source: Ref<boolean> | ComputedRef<boolean>, then: () => u
 
 
 
+// Ionic keeps this page mounted when the user navigates on from it, so unmount alone would leave its
+// domains polling behind a hidden page.
+onIonViewDidLeave(stopNextSyncRefreshPolling);
+
 onBeforeUnmount(() => {
   stopNextSyncRefreshPolling();
   clearSearchDebounce();
@@ -1683,7 +1726,7 @@ async function loadWizard() {
   loadErrorMessage.value = "";
   try {
     assertShopifyShopsLoaded();
-
+    await whenSpineLoaded();
 
     // No product-store fetch: `selectedProductStore` is a cached read, and the one field the wizard
     // needed from the detail route (`productIdentifierEnumId`) is now projected onto the cached row.
@@ -1695,7 +1738,9 @@ async function loadWizard() {
     setupState.value = await fetchSetupState({
       shopId: props.id,
       shop: shop.value,
-      productStore: selectedProductStore.value
+      productStore: selectedProductStore.value,
+      syncRunState: spineRunState.value,
+      shopifyAccessState: shopifyAccessState.value
     });
     assertBackendDataAvailable(setupState.value, translate("Product sync setup is unavailable."));
 
@@ -1856,6 +1901,7 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
  * `allSettled`, not `all`: one Shopify hiccup must not blank the other two numbers.
  */
 async function loadLiveDashboardCounts() {
+  await whenSpineLoaded();
   const payload = {
     shopId: props.id,
     systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
@@ -1882,7 +1928,8 @@ async function loadBulkOperationMonitoringJobs() {
 async function loadSelectedShopSystemMessageRemoteId() {
   selectedShopSystemMessageRemoteId.value = await fetchShopSystemMessageRemoteId({
     shopId: props.id,
-    shop: shop.value
+    shop: shop.value,
+    remotes: systemMessageRemotes.value
   });
 }
 
@@ -2322,11 +2369,9 @@ function openErrorDetailsModal(record: any) {
 }
 
 async function refreshErrorRecords() {
-  await clearStorage();
-  errorLogs.value = [];
   detailedErrorSearchQuery.value = "";
-  
-  // Re-fetch everything fresh
+
+  // Error files never change, so only an expired one is downloaded again
   if (recentMdmLogs.value.length) {
     await fetchAllRecentFailedRecords(PRODUCT_SYNC_MDM_CONFIG_ID, recentMdmLogs.value);
   }
@@ -3227,7 +3272,7 @@ function productSyncPageDomains(jobNames: readonly string[]) {
  */
 async function startNextSyncRefreshPolling() {
   labelClock = window.setInterval(() => { currentTimeMs.value = Date.now(); }, 15000);
-  await startSyncDomains(productSyncPageDomains(getTrackedRefreshJobs().map((job: any) => job.jobName)));
+  await activateSyncDomains(productSyncPageDomains(getTrackedRefreshJobs().map((job: any) => job.jobName)), SYNC_OWNER);
 }
 
 function stopNextSyncRefreshPolling() {
@@ -3235,7 +3280,7 @@ function stopNextSyncRefreshPolling() {
     window.clearInterval(labelClock);
     labelClock = undefined;
   }
-  stopSyncDomains();
+  void deactivateSyncDomains(SYNC_OWNER);
 }
 
 /**
@@ -3247,7 +3292,7 @@ function stopNextSyncRefreshPolling() {
 watch(() => getTrackedRefreshJobs().map((job: any) => job.jobName).join(","), (names) => {
   if (!names) return;
   // Same single builder — `start` swaps the domain set on the running worker rather than respawning.
-  void startSyncDomains(productSyncPageDomains(names.split(",")));
+  void activateSyncDomains(productSyncPageDomains(names.split(",")), SYNC_OWNER);
 });
 
 function getTrackedRefreshJobs() {

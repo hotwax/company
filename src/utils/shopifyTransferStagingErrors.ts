@@ -1,5 +1,5 @@
 import type { TransferUpdateCheck } from "@/composables/useShopifyTransferUpdateCheck";
-import { toMillis } from "./cacheProjection";
+import { toMillis } from "@common/db/storage/projection";
 
 export type TransferStager = "create" | "update";
 
@@ -66,6 +66,10 @@ function issue(message: string, code: string, key: string, orderId?: string): Tr
     row.code = "multiple-product-mappings";
     row.title = "Multiple Shopify variants mapped to one product";
     row.action = "Ask your catalog administrator to keep only the correct Shopify variant mapping for this product in this shop, then run the creation stager again.";
+  } else if(/has no ShopifyShopProduct mapping/.test(message)) {
+    row.code = "missing-product-mapping";
+    row.title = "Product not mapped to Shopify";
+    row.action = "Map this product to its Shopify variant, or create it in Shopify with inventory tracking on and run the product sync. Then run the creation stager again.";
   } else if(code === "unmapped-shipped-item") {
     row.title = "Shipment item cannot be matched to Shopify";
     row.action = "Check that this item exists on the Shopify transfer, has one Shopify inventory item mapping, and has a positive whole-number shipped quantity. If it was added after the transfer synced, ask your integration administrator to reconcile the transfer lines before rerunning the update stager.";
@@ -87,6 +91,15 @@ export function transferStagingIssues(run: any, shopId: string, stager: Transfer
   const rows: TransferStagingIssue[] = [];
   const results = resultsObject(run.results);
   const runId = String(run.jobRunId ?? "");
+
+  // The stager skipped the shop by design; with nothing staged there is nothing else to read.
+  if(results?.skippedReason === "nativeTransferSyncDisabled") {
+    const skipped = issue("", "native-sync-off", `${runId}:native-sync-off`);
+    skipped.title = "Native Inventory Transfer Sync is off";
+    skipped.action = "This shop's transfers are not sent to Shopify as transfers while it is off, so the stager skipped them. Their stock changes reach Shopify as inventory updates instead.";
+
+    return [skipped];
+  }
 
   if(Array.isArray(results?.blockedOrderList)) {
     for(const blocked of results.blockedOrderList) {

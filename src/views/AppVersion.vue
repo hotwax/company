@@ -4,192 +4,172 @@
       <ion-toolbar>
         <ion-menu-button slot="start" />
         <ion-title>{{ translate("App Version") }}</ion-title>
-        <ion-buttons slot="end">
-          <ion-button color="primary" @click="createAppVersion">
-            <ion-icon slot="icon-only" :icon="addOutline" />
-          </ion-button>
-        </ion-buttons>
       </ion-toolbar>
+      <ion-progress-bar v-if="hostedVersionsLoading" type="indeterminate" />
     </ion-header>
-
     <ion-content>
-      <div class="header ion-margin-top">
-        <ion-item lines="none">
-          <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
-          <ion-label>
-            {{ translate("Manage app versions") }}
-            <p>{{ translate("Define which app version is compatible with OMS. Apps without a specific version set will default to the latest production release.") }}</p>
-          </ion-label>
-        </ion-item>
-      </div>
-
-      <!-- Cold cache after login: the seed sync is still running, so show placeholders rather
-           than an empty list that reads as "there is nothing here". -->
-      <template v-if="!hydrated">
-        <div v-for="n in 4" :key="`sk-${n}`" class="list-item ion-padding-end">
-          <ion-item lines="none">
-            <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
-          </ion-item>
-        </div>
-      </template>
-
-      <div v-else-if="!appVersions.length" class="empty-state">
-        {{ translate("Failed to load app version information, please contact administrator.") }}
-      </div>
-
-      <div v-for="app in appVersions" :key="`${app.appId}_${app.environmentTypeId}`" class="list-item ion-padding-end">
-        <ion-item lines="none">
-          <ion-icon slot="start" :icon="storefrontOutline" />
-          <ion-label>
-            {{ app.appName || app.appId }}
-          </ion-label>
-        </ion-item>
-
-        <ion-label :color="envColor[app.environmentTypeId]">
-          {{ app.enumDesc }}
-        </ion-label>
-
-        <template v-if="app.currentVersion">
-          <div class="ion-text-center">
-            <ion-chip outline :color="envColor[app.environmentTypeId]" @click="editAppVersion(app)">
-              <ion-label>{{ app.currentVersion }}</ion-label>
-              <ion-icon :icon="closeCircleOutline" @click.stop="removeAppVersion(app)" />
-            </ion-chip>
-          </div>
+      <p class="ion-padding-horizontal">{{ translate("Choose a version to keep this instance on that release. Default follows the build deployed to the environment’s main URL.") }}</p>
+      <ion-grid>
+        <ion-row class="ion-hide-md-down">
+          <ion-col size="4"><ion-item lines="none"><ion-label>{{ translate("App") }}</ion-label></ion-item></ion-col>
+          <ion-col v-for="env in environments" :key="env.id" size="3"><ion-item lines="none"><ion-label><span class="environment-title"><ion-icon :icon="env.icon" aria-hidden="true" />{{ translate(env.label) }}</span></ion-label></ion-item></ion-col>
+        </ion-row>
+        <template v-if="!appsHydrated || !versionsHydrated">
+          <ion-row v-for="n in 5" :key="n" data-testid="app-versions-loading">
+            <ion-col v-for="column in 3" :key="column" size="4"><ion-item lines="none"><ion-skeleton-text animated /></ion-item></ion-col>
+          </ion-row>
         </template>
+        <div v-else-if="!sortedApps.length" class="empty-state" data-testid="app-versions-empty">{{ translate("No apps found") }}</div>
         <template v-else>
-          <ion-button size="small" fill="outline" :disabled="!versionOptionsByAppEnv[`${app.appId}_${app.environmentTypeId}`]?.length" @click="editAppVersion(app)">
-            <ion-icon slot="start" :icon="addOutline" />
-            <ion-label>{{ translate("app version") }}</ion-label>
-          </ion-button>
+          <section v-for="group in appGroups" :key="group.id" :aria-label="translate(group.label)" :data-testid="`app-versions-${group.id}`">
+            <ion-item-divider v-if="group.id === 'legacy'"><ion-label :id="`app-group-${group.id}`">{{ translate(group.label) }}</ion-label></ion-item-divider>
+            <ion-row v-for="app in group.apps" :key="app.appId" class="app-version-row" :data-testid="`app-version-${app.appId}-row`">
+              <ion-col size="12" size-md="4">
+                <ion-item lines="none"><ion-label>{{ app.appName || app.appId }}</ion-label></ion-item>
+              </ion-col>
+              <ion-col v-for="env in environments" :key="env.id" size="5" size-md="3">
+                <ion-label class="ion-hide-md-up ion-padding-start"><span class="environment-title"><ion-icon :icon="env.icon" aria-hidden="true" />{{ translate(env.label) }}</span></ion-label>
+                <ion-item lines="none">
+                  <ion-chip outline :disabled="saving || hostedVersionsLoading" role="button" tabindex="0"
+                    :aria-label="translate('Change {app} {environment} version', { app: app.appName || app.appId, environment: env.label })"
+                    :data-testid="`app-version-${app.appId}-${env.id}-chip`"
+                    @click="editAppVersion(app, env)" @keydown.enter.prevent="editAppVersion(app, env)" @keydown.space.prevent="editAppVersion(app, env)">
+                    <ion-label>{{ pinFor(app.appId, env.id)?.currentVersion || translate("Default") }}</ion-label>
+                  </ion-chip>
+
+                </ion-item>
+              </ion-col>
+              <ion-col size="2">
+                <ion-item lines="none" class="history-action">
+                  <ion-button slot="end" fill="clear" size="default"
+                    :aria-label="translate('View {app} version history', { app: app.appName || app.appId })"
+                    :data-testid="`app-version-${app.appId}-history-btn`" @click="openHistory(app)">
+                    <ion-icon slot="icon-only" :icon="timeOutline" />
+                  </ion-button>
+                </ion-item>
+              </ion-col>
+            </ion-row>
+          </section>
         </template>
-      </div>
+      </ion-grid>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
 import { commonUtil, emitter, logger, translate } from "@common";
-import { IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonMenuButton, IonPage, IonSkeletonText, IonTitle, IonToolbar, alertController, modalController } from "@ionic/vue";
-import { addOutline, closeCircleOutline, shieldCheckmarkOutline, storefrontOutline } from "ionicons/icons";
-import { computed } from "vue";
-import CreateAppVersionModal from "@/components/app-version/CreateAppVersionModal.vue";
-import type { AppVersionRecord } from "@/composables/useAppVersion";
-import { useAppVersionMutations, useAppVersions } from "@/composables/useAppVersion";
-import { hostedVersionsFor } from "@/utils/appVersionOptions";
+import { IonButton, IonChip, IonCol, IonContent, IonGrid, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonMenuButton, IonPage, IonProgressBar, IonRow, IonSkeletonText, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { flaskOutline, rocketOutline, timeOutline } from "ionicons/icons";
+import { computed, ref } from "vue";
+import SelectAppVersionModal from "@/components/app-version/SelectAppVersionModal.vue";
+import AppVersionHistoryModal from "@/components/app-version/AppVersionHistoryModal.vue";
+import { useApps, useAppVersionMutations, useAppVersions, useHostedAppVersions } from "@/composables/useAppVersion";
 
-const envColor: Record<string, string> = {
-  AppEnvDev: "primary",
-  AppEnvUAT: "medium",
-  AppEnvProd: "danger",
-};
+interface App { appId: string; appName: string }
+interface Environment { id: string; label: string; icon: string }
+const environments: Environment[] = [{ id: "AppEnvUAT", label: "UAT", icon: flaskOutline }, { id: "AppEnvProd", label: "Prod", icon: rocketOutline }];
+const { apps, hydrated: appsHydrated } = useApps();
+const { byAppEnv, hydrated: versionsHydrated } = useAppVersions();
+const sortedApps = computed(() => [...apps.value].sort((a, b) => (a.appName || a.appId).localeCompare(b.appName || b.appId)));
+const legacyAppIds = new Set(["FACILITIES", "USERS", "ATP"]);
+const appGroups = computed(() => [
+  { id: "current", label: "Current", apps: sortedApps.value.filter(app => !legacyAppIds.has(app.appId)) },
+  { id: "legacy", label: "Legacy", apps: sortedApps.value.filter(app => legacyAppIds.has(app.appId)) }
+].filter(group => group.apps.length));
+const pinFor = (appId: string, envId: string) => byAppEnv.value[`${appId}_${envId}`];
+const { refreshHostedVersions, readCachedHostedVersions, loading: hostedVersionsLoading } = useHostedAppVersions();
+const { createAppVersion, updateAppVersion } = useAppVersionMutations();
+const saving = ref(false);
 
-const { appVersions, hydrated } = useAppVersions();
-const { updateAppVersion: applyUpdate, removeAppVersion: applyRemove } = useAppVersionMutations();
 
-/**
- * Hosted versions per row, keyed `${appId}_${environmentTypeId}` — the same composite key the list
- * and `byAppEnv` use. Computed once per list rather than called from the template so the row markup
- * does not re-derive it on every render.
- */
-const versionOptionsByAppEnv = computed<Record<string, string[]>>(() =>
-  appVersions.value.reduce((map: Record<string, string[]>, row) => {
-    const key = `${row.appId}_${row.environmentTypeId}`;
+async function saveVersion(app: App, env: Environment, version: string) {
+  if(saving.value) {return false;}
+  const existing = pinFor(app.appId, env.id);
+  saving.value = true;
+  emitter.emit("presentLoader");
+  try {
+    const live = await refreshHostedVersions(app.appId, env.id, true, version ? [version] : []);
+    if(version && live.checks?.[version]?.status === "unknown") {throw new Error("Version availability could not be verified");}
+    if(!live.available || (version && !live.versions.includes(version))) {
+      commonUtil.showToast(translate("This version is no longer available. Refresh the version list."));
 
-    if(!map[key]) {
-      map[key] = hostedVersionsFor(row.appId, row.environmentTypeId);
+      return false;
     }
+    const key = { appId: app.appId, environmentTypeId: env.id };
+    if(!version) {
+      // Keep the deployment row so clearing the pin is included in its field audit history.
+      await updateAppVersion({ ...key, currentVersion: null });
+    } else if(existing) {
+      await updateAppVersion({ ...key, currentVersion: version });
+    } else {
+      await createAppVersion({ ...key, currentVersion: version });
+    }
+    commonUtil.showToast(translate("App version saved"));
 
-    return map;
-  }, {}));
-
-async function removeAppVersion(app: AppVersionRecord) {
-  emitter.emit("presentLoader");
-  try {
-    await applyRemove({ appId: app.appId, environmentTypeId: app.environmentTypeId });
-    commonUtil.showToast(translate("version removed, app will be served on latest production release", { appName: app.appName || app.appId, environment: app.enumDesc }));
-  } catch (error) {
+    return true;
+  } catch(error) {
     logger.error(error);
+    commonUtil.showToast(translate("Could not confirm the version change. Refresh before trying again."));
+
+    return false;
+  } finally {
+    saving.value = false;
+    emitter.emit("dismissLoader");
   }
-  emitter.emit("dismissLoader");
 }
 
-async function updateAppVersion(app: AppVersionRecord, currentVersion: string) {
-  emitter.emit("presentLoader");
+async function editAppVersion(app: App, env: Environment) {
+  if(saving.value || hostedVersionsLoading.value) {return;}
+  const current = pinFor(app.appId, env.id)?.currentVersion || "";
+  let deployment;
+  let discoveryError = false;
   try {
-    await applyUpdate({ appId: app.appId, environmentTypeId: app.environmentTypeId, currentVersion });
-    commonUtil.showToast(translate("version updated successfully", { appName: app.appName || app.appId, environment: app.enumDesc }));
-  } catch (error) {
-    logger.error(error);
+    deployment = await readCachedHostedVersions(app.appId, env.id);
+  } catch {
+    discoveryError = true;
   }
-  emitter.emit("dismissLoader");
+  const modal = await modalController.create({
+    component: SelectAppVersionModal,
+    canDismiss: () => !saving.value,
+    componentProps: {
+      appId: app.appId,
+      appName: app.appName || app.appId,
+      environmentLabel: env.label,
+      environmentTypeId: env.id,
+      deployment,
+      discoveryError,
+      onCheck: (versions: string[], fresh: boolean) => refreshHostedVersions(app.appId, env.id, fresh, versions),
+      currentVersion: current,
+      versions: deployment?.versions ?? [],
+      onSave: (version: string) => saveVersion(app, env, version)
+    }
+  });
+  await modal.present();
 }
 
-async function editAppVersion(app: AppVersionRecord) {
-  const version = app.currentVersion;
-  const options = versionOptionsByAppEnv.value[`${app.appId}_${app.environmentTypeId}`] ??
-    hostedVersionsFor(app.appId, app.environmentTypeId);
-
-  // Nothing hosted for this app in this environment. Reachable: the chip stays enabled so its
-  // close-circle can still clear the pin, so say why no picker opened rather than doing nothing.
-  if(!options.length) {
-    commonUtil.showToast(translate("No hosted versions for this app in this environment"));
-
-    return;
-  }
-
-  const alert = await alertController.create({
-    header: version ? translate("Update version") : translate("Add version"),
-    // Radio inputs hand the SELECTED VALUE to the handler, not a `{ name: value }` object.
-    inputs: options.map((option) => ({
-      type: "radio" as const,
-      label: option,
-      value: option,
-      checked: option === version,
-    })),
-    buttons: [
-      { text: translate("Cancel"), role: "cancel" },
-      {
-        text: translate("Save"),
-        handler: (appVersion: string) => {
-          if(!appVersion) {
-            commonUtil.showToast(translate("Please select an app version"));
-
-            return false;
-          }
-
-          if(version === appVersion) {
-            commonUtil.showToast(translate("Please update the app version"));
-
-            return false;
-          }
-
-          updateAppVersion(app, appVersion);
-        },
-      },
-    ],
+async function openHistory(app: App) {
+  const modal = await modalController.create({
+    component: AppVersionHistoryModal,
+    componentProps: { appId: app.appId, appName: app.appName || app.appId }
   });
-  await alert.present();
-}
-
-async function createAppVersion() {
-  // A newly created pin isn't in the login-time cache yet; the modal's `createAppVersion` resyncs
-  // the `appVersion` domain, so the cached list here picks it up via liveQuery without a refetch.
-  const appVersionModal = await modalController.create({
-    component: CreateAppVersionModal,
-  });
-  appVersionModal.present();
+  await modal.present();
 }
 </script>
 
 <style scoped>
-.list-item {
-  --columns-desktop: 4;
+.environment-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-xs);
 }
-
-@media (max-width: 700px) {
-  .header {
-    grid-template-columns: 1fr;
-  }
+.environment-title ion-icon { flex-shrink: 0; }
+.app-version-row {
+  border-bottom: 1px solid var(--ion-item-border-color, var(--ion-color-step-150, var(--ion-color-light-shade)));
+}
+.history-action {
+  --padding-start: 0;
+}
+@media (max-width: 767px) {
+  .history-action { margin-top: var(--spacer-base); }
 }
 </style>

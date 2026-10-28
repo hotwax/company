@@ -153,17 +153,17 @@ import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import cronstrue from "cronstrue";
 import { computed, ref, watch } from "vue";
 import { commonUtil, logger, translate } from "@common";
-import { useCachedList } from "@/composables/useCachedList";
+import { useServiceJobs } from "@/composables/useServiceJobs";
 import {
   ABSOLUTE_CHANNEL_RESET_SERVICE,
   ensureChannelResetJob,
   fetchLocationsFromShopify,
   fetchShopifyShopLocations,
   updateInventoryChannel,
+  useInventoryChannels,
 } from "@/composables/useShopify";
-import { inventoryChannelCache, serviceJobCache } from "@/utils/cacheEntities";
+import { isEffectiveNow } from "@common/db";
 import { formatDateTime } from "@/utils";
-import { isEffectiveNow } from "@/utils/cacheProjection";
 import { parameterMap } from "@/utils/serviceJob";
 
 const props = defineProps<{ isOpen: boolean; channel: any }>();
@@ -173,8 +173,8 @@ const emit = defineEmits<{
   "schedule-job": [{ jobName: string }];
 }>();
 
-const { records: cachedJobs } = useCachedList<any>(serviceJobCache);
-const { records: inventoryChannels } = useCachedList<any>(inventoryChannelCache);
+const { jobs: cachedJobs } = useServiceJobs();
+const { channels: inventoryChannels } = useInventoryChannels();
 
 const isSettingUpJob = ref(false);
 

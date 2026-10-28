@@ -28,6 +28,9 @@
             </ion-chip>
           </div>
 
+          <ion-item v-if="workforce.conversationsError" lines="none">
+            <ion-label color="danger" class="ion-text-wrap">{{ translate(workforce.conversationsError) }}</ion-label>
+          </ion-item>
           <ion-list lines="full">
             <conversation-item
               v-for="conversation in filteredConversations"
@@ -73,7 +76,10 @@
         </ion-header>
         <ion-content>
           <ion-list>
-            <ion-item v-if="!workforce.activeAgents.length">
+            <ion-item v-if="workforce.activeAgentsError">
+              <ion-label color="danger" class="ion-text-wrap">{{ translate(workforce.activeAgentsError) }}</ion-label>
+            </ion-item>
+            <ion-item v-else-if="!workforce.activeAgents.length">
               <ion-label>{{ translate("No active agents found. Compose and activate one first.") }}</ion-label>
             </ion-item>
             <ion-item v-for="agent in workforce.activeAgents" :key="agent.agentId" button @click="startConversation(agent.agentId)">

@@ -57,7 +57,7 @@ vi.mock("@/composables/useSeed", () => ({
   }),
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/db/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   resyncDomain: harness.resyncDomain,
 }));

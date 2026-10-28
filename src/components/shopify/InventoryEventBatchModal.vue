@@ -128,10 +128,10 @@ import { closeOutline, refreshOutline, warningOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import type { InventoryEventRow } from "@/composables/useInventoryEvents";
 import { useStatuses } from "@/composables/useSeed";
-import { useSystemMessage } from "@/composables/useSystemMessage";
-import { useInventorySyncArea } from "@/services/inventorySyncArea";
+import { useSystemMessage, useSystemMessageErrors, useSystemMessageRecord } from "@/composables/useSystemMessage";
+import { useInventorySyncArea } from "@/composables/useInventorySyncArea";
 import { formatDateTime } from "@/utils";
-import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { translateMutationError } from "@/utils/errorPresentation";
 import type { InventoryEventBatch } from "@/utils/inventoryEvents";
 
@@ -143,15 +143,19 @@ const emit = defineEmits<{
 }>();
 
 const { labelFor: statusLabel } = useStatuses();
-const { ensureSystemMessageById, ensureSystemMessageErrors, fetchSystemMessageErrors, resendSystemMessage } = useSystemMessage();
+const { requestSystemMessage, requestSystemMessageErrors, refreshSystemMessageErrors, resendSystemMessage } = useSystemMessage();
 const { afterMutation } = useInventorySyncArea();
 
+const batchId = computed(() => props.batch?.id ?? "");
+// Errors and payload are class C: read live, and requested when a batch opens without them.
+const { record: message, hydrated: messageHydrated } = useSystemMessageRecord(() => batchId.value);
+const { errors, hydrated: errorsHydrated } = useSystemMessageErrors(() => batchId.value);
+
 const content = ref();
-const errors = ref<any[]>([]);
 const loadingErrors = ref(false);
 const resending = ref(false);
 const resentId = ref("");
-const messageText = ref("");
+const messageText = computed(() => String(message.value?.messageText ?? ""));
 
 const targetLabel = computed(() => [...new Set(props.batch?.events.map((event) => event.locationLabel))].join(", "));
 
@@ -164,30 +168,35 @@ function resetScroll() {
   void content.value?.$el?.scrollToTop?.(0);
 }
 
-/** A settled batch's errors are final; one that can still be retried gains a new error per attempt. */
-function errorsOf(systemMessageId: string) {
-  return ["sent", "cancelled"].includes(props.batch?.delivery.id ?? "")
-    ? ensureSystemMessageErrors(systemMessageId)
-    : fetchSystemMessageErrors(systemMessageId).catch(() => ensureSystemMessageErrors(systemMessageId));
-}
-
-// Errors and payload are class C, fetched when a batch opens: the poller caches only in-flight messages.
-watch(() => props.batch?.id, async (systemMessageId) => {
-  errors.value = [];
-  messageText.value = "";
+/** The batch whose missing message and errors were already requested, so a re-render asks nothing. */
+let requestedFor = "";
+// Opening a batch, even the same one again, starts over.
+watch(batchId, () => {
   resentId.value = "";
-  if(!systemMessageId) {return;}
+  requestedFor = "";
+});
+
+// `post`: a new batch id resets the live reads in their own watchers first, so `hydrated` here is
+// the new batch's and the rows are not the previous batch's.
+watch([batchId, messageHydrated, errorsHydrated], async ([systemMessageId, messageReady, errorsReady]) => {
+  if(!systemMessageId || !messageReady || !errorsReady || requestedFor === systemMessageId) {return;}
+  requestedFor = systemMessageId;
+  // A settled batch's errors are final; one that can still be retried gains a new error per attempt.
+  const settled = ["sent", "cancelled"].includes(props.batch?.delivery.id ?? "");
   loadingErrors.value = true;
   try {
-    const [message, messageErrors] = await Promise.all([ensureSystemMessageById(systemMessageId), errorsOf(systemMessageId)]);
-    messageText.value = String(message?.messageText ?? "");
-    errors.value = messageErrors ?? [];
+    await Promise.all([
+      message.value ? undefined : requestSystemMessage(systemMessageId),
+      settled
+        ? (errors.value.length ? undefined : requestSystemMessageErrors(systemMessageId))
+        : refreshSystemMessageErrors(systemMessageId),
+    ]);
   } catch (error) {
     logger.error("Could not load the batch message", systemMessageId, error);
   } finally {
-    loadingErrors.value = false;
+    if(requestedFor === systemMessageId) {loadingErrors.value = false;}
   }
-}, { immediate: true });
+}, { immediate: true, flush: "post" });
 
 async function resend() {
   const systemMessageId = props.batch?.id;
@@ -199,8 +208,8 @@ async function resend() {
     commonUtil.showToast(translate("Batch queued for another delivery attempt."));
     try {
       await afterMutation("systemMessage", { systemMessageId });
-      // Fresh, not cache-first: a failed retry appends a new SystemMessageError.
-      errors.value = await fetchSystemMessageErrors(systemMessageId);
+      // Fresh, not from stored rows: a failed retry appends a new SystemMessageError.
+      await refreshSystemMessageErrors(systemMessageId);
     } catch (cause) {
       throw new CacheReconciliationError("systemMessage", { systemMessageId }, cause);
     }

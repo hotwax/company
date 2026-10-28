@@ -4,6 +4,12 @@
       <ion-toolbar>
         <ion-menu-button slot="start" />
         <ion-title>{{ translate("Settings") }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button fill="clear" @click="openLogs()">
+            <ion-icon slot="start" :icon="documentTextOutline" />
+            {{ translate("View logs") }}
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
     
@@ -50,7 +56,7 @@
           <ion-card-content>
             {{ $t('This is the name of the OMS you are connected to right now. Make sure that you are connected to the right instance before proceeding.') }}
           </ion-card-content>
-          <ion-button v-if="!commonUtil.isMoqui()" :disabled="!userStore.hasPermission(Actions.APP_COMMERCE_VIEW)" @click="openOms" fill="clear">
+          <ion-button v-if="!isMoquiOmsRef" :disabled="!userStore.hasPermission(Actions.APP_COMMERCE_VIEW)" @click="commonUtil.goToOms" fill="clear">
             {{ $t('Go to OMS') }}
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
@@ -124,10 +130,12 @@
                   {{ domain.count }} {{ translate("records") }}
                   <template v-if="domain.syncedAt">, {{ translate("synced") }} {{ formatSyncTime(domain.syncedAt) }}</template>
                   <template v-else-if="domain.syncClass === 'A'">, {{ translate("live while in use") }}</template>
+                  <!-- Class C never runs a pass of its own: rows arrive when a screen asks for a record. -->
+                  <template v-else-if="domain.syncClass === 'C'">, {{ translate("fetched when opened") }}</template>
                   <template v-else>, {{ translate("not synced yet") }}</template>
                 </p>
               </ion-label>
-              <ion-button slot="end" fill="clear" :disabled="!!refreshing" @click="refreshDomain(domain.name)">
+              <ion-button v-if="domain.syncClass !== 'C'" slot="end" fill="clear" :disabled="!!refreshing" @click="refreshDomain(domain.name)">
                 <ion-spinner v-if="refreshing === domain.name" name="dots" />
                 <ion-icon v-else slot="icon-only" :icon="syncOutline" />
               </ion-button>
@@ -140,21 +148,23 @@
 </template>
 
 <script setup lang="ts">
-import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonMenuButton, IonPage, IonSpinner, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonAvatar, IonButtons, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonMenuButton, IonPage, IonSpinner, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 
 import { computed, onMounted, ref , defineProps} from "vue";
 import { useUserStore } from '@/store/user';
-import { useAuth } from '@common/composables/useAuth';
+import { useAuth, isMoquiOmsRef } from '@common/composables/useAuth';
 import TimeZoneModal from "@/components/common/TimezoneModal.vue";
 import Image from "@/components/common/Image.vue"
 import DxpAppVersionInfo from "@/components/common/DxpAppVersionInfo.vue"
 import { DateTime } from "luxon";
-import { translate, commonUtil, cookieHelper } from '@common'
+import { translate, commonUtil, cookieHelper, DxpLogsModal } from '@common'
 import router from '@/router'
-import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
+import { openOutline, syncOutline, checkmarkCircle, closeCircle, documentTextOutline } from "ionicons/icons"
 
 import { getCurrentTime } from "../utils"
-import { useCacheStatus } from "@/composables/useCacheStatus";
+import { catalogFrom, useDbStatus } from "@common/db";
+import { companyDb } from "@/db/companyDb";
+import { resyncDomain, resyncReferenceData } from "@/db/appDbSync";
 import { useMaargConfig } from "@/composables/useSeed";
 import Actions from "@/authorization/actions";
 const userStore = useUserStore();
@@ -166,8 +176,6 @@ const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componen
 const userProfile = computed(() => userStore.getUserProfile)
 const oms = computed(() => cookieHelper().get("oms") || userStore.oms || translate("Not set"))
 
-const openOms = () => window.open(commonUtil.getMaargURL(), '_blank')
-
 const omsVersionLabel = computed(() => omsVersion.value || translate("Not available"))
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)
 const userFetchStatus = computed(() => userStore.fetchStatus)
@@ -176,7 +184,17 @@ const userFetchStatus = computed(() => userStore.fetchStatus)
 // Live IndexedDB state: per-domain row counts + last sync, and the force-refresh actions.
 const {
   domains, refreshing, totalRows, oldestSyncedAt, lastSyncedAt, refreshDomain, refreshAll,
-} = useCacheStatus();
+} = useDbStatus(
+  companyDb.client(),
+  // The domains the worker registers, read from the same list rather than asked of the worker: on a
+  // reload here, or after sync failed to start, there is no worker to answer, and this card's
+  // per-domain Refresh is the way back. Imported on demand to keep the domain code out of startup.
+  async () => catalogFrom((await import("@/workers/appSyncDomains")).appSyncDomains),
+  {
+    resyncDomain,
+    resyncAll: resyncReferenceData,
+  },
+);
 
 const formatSyncTime = (millis: number) =>
   DateTime.fromMillis(millis).toLocaleString(DateTime.DATETIME_MED);
@@ -281,6 +299,13 @@ async function logout() {
 
 function goToLaunchpad() {
   window.location.href = import.meta.env.VITE_LOGIN_URL || '/';
+}
+
+async function openLogs() {
+  const logsModal = await modalController.create({
+    component: DxpLogsModal
+  });
+  return logsModal.present();
 }
 </script>
 

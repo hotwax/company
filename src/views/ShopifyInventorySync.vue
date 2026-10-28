@@ -586,6 +586,7 @@
 
 <script setup lang="ts">
 import { commonUtil, logger, translate } from "@common";
+import { isEffectiveNow, serviceState } from "@common/db";
 import {
   IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
   IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent,
@@ -615,10 +616,8 @@ import InventoryEventDetailModal from "@/components/shopify/InventoryEventDetail
 import InventoryResetImportResult from "@/components/shopify/InventoryResetImportResult.vue";
 import InventoryRunDetails from "@/components/shopify/InventoryRunDetails.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
-import { useCachedList } from "@/composables/useCachedList";
-import { useCacheSync } from "@/composables/useCacheSync";
 import { useEffectiveNow } from "@/composables/useEffectiveNow";
-import { useFacilityGroupMutations, useFacilityTypes } from "@/composables/useFacilities";
+import { useFacilityGroupMutations, useFacilityTypes, useGroupFacilities } from "@/composables/useFacilities";
 import { type InventoryEventRow, useInventoryEvents } from "@/composables/useInventoryEvents";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import {
@@ -640,21 +639,19 @@ import {
   setInventoryEventDocumentAttachedForFeed,
   updateShopifyInventoryEventFeedType,
   updateShopifyLocationInventoryEventFeedType,
+  useDataFeeds,
+  useInventoryChannels,
   useInventoryEventDocuments,
   useShopifyShopMutations,
+  useShopifyShops,
   useShopifySyncContext,
 } from "@/composables/useShopify";
-import { INVENTORY_EVENT_DOMAINS } from "@/config/appSyncConfig";
-import { resyncDomain } from "@/services/appCacheBootstrap";
-import { useInventorySyncArea } from "@/services/inventorySyncArea";
-import { formatDateTime } from "@/utils";
+import { INVENTORY_EVENT_DOMAINS, inventoryEventAreaDomains } from "@/config/appSyncConfig";
 import {
-  dataFeedCache,
-  groupFacilityCache,
-  inventoryChannelCache,
-  shopifyShopCache,
-} from "@/utils/cacheEntities";
-import { isEffectiveNow } from "@/utils/cacheProjection";
+  activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation as afterMutation, resyncDomain,
+} from "@/db/appDbSync";
+import { useInventorySyncArea } from "@/composables/useInventorySyncArea";
+import { formatDateTime } from "@/utils";
 import {
   INVENTORY_LEDGER_PURGE_SERVICES,
   type InventoryEventBatch,
@@ -696,23 +693,18 @@ const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
 
 const syncContext = useShopifySyncContext(() => props.id);
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
-const { records: cachedDataFeeds, hydrated: dataFeedsHydrated } = useCachedList<any>(dataFeedCache);
-const { records: allInventoryChannels, hydrated: inventoryChannelsHydrated } = useCachedList<any>(inventoryChannelCache);
+const { records: cachedDataFeeds, hydrated: dataFeedsHydrated } = useDataFeeds();
+const { records: allInventoryChannels, hydrated: inventoryChannelsHydrated } = useInventoryChannels();
 // Class B, so a local read. The two scoped inventory-history mounts need a facilityId, and the ledger
 // carries a facility GROUP because the event is aggregate; these are the candidates to search.
-const { records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated } = useCachedList<any>(groupFacilityCache);
+const { records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated } = useGroupFacilities();
 /**
  * A membership crossing its `fromDate` or `thruDate` while the page is open has to re-trigger the
  * computeds that read it. `Date.now()` is a snapshot, so an expired facility stayed in the channel's
  * composition and in the source-resolution search until some unrelated cache write happened.
  */
 const groupFacilitiesEffectiveNow = useEffectiveNow(cachedGroupFacilities);
-const {
-  start: startSyncDomains,
-  stop: stopSyncDomains,
-  failingDomains: monitorFailingDomains,
-  afterMutation,
-} = useCacheSync();
+const SYNC_OWNER = createSyncDomainOwner("shopifyInventorySyncView");
 
 /**
  * Both inventory ledgers, through the one model the history pages read. The inventory sync area keeps
@@ -727,17 +719,25 @@ function inventoryFor(kind: InventoryEventKind) {
 }
 
 /** Either sync failing makes the queue figures untrustworthy, so the toolbar reports both. */
-const syncFailures = computed(() => ({ ...monitorFailingDomains.value, ...inventoryAreaFailures.value }));
+const syncFailures = computed(() => ({
+  ...(serviceState.errors.serviceJobRun ? { serviceJobRun: serviceState.errors.serviceJobRun } : {}),
+  ...inventoryAreaFailures.value,
+}));
 const SYNC_PRIORITY = Object.values(INVENTORY_EVENT_DOMAINS);
 
+/**
+ * Same reason as `groupFacilitiesEffectiveNow`: a channel whose `thruDate` passes while the page is
+ * open must drop out, and a future-dated one must appear at its `fromDate`, without a reload.
+ */
+const inventoryChannelsEffectiveNow = useEffectiveNow(allInventoryChannels);
 const inventoryChannels = computed(() => allInventoryChannels.value.filter((channel: any) =>
-  String(channel.shopId) === String(props.id ?? "") && isEffectiveNow(channel, Date.now())));
+  String(channel.shopId) === String(props.id ?? "") && isEffectiveNow(channel, inventoryChannelsEffectiveNow.value)));
 
 /**
  * Shops by id, for naming a channel's target and for this connection's own push gate. Cached table,
  * so no request per row and no extra fetch for the toggle below.
  */
-const { records: allShopifyShops, hydrated: shopsHydrated } = useCachedList<any>(shopifyShopCache);
+const { records: allShopifyShops, hydrated: shopsHydrated } = useShopifyShops();
 const shopsById = computed<Record<string, any>>(() =>
   allShopifyShops.value.reduce((map: Record<string, any>, shop: any) => {
     map[String(shop.shopId)] = shop;
@@ -1739,22 +1739,26 @@ function openHistory(kind: InventoryEventKind, query: Record<string, string> = {
 
 /**
  * The monitor's own class-A domain: the runs of the jobs it reports on. The ledgers, their batches'
- * messages and their products belong to the inventory sync area, which outlives this view.
+ * messages and their products belong to the inventory sync area, which outlives this view — but the
+ * worker holds ONE active set, so they are activated alongside rather than replaced.
  */
 function activeSyncDomains() {
-  return watchedJobNames.value.length
-    ? [{ name: "serviceJobRun", args: { jobNames: watchedJobNames.value, total: 5 } }]
-    : [];
+  return [
+    ...(watchedJobNames.value.length
+      ? [{ name: "serviceJobRun", args: { jobNames: watchedJobNames.value, total: 5 } }]
+      : []),
+    ...(props.id ? inventoryEventAreaDomains(String(props.id)) : []),
+  ];
 }
 
 // Jobs are cached asynchronously, so the run domain is usually skipped on first pass and starts here.
 watch(() => watchedJobNames.value.join(","), () => {
-  if(isViewActive.value) {void startSyncDomains(activeSyncDomains());}
+  if(isViewActive.value) {void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);}
 });
 
 onIonViewWillEnter(() => {
   isViewActive.value = true;
-  void startSyncDomains(activeSyncDomains());
+  void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
   // The feed domain is gated to one sync per login, so a mode changed from anywhere else stays
   // stale here for the whole session. This page owns the toggle, so it re-reads the row on entry.
   void afterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID });
@@ -1772,7 +1776,7 @@ onIonViewWillEnter(() => {
 
 onIonViewDidLeave(() => {
   isViewActive.value = false;
-  stopSyncDomains();
+  void deactivateSyncDomains(SYNC_OWNER);
 });
 
 /**
@@ -1812,7 +1816,7 @@ async function openChannelSetup() {
   const { data } = await modal.onDidDismiss();
   // The channel drives which reset jobs belong to this connection, so pull both domains again
   // rather than waiting for the next scheduled sync pass.
-  if(data?.created) {await startSyncDomains(activeSyncDomains());}
+  if(data?.created) {await activateSyncDomains(activeSyncDomains(), SYNC_OWNER);}
 }
 
 function openChannelEdit(channel: any) {
@@ -1884,7 +1888,7 @@ function handleScheduleChannelJob(payload: { jobName: string }) {
 async function onChannelUpdated() {
   // Changing the location changes what the reset jobs target, so re-read rather than waiting for the
   // next scheduled pass.
-  await startSyncDomains(activeSyncDomains());
+  await activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
 }
 
 /** The one way into a job's configuration - from its row in Inventory sync jobs. */
@@ -1927,7 +1931,7 @@ function openJobRuns(job: any, title: string) {
 }
 
 function refreshServiceJobData() {
-  if(isViewActive.value) {void startSyncDomains(activeSyncDomains());}
+  if(isViewActive.value) {void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);}
 }
 
 const provisioningJobKind = ref<JobSetupKind | "">("");

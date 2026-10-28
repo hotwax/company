@@ -31,7 +31,8 @@ const cachedFacilities = ref<any[]>([]);
 const harness = vi.hoisted(() => ({
   downloadTextFile: vi.fn(),
   showToast: vi.fn(),
-  ensureSystemMessageErrors: vi.fn(),
+  requestSystemMessageErrors: vi.fn(),
+  refreshSystemMessageErrors: vi.fn(),
   resendSystemMessage: vi.fn(),
   resetSystemMessageError: vi.fn(),
   forceSystemMessageStatus: vi.fn(),
@@ -64,6 +65,7 @@ vi.mock("@common", () => ({
     products: resolvedProducts,
     resolve: (...args: any[]) => harness.resolveProductNames(...args),
   }),
+  useLiveEntity: () => ({ records: ref([]), first: ref(undefined), count: ref(0), hydrated: ref(true) }),
 }));
 
 // Only the alert overlay is replaced: ion-alert cannot be presented in jsdom, so the controller
@@ -82,24 +84,24 @@ vi.mock("@ionic/vue", async (importOriginal) => {
   };
 });
 
-vi.mock("@/composables/useCacheSync", () => ({
-  useCacheSync: () => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn(),
-    syncNow: vi.fn().mockResolvedValue(undefined),
-    ready: ref(true),
-    error: ref(""),
-    afterMutation: (...args: any[]) => {
-      harness.afterMutation(...args);
+vi.mock("@/db/appDbSync", () => ({
+  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  createSyncDomainOwner: (label: string) => label,
+  syncNow: vi.fn().mockResolvedValue(undefined),
+  refreshAfterMutation: (...args: any[]) => {
+    harness.afterMutation(...args);
 
-      return Promise.resolve();
-    },
-  }),
+    return Promise.resolve();
+  },
 }));
 
 const shipmentContexts = new Map<string, any>();
 
-vi.mock("@/composables/useShopify", () => ({
+vi.mock("@/composables/useShopify", async () => ({
+  // Real request composables: their api calls land on the @common mock, which the Diagnosis and
+  // order-search cases assert against.
+  ...await vi.importActual<any>("@/composables/useShopifyFulfillment").then(({ useFulfillmentDiagnosis, useShopOrderSearch }) => ({ useFulfillmentDiagnosis, useShopOrderSearch })),
   useFulfillmentSyncHealth: () => ({ health: healthRow, hydrated: ref(true) }),
   useOmsShipmentContext: () => ({
     getShipmentContext: (query: { shipmentId?: string; orderId?: string }) =>
@@ -124,8 +126,8 @@ vi.mock("@/composables/useServiceJobs", () => ({ useServiceJobs: () => ({ jobs: 
 }));
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
-    fetchSystemMessageErrors: (...args: any[]) => harness.ensureSystemMessageErrors(...args),
-    ensureSystemMessageErrors: (...args: any[]) => harness.ensureSystemMessageErrors(...args),
+    refreshSystemMessageErrors: (...args: any[]) => harness.refreshSystemMessageErrors(...args),
+    requestSystemMessageErrors: (...args: any[]) => harness.requestSystemMessageErrors(...args),
     resendSystemMessage: (...args: any[]) => harness.resendSystemMessage(...args),
     resetSystemMessageError: (...args: any[]) => harness.resetSystemMessageError(...args),
     forceSystemMessageStatus: (...args: any[]) => harness.forceSystemMessageStatus(...args),
@@ -230,7 +232,8 @@ describe("ShopifyFulfillmentSync - live cached data", () => {
     cachedFacilities.value = [];
     harness.alertRole = "confirm";
     harness.showToast.mockReset();
-    harness.ensureSystemMessageErrors.mockReset().mockResolvedValue([]);
+    harness.requestSystemMessageErrors.mockReset().mockResolvedValue(undefined);
+    harness.refreshSystemMessageErrors.mockReset().mockResolvedValue(undefined);
     harness.resendSystemMessage.mockReset().mockResolvedValue({});
     harness.resetSystemMessageError.mockReset().mockResolvedValue({});
     harness.forceSystemMessageStatus.mockReset().mockResolvedValue({});
@@ -511,7 +514,8 @@ describe("ShopifyFulfillmentSync - live cached data", () => {
       expect(diagnosis.text()).not.toContain('Automatic retries are paused');
     }
     expect(wrapper.findAll('[aria-label="Next step"]')).toHaveLength(0);
-    expect(harness.ensureSystemMessageErrors).toHaveBeenCalledWith("held");
+    // A failed attempt is read fresh, not from stored rows.
+    expect(harness.refreshSystemMessageErrors).toHaveBeenCalledWith("held");
     wrapper.findAllComponents(IonSegment)[1].vm.$emit("update:modelValue", "stopped");
     await flushPromises();
     expect(wrapper.findAllComponents(FulfillmentShipmentCard)).toHaveLength(1);

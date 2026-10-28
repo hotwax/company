@@ -1,23 +1,16 @@
 import { computed, ref } from "vue";
-import { api, commonUtil, logger } from "@common";
+import { api, commonUtil, logger, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
+import { serviceState, useSeedData } from "@common/db";
 import { getResponseErrorMessage } from "@/utils";
-import { resyncDomain } from "@/services/appCacheBootstrap";
-import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
-import {
-  currencyCache,
-  enumCache,
-  enumTypeCache,
-  geoAssocCache,
-  geoCache,
-  paymentMethodTypeCache,
-  productTypeCache,
-  roleTypeCache,
-  shipmentMethodTypeCache,
-  statusCache,
-  systemMessageTypeCache,
-} from "@/utils/cacheEntities";
-import { byDescription, useCachedList } from "./useCachedList";
+import { refreshAfterMutation, resyncDomain } from "@/db/appDbSync";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { usePrimaryOrganization } from "./useOrganizations";
+import { useMaargStore } from "@/store/maarg";
+
+function byDescription(a: any, b: any): number {
+  return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));
+}
 
 /**
  * SEED data — the reference sets that are not tied to any single model: statuses, enumerations,
@@ -27,39 +20,57 @@ import { usePrimaryOrganization } from "./useOrganizations";
  * they are the picker and label sources the whole app reads. Replaces `utilStore`.
  */
 
+// --- framework seed tables ------------------------------------------------------------------
+//
+// Thin wrappers over the framework's `useSeedData`, which shares one live read per seed table with
+// every component below the first caller in a tree, closed when that component unmounts. They keep
+// the shapes templates already index into; the lookups themselves live in `@common/db`. Each wrapper
+// calls `useSeedData()` itself, so like it they only work during setup.
+
+/**
+ * `useLiveEntity`'s `hydrated`, for a seed table read through `useSeedData`: its first read has landed,
+ * and it either has rows or sync is no longer filling it, so an empty list really is empty.
+ */
+function seedHydrated(firstRead: () => Promise<unknown>, rows: () => unknown[]) {
+  const landed = ref(false);
+  firstRead().finally(() => { landed.value = true; });
+  return computed(() => landed.value && (rows().length > 0 || !serviceState.running));
+}
+
+/** `id → description` over rows, falling back to the id. */
+function descriptionMap(rows: any[], idField: string): Record<string, string> {
+  return rows.reduce((map: Record<string, string>, row: any) => {
+    if (row[idField]) map[row[idField]] = row.description || row[idField];
+    return map;
+  }, {});
+}
+
 // --- statuses -------------------------------------------------------------------------------
 
 export function useStatuses() {
-  const { records, hydrated } = useCachedList<any>(statusCache);
+  const seed = useSeedData();
+  const statuses = computed(() => seed.statuses());
 
   /** statusId → description, the map templates index into. */
-  const statusItems = computed<Record<string, string>>(() =>
-    records.value.reduce((map: Record<string, string>, row: any) => {
-      map[row.statusId] = row.description ?? row.statusId;
-      return map;
-    }, {}));
+  const statusItems = computed<Record<string, string>>(() => descriptionMap(statuses.value, "statusId"));
 
   const labelFor = (statusId: string | undefined) =>
     (statusId ? statusItems.value[statusId] ?? statusId : "");
 
   /** Statuses of one statusTypeId (e.g. order vs shipment status sets). */
-  const ofType = (statusTypeId: string) =>
-    records.value.filter((row: any) => row.statusTypeId === statusTypeId).sort(byDescription);
+  const ofType = (statusTypeId: string) => [...seed.statusItemsByType(statusTypeId)].sort(byDescription);
 
-  return { statuses: records, statusItems, labelFor, ofType, hydrated };
+  return { statuses, statusItems, labelFor, ofType };
 }
 
 // --- enumerations ---------------------------------------------------------------------------
 
 /** The generic enumeration catalog (id → description). */
 export function useEnums() {
-  const { records, hydrated } = useCachedList<any>(enumCache);
-  const enumItems = computed<Record<string, string>>(() =>
-    records.value.reduce((map: Record<string, string>, row: any) => {
-      map[row.enumId] = row.description ?? row.enumId;
-      return map;
-    }, {}));
-  return { enums: records, enumItems, hydrated };
+  const seed = useSeedData();
+  const enums = computed(() => seed.enums());
+  const enumItems = computed<Record<string, string>>(() => descriptionMap(enums.value, "enumId"));
+  return { enums, enumItems };
 }
 
 /**
@@ -70,80 +81,50 @@ export function useEnums() {
  * without adding a domain.
  */
 export function useTypedEnums(enumTypeId: string) {
-  const { records, hydrated } = useCachedList<any>(
-    enumCache,
-    { scope: { field: "enumTypeId", value: enumTypeId } },
-  );
-  const values = computed(() => [...records.value].sort(byDescription));
-  /**
-   * enumId → description. The Pinia state these replaced was a map, and templates index it
-   * directly (`locationTypes[location.locationTypeEnumId]`); handing back only the array made
-   * every such lookup silently `undefined`.
-   */
-  const descriptionById = computed<Record<string, string>>(() =>
-    records.value.reduce((map: Record<string, string>, row: any) => {
-      if (row.enumId) map[row.enumId] = row.description ?? row.enumId;
+  const seed = useSeedData();
+  const values = computed(() => [...seed.enumsByType(enumTypeId)].sort(byDescription));
+  const enumItems = computed<Record<string, string>>(() => descriptionMap(values.value, "enumId"));
+  const labelFor = (enumId: string | undefined) =>
+    (enumId ? enumItems.value[enumId] ?? enumId : "");
+  const hydrated = seedHydrated(() => seed.getEnumsByType(enumTypeId), () => values.value);
+  return { values, enumItems, descriptionById: enumItems, labelFor, hydrated };
+}
+
+/** Enum types (id → description). */
+export function useEnumTypes() {
+  const seed = useSeedData();
+  return { enumTypes: computed(() => [...seed.enumTypes()].sort(byDescription)) };
+}
+
+// --- geographic boundaries ------------------------------------------------------------------
+
+export function useGeos() {
+  const seed = useSeedData();
+  const geos = computed(() => seed.geos());
+  const byId = computed<Record<string, any>>(() =>
+    geos.value.reduce((map: Record<string, any>, row: any) => {
+      if (row.geoId) map[row.geoId] = row;
       return map;
     }, {}));
-  return { values, descriptionById, hydrated };
-}
 
-/** The enumeration type catalog. */
-export function useEnumTypes() {
-  const { records, hydrated } = useCachedList<any>(enumTypeCache);
-  return { enumTypes: computed(() => [...records.value].sort(byDescription)), hydrated };
-}
+  const countries = computed(() => seed.countries());
 
-/**
- * Geo reference straight from Moqui — replaces `utilStore` states / operating countries.
- * `useGeos()` is the flat catalog; `statesOf(countryGeoId)` walks the association table.
- */
-export function useGeos() {
-  const { records: geos, hydrated } = useCachedList<any>(geoCache);
-  const { records: assocs } = useCachedList<any>(geoAssocCache);
+  const statesOf = (countryGeoId: string) => seed.statesForCountry(countryGeoId);
 
-  const byId = computed<Record<string, any>>(() =>
-    geos.value.reduce((map: Record<string, any>, geo: any) => { map[geo.geoId] = geo; return map; }, {}));
+  const hydrated = seedHydrated(() => seed.getGeos(), () => geos.value);
 
-  const countries = computed(() => geos.value
-    .filter((geo: any) => String(geo.geoTypeEnumId ?? "").includes("COUNTRY"))
-    .sort((a: any, b: any) => String(a.geoName ?? "").localeCompare(String(b.geoName ?? ""))));
-
-  /**
-   * Child geos (states / provinces / regions) of a country, resolved through GeoAssoc.
-   * Direction verified live: `geoId` is the country, `toGeoId` the region (ARE → AE-AJ).
-   * Restricted to `GAT_REGIONS`; `GAT_GROUP_MEMBER` is a different relationship (geo groups).
-   */
-  /**
-   * Countries in the DBIC association group.
-   *
-   * No dedicated fetch: `admin/geos/assocs?toGeoId=DBIC` was its own request, but the geoAssoc
-   * domain already snapshots that same endpoint unfiltered, so DBIC is just a slice of the cache.
-   * One fewer login call, and it stays correct as associations change.
-   */
-  const dbicCountries = computed(() => assocs.value
-    .filter((assoc: any) => assoc.toGeoId === "DBIC")
-    .map((assoc: any) => byId.value[assoc.geoId] ?? { geoId: assoc.geoId })
-    .filter(Boolean));
-
-  const statesOf = (countryGeoId: string) => assocs.value
-    .filter((assoc: any) => assoc.geoId === countryGeoId && assoc.geoAssocTypeEnumId === "GAT_REGIONS")
-    .map((assoc: any) => byId.value[assoc.toGeoId])
-    .filter(Boolean)
-    .sort((a: any, b: any) => String(a.geoName ?? "").localeCompare(String(b.geoName ?? "")));
-
-  return { geos, countries, statesOf, dbicCountries, byId, hydrated };
+  return { geos, countries, statesOf, byId, hydrated };
 }
 
 // --- type tables ----------------------------------------------------------------------------
 
-function sortedTypes(cache: Parameters<typeof useCachedList>[0]) {
-  const { records, hydrated } = useCachedList<any>(cache);
+function sortedTypes(table: string) {
+  const { records, hydrated } = useLiveEntity<any>(table);
   return { records: computed(() => [...records.value].sort(byDescription)), hydrated };
 }
 
 export function useProductTypes() {
-  const { records, hydrated } = sortedTypes(productTypeCache);
+  const { records, hydrated } = sortedTypes(companyDb.tables.productTypes);
   return { productTypes: records, hydrated };
 }
 
@@ -152,8 +133,13 @@ export function useProductTypes() {
  * callers must not resync it themselves.
  */
 export function useShipmentMethodTypeMutations() {
+  /**
+   * A failed WRITE is a plain error. Only a failure after the write committed is a
+   * `CacheReconciliationError` — callers present that one as "saved, but the list may be stale", so
+   * raising it for a rejected create would report a type that was never created as saved.
+   */
   const assertSuccessful = (response: any, fallback: string) => {
-    if(commonUtil.hasError(response)) {
+    if (commonUtil.hasError(response)) {
       throw new Error(getResponseErrorMessage(response, fallback));
     }
   };
@@ -161,56 +147,52 @@ export function useShipmentMethodTypeMutations() {
   const resyncShipmentMethodTypes = async (shipmentMethodTypeId: string) => {
     try {
       await resyncDomain("shipmentMethodType");
-    } catch (error) {
-      throw new CacheReconciliationError(
-        "shipmentMethodType",
-        { shipmentMethodTypeId },
-        error,
-      );
+    } catch (cause) {
+      throw new CacheReconciliationError("shipmentMethodType", { shipmentMethodTypeId }, cause);
     }
   };
 
-  async function createShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
-    const resp: any = await api({
+  const createShipmentMethodType = async (payload: { shipmentMethodTypeId: string; description: string; sequenceNum?: number }) => {
+    const response: any = await api({
       url: "oms/shippingGateways/shipmentMethodTypes",
       method: "post",
       data: payload,
     });
-    assertSuccessful(resp, "Failed to create the shipment method type.");
+    assertSuccessful(response, "Failed to create the shipment method type.");
     await resyncShipmentMethodTypes(payload.shipmentMethodTypeId);
+    return response;
+  };
 
-    return resp;
-  }
-
-  async function renameShipmentMethodType(shipmentMethodTypeId: string, description: string) {
-    const resp: any = await api({
+  const renameShipmentMethodType = async (shipmentMethodTypeId: string, description: string) => {
+    const response: any = await api({
       url: `oms/shippingGateways/shipmentMethodTypes/${encodeURIComponent(shipmentMethodTypeId)}`,
       method: "put",
       data: { shipmentMethodTypeId, description: description.trim() },
     });
-    assertSuccessful(resp, "Failed to rename the shipment method type.");
+    assertSuccessful(response, "Failed to rename the shipment method type.");
     await resyncShipmentMethodTypes(shipmentMethodTypeId);
-
-    return resp;
-  }
+    return response;
+  };
 
   return { createShipmentMethodType, renameShipmentMethodType };
 }
 
 /** Currencies (UOMs of type UT_CURRENCY_MEASURE), cached at login. */
 export function useCurrencies() {
-  const { records, hydrated } = sortedTypes(currencyCache);
+  const { records, hydrated } = sortedTypes(companyDb.tables.currencies);
   return { currencies: records, hydrated };
 }
 
 export function useShipmentMethodTypes() {
-  const { records, hydrated } = sortedTypes(shipmentMethodTypeCache);
-  return { shipmentMethodTypes: records, hydrated };
+  const seed = useSeedData();
+  return { shipmentMethodTypes: computed(() => [...seed.shipmentMethodTypes()].sort(byDescription)) };
 }
 
 export function usePaymentMethodTypes() {
-  const { records, hydrated } = sortedTypes(paymentMethodTypeCache);
-  return { paymentMethodTypes: records, hydrated };
+  const seed = useSeedData();
+  const paymentMethodTypes = computed(() => [...seed.paymentMethodTypes()].sort(byDescription));
+  const hydrated = seedHydrated(() => seed.getPaymentMethodTypes(), () => paymentMethodTypes.value);
+  return { paymentMethodTypes, hydrated };
 }
 
 /**
@@ -228,14 +210,11 @@ export async function createPaymentMethodType(payload: { paymentMethodTypeId: st
 }
 
 export function useRoleTypes() {
-  const { records, hydrated } = sortedTypes(roleTypeCache);
+  const seed = useSeedData();
+  const roleTypes = computed(() => [...seed.roleTypes()].sort(byDescription));
   /** roleTypeId → description, matching the map the party-role templates index. */
-  const descriptionById = computed<Record<string, string>>(() =>
-    records.value.reduce((map: Record<string, string>, row: any) => {
-      if (row.roleTypeId) map[row.roleTypeId] = row.description || row.roleTypeId;
-      return map;
-    }, {}));
-  return { roleTypes: records, descriptionById, hydrated };
+  const descriptionById = computed<Record<string, string>>(() => descriptionMap(roleTypes.value, "roleTypeId"));
+  return { roleTypes, descriptionById };
 }
 
 /**
@@ -245,7 +224,7 @@ export function useRoleTypes() {
  * on a single page load, for 9 distinct ids). Cached as one set, so labelling is a local lookup.
  */
 export function useSystemMessageTypes() {
-  const { records, hydrated } = useCachedList<any>(systemMessageTypeCache);
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.systemMessageTypes);
 
   /** systemMessageTypeId → description. */
   const typeItems = computed<Record<string, string>>(() =>
@@ -271,47 +250,10 @@ export function useSystemMessageTypes() {
 // =============================================================================================
 // Maarg server configuration
 //
-// Seed data like the rest of this file, but stored in localStorage rather than IndexedDB: it is a
-// small, flat, read-only object of server config properties, so it needs none of the cache's
-// projection / prune / liveQuery machinery. Grouped here because its ROLE is the same as the other
-// seed sets — reference data no single model owns — and callers should not care where it is kept.
+// Server config properties kept in localStorage by the maarg store (see store/maarg.ts). Grouped here
+// because its ROLE is the same as the other seed sets — reference data no single model owns — and
+// components should not care where it is kept.
 // =============================================================================================
-const MAARG_STORAGE_KEY = "company:maargConfig";
-
-export interface MaargInstanceInfo {
-  instancePurpose?: string;
-  instanceName?: string;
-  omsInstanceUrl?: string | null;
-  componentRelease?: string;
-}
-
-export interface MaargComponent {
-  name: string;
-  version: string;
-}
-
-export interface MaargConfig {
-  instanceInfo: MaargInstanceInfo;
-  components: MaargComponent[];
-  /** When this copy was read from the server. */
-  fetchedAt: number;
-}
-
-function readStored(): MaargConfig | null {
-  try {
-    const raw = localStorage.getItem(MAARG_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    return parsed as MaargConfig;
-  } catch {
-    return null; // corrupt entry — treat as absent and re-read from the server
-  }
-}
-
-// Module-scoped so every consumer shares one copy and one in-flight request.
-const config = ref<MaargConfig | null>(readStored());
-let inFlight: Promise<void> | null = null;
 
 /**
  * The operating organization's partyId — the `ownerPartyId` stamped on facilities this app creates.
@@ -545,41 +487,8 @@ export function useOrganization() {
 }
 
 export function useMaargConfig() {
-  /**
-   * Read the config, from localStorage when present. `force` re-reads from the server (used by an
-   * explicit refresh); otherwise a stored copy is reused for the whole session.
-   */
-  async function load(force = false): Promise<void> {
-    if (config.value && !force) return;
-    if (inFlight) return inFlight;
-
-    inFlight = (async () => {
-      try {
-        const resp: any = await api({ url: "admin/maarg", method: "get" });
-        const data = resp?.data;
-        if (!data || typeof data !== "object") throw new Error("Maarg config response is unavailable.");
-        const next: MaargConfig = {
-          instanceInfo: data.instanceInfo ?? {},
-          components: Array.isArray(data.components) ? data.components : [],
-          fetchedAt: Date.now(),
-        };
-        config.value = next;
-        localStorage.setItem(MAARG_STORAGE_KEY, JSON.stringify(next));
-      } catch (error) {
-        logger.error("Failed to load Maarg configuration", error);
-      } finally {
-        inFlight = null;
-      }
-    })();
-
-    return inFlight;
-  }
-
-  /** Drop the stored copy (called on logout alongside the cache wipe). */
-  function clear(): void {
-    config.value = null;
-    try { localStorage.removeItem(MAARG_STORAGE_KEY); } catch { /* ignore */ }
-  }
+  const maarg = useMaargStore();
+  const config = computed(() => maarg.config);
 
   const componentVersion = (name: string) =>
     computed(() => config.value?.components.find((component) => component.name === name)?.version ?? null);
@@ -590,8 +499,8 @@ export function useMaargConfig() {
     components: computed(() => config.value?.components ?? []),
     isLoaded: computed(() => !!config.value),
     componentVersion,
-    load,
-    clear,
+    load: (force = false) => maarg.load(force),
+    clear: () => maarg.clear(),
   };
 }
 

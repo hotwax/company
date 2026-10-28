@@ -1,14 +1,13 @@
-import { api, commonUtil } from "@common";
+import { api, commonUtil, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { computed, ref } from "vue";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
-import { shopifyTransferPendingCache } from "@/utils/cacheEntities";
+import { refreshAfterMutation } from "@/db/appDbSync";
 import { PENDING_SEGMENT_ENDPOINTS, type PendingSegment, SYNCED_SEGMENT_ENDPOINTS } from "@/workers/domains/shopifyTransferSyncDomain";
 import {
   type ReconciliationSummary,
   type WebhookReconciliationRow,
   reconcileWebhookTopics,
 } from "@/utils/shopifyWebhookReconciliation";
-import { useCachedList } from "./useCachedList";
 
 /**
  * Shopify transfer sync — order-scoped inventory transfer monitoring.
@@ -40,7 +39,7 @@ import { useCachedList } from "./useCachedList";
  * artifact timestamp (the create segment) fall back to order id, which is stable and monotonic.
  */
 export function useShopifyPendingSegment(shopId: () => string | undefined, segment: () => PendingSegment) {
-  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache);
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyTransferPending);
 
   const rows = computed<any[]>(() => {
     const wantedShop = String(shopId() ?? "");
@@ -66,7 +65,7 @@ export function useShopifyPendingSegment(shopId: () => string | undefined, segme
  * than one query per tab, because they all live in the same table.
  */
 export function useShopifyPendingCounts(shopId: () => string | undefined) {
-  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache);
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.shopifyTransferPending);
 
   const counts = computed<Record<string, number>>(() => {
     const wanted = String(shopId() ?? "");
@@ -81,12 +80,22 @@ export function useShopifyPendingCounts(shopId: () => string | undefined) {
     return totals;
   });
 
+  /** Distinct transfer orders cached per segment: each list holds whole orders, up to its limit. */
+  const orderCounts = computed<Record<string, number>>(() => {
+    const wanted = String(shopId() ?? "");
+    const orders: Record<string, Set<string>> = {};
+    for(const row of records.value as any[]) {
+      if(String(row?.shopId ?? "") !== wanted || !row?.segment || !row?.orderId) {continue;}
+      (orders[row.segment] ??= new Set()).add(String(row.orderId));
+    }
+
+    return Object.fromEntries(Object.entries(orders).map(([segment, ids]) => [segment, ids.size]));
+  });
+
   return {
     counts,
-    creationOrderCount: computed(() => new Set(records.value
-      .filter((row: any) => String(row?.shopId ?? "") === String(shopId() ?? "")
-        && row?.segment === "create" && row?.orderId)
-      .map((row: any) => String(row.orderId))).size),
+    orderCounts,
+    creationOrderCount: computed(() => orderCounts.value.create ?? 0),
     hydrated,
     total: computed(() => Object.values(counts.value).reduce((sum, n) => sum + n, 0)),
   };
@@ -189,6 +198,79 @@ export function useShopifyTransferSyncLaunch() {
   }
 
   return { currentDate, counts, loading, saving, error, load, save };
+}
+
+/**
+ * Per-shop Native Inventory Transfer Sync switch (`SHPFY_NATIVE_TO_SYNC`). Off means the shop's
+ * transfer orders are not pushed as Shopify transfers, even with the transfer jobs running; their
+ * inventory changes reach Shopify as inventory events instead. No row means on.
+ */
+const NATIVE_SYNC_SETTING = "SHPFY_NATIVE_TO_SYNC";
+
+export function useShopifyNativeTransferSync() {
+  // Unknown until the server answers: a default rendered as the switch's state reads as a fact.
+  const enabled = ref<boolean | undefined>(undefined);
+  const loading = ref(false);
+  const saving = ref(false);
+  const loadFailed = ref(false);
+  let loadVersion = 0;
+
+  async function load(shopId: string) {
+    const version = ++loadVersion;
+    enabled.value = undefined;
+    if(!shopId) {
+      loading.value = false;
+      loadFailed.value = true;
+
+      return;
+    }
+    loading.value = true;
+    loadFailed.value = false;
+    try {
+      const resp: any = await api({
+        url: SHOP_SETTING_ENDPOINT,
+        method: "GET",
+        params: { shopId, settingTypeEnumId: NATIVE_SYNC_SETTING, pageSize: 1 },
+      });
+      if(version !== loadVersion) { return; }
+      const rows = resp?.data ?? resp;
+      if(commonUtil.hasError(resp) || !Array.isArray(rows)) {
+        loadFailed.value = true;
+
+        return;
+      }
+      const value = String(rows[0]?.settingValue ?? "").trim().toLowerCase();
+      // Mirrors the connector: only an explicit false/N turns it off.
+      enabled.value = value !== "false" && value !== "n";
+    } catch {
+      // Never show a default the server did not confirm; the toggle stays disabled until a reload works.
+      if(version === loadVersion) { loadFailed.value = true; }
+    } finally {
+      if(version === loadVersion) { loading.value = false; }
+    }
+  }
+
+  async function save(shopId: string, next: boolean): Promise<boolean> {
+    if(!shopId || enabled.value === undefined) { return false; }
+    saving.value = true;
+    try {
+      const resp: any = await api({
+        url: SHOP_SETTING_ENDPOINT,
+        method: "POST",
+        data: { shopId, settingTypeEnumId: NATIVE_SYNC_SETTING, settingValue: next ? "true" : "false" },
+      });
+      if(!resp || resp.data == null || commonUtil.hasError(resp)) { return false; }
+      enabled.value = next;
+
+      return true;
+    } catch {
+      return false;
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  return { enabled, loading, saving, loadFailed, load, save };
 }
 
 /** Newest-synced-first ordering per segment. `syncedDate` is aliased on every synced view. */

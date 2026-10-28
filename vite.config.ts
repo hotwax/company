@@ -23,7 +23,7 @@ const commonRoot = path.resolve(projectRoot, '../../common')
 // "Failed to load url" pre-transform errors from Vite's esbuild phase.
 const COMMON_EXTERNALS = [
   'firebase/app', 'firebase/messaging',
-  'comlink', 'encoding-japanese', 'child_process',
+  'encoding-japanese', 'child_process',
   '@shopify/app-bridge', '@shopify/app-bridge-utils',
   '@module-federation/runtime'
 ]

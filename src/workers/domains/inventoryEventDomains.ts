@@ -1,31 +1,26 @@
-import { INVENTORY_EVENT_DOMAINS } from "@/config/appSyncConfig";
-import type { CachedEntity } from "@/utils/appCacheDb";
-import {
-  inventoryLedgerBoundCache,
-  locationInventoryAdjustmentKey,
-  shopifyInventoryAdjustmentDetailCache,
-  shopifyInventoryAdjustmentDetailProjection,
-  shopifyInventoryItemCache,
-  shopifyInventoryItemKey,
-  shopifyLocationInventoryAdjustmentDetailCache,
-  systemMessageCache,
-} from "@/utils/cacheEntities";
-import { toMillis } from "@/utils/cacheProjection";
+import { INVENTORY_EVENT_DOMAINS, INVENTORY_SYNC_DOMAIN_LABELS } from "@/config/appSyncConfig";
+import { companyDb } from "@/db/companyDb";
+import type { AppDbTables } from "@common/db/model/defineAppDb";
+import type { EntityClient } from "@common/db/storage/dbClient";
+import { canonicalKey, entityKeyOf, toMillis } from "@common/db/storage/projection";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
+import type { DbKey, SyncContext, SyncDomain } from "@common/db/types";
+import { pageAll, workerGet, workerPost } from "@common/core/workerRemoteApi";
 import { type InventoryEventKind, effectiveMessageOf, isUnsettledMessage } from "@/utils/inventoryEvents";
-import { type SyncContext, registerSyncDomain } from "../syncRegistry";
-import { pageAll, workerGet, workerPost } from "./workerFetch";
 
 /**
- * Class A for as long as the user is in a shop's inventory sync pages (`src/services/inventorySyncArea.ts`).
+ * Class A for as long as the user is in a shop's inventory sync pages (`src/composables/useInventorySyncArea.ts`).
  * Both ledgers share the pollers: the rows poller reads the newest 500, then rows whose
  * `detailLastUpdatedStamp` moved; the message poller reads rows whose joined
- * `systemMessageLastUpdatedStamp` moved. An OMS without the cursor aliases still gets its window stored,
- * just not re-polled until a manual refresh; the page says live updates are off.
+ * `systemMessageLastUpdatedStamp` moved. An OMS without the cursor aliases (connector before v4.4.0)
+ * has its window re-read every minute instead; the page says only the newest events stay current.
  */
 
 const RECENT_WINDOW = 500;
 const PAGE_SIZE = 250;
 const POLL_INTERVAL_MS = 10_000;
+/** The older location service loads the shop's whole ledger per request, so its window is re-read less often. */
+const WINDOW_ONLY_REFRESH_MS = 60_000;
 /** A row committed late by a transaction that started early carries a stamp older than the cursor. */
 const CURSOR_OVERLAP_MS = 60_000;
 /** A backfill's backstop: 40 pages of 250, past any ledger the five-day purge leaves. */
@@ -40,28 +35,46 @@ interface LedgerDefinition {
   rowsDomain: string;
   messageDomain: string;
   endpoint: string;
-  cache: CachedEntity;
-  keyOf: (raw: Record<string, unknown>) => string | undefined;
+  table: AppDbTables<typeof companyDb>;
+  entity: EntityClient<Record<string, any>>;
+}
+
+const systemMessageEntity = companyDb.entity(companyDb.tables.systemMessages);
+const inventoryItemEntity = companyDb.entity(companyDb.tables.shopifyInventoryItems);
+const ledgerBoundEntity = companyDb.entity(companyDb.tables.inventoryLedgerBounds);
+
+function ledger(kind: InventoryEventKind, table: AppDbTables<typeof companyDb>, endpoint: string, domains: { rows: string; messages: string }): LedgerDefinition {
+  return { kind, rowsDomain: domains.rows, messageDomain: domains.messages, endpoint, table, entity: companyDb.entity(table) };
 }
 
 export const INVENTORY_LEDGERS: Record<InventoryEventKind, LedgerDefinition> = {
-  channel: {
-    kind: "channel",
-    rowsDomain: INVENTORY_EVENT_DOMAINS.channelRows,
-    messageDomain: INVENTORY_EVENT_DOMAINS.channelMessages,
-    endpoint: "sob/shopify/inventoryAdjustmentDetails",
-    cache: shopifyInventoryAdjustmentDetailCache,
-    keyOf: (raw) => shopifyInventoryAdjustmentDetailProjection.buildKey(raw),
-  },
-  location: {
-    kind: "location",
-    rowsDomain: INVENTORY_EVENT_DOMAINS.locationRows,
-    messageDomain: INVENTORY_EVENT_DOMAINS.locationMessages,
-    endpoint: "sob/shopify/locationInventoryAdjustmentDetails",
-    cache: shopifyLocationInventoryAdjustmentDetailCache,
-    keyOf: locationInventoryAdjustmentKey,
-  },
+  channel: ledger("channel", "shopifyInventoryAdjustmentDetails", "sob/shopify/inventoryAdjustmentDetails", {
+    rows: INVENTORY_EVENT_DOMAINS.channelRows,
+    messages: INVENTORY_EVENT_DOMAINS.channelMessages,
+  }),
+  location: ledger("location", "shopifyLocationInventoryAdjustmentDetails", "sob/shopify/locationInventoryAdjustmentDetails", {
+    rows: INVENTORY_EVENT_DOMAINS.locationRows,
+    messages: INVENTORY_EVENT_DOMAINS.locationMessages,
+  }),
 };
+
+/**
+ * A ledger row's primary key, from a server record or a stored row alike: the key members are
+ * stored verbatim. A missing member drops the row, so if rows ever stop storing while the request
+ * returns 200, the identity has drifted from the server — the connector once split a packed
+ * `eventKey` into two columns, and the table silently stayed empty.
+ */
+function ledgerKeyOf(ledger: LedgerDefinition, row: Record<string, unknown>): DbKey | undefined {
+  return entityKeyOf(row, companyDb.entities[ledger.table]);
+}
+
+function ledgerPageKey(ledger: LedgerDefinition) {
+  return (row: Record<string, unknown>) => {
+    const key = ledgerKeyOf(ledger, row);
+
+    return key === undefined ? undefined : canonicalKey(key);
+  };
+}
 
 interface ShopArgs { shopId?: string }
 
@@ -76,16 +89,18 @@ function ledgerRowsOf(response: any, label: string): Array<Record<string, any>> 
   throw new Error(`[sync] ${label}: unexpected response shape.`);
 }
 
-/** `kind|shopId` whose window came back with no update stamps: re-read only on a manual refresh. */
-const windowOnlyLedgers = new Set<string>();
+/** `kind|shopId` whose window came back with no update stamps, and when that window was last read. */
+const windowOnlyLedgers = new Map<string, number>();
 
 /** An overlapped cursor read returns cached rows every quiet tick; rewriting them re-renders every list. */
 async function changedRows(ledger: LedgerDefinition, rows: Array<Record<string, any>>): Promise<Array<Record<string, any>>> {
-  const keyed = rows.map((row) => ({ row, key: ledger.keyOf(row) })).filter((entry): entry is { row: Record<string, any>; key: string } => !!entry.key);
-  const cached = await ledger.cache.getMany(keyed.map((entry) => entry.key));
+  const keyed = rows.map((row) => ({ row, key: ledgerKeyOf(ledger, row) })).filter((entry): entry is { row: Record<string, any>; key: DbKey } => entry.key !== undefined);
+  // `getMany` skips absent keys, so match stored rows back by key rather than by position.
+  const cached = new Map((await ledger.entity.getMany(keyed.map((entry) => entry.key)))
+    .map((row) => [canonicalKey(ledgerKeyOf(ledger, row)!), row]));
 
-  return keyed.filter((entry, index) => {
-    const before = cached[index]?.raw as Record<string, any> | undefined;
+  return keyed.filter((entry) => {
+    const before = cached.get(canonicalKey(entry.key));
     if(!before) {return true;}
 
     return toMillis(before.detailLastUpdatedStamp) !== toMillis(entry.row.detailLastUpdatedStamp) ||
@@ -95,12 +110,12 @@ async function changedRows(ledger: LedgerDefinition, rows: Array<Record<string, 
   }).map((entry) => entry.row);
 }
 
-async function scopedRows(cache: CachedEntity, shopId: string) {
-  return (await cache.all()).filter((row) => String(row.shopId ?? "") === shopId);
+function scopedRows(ledger: LedgerDefinition, shopId: string): Promise<Array<Record<string, any>>> {
+  return ledger.entity.query({ scope: { field: "shopId", value: shopId } });
 }
 
-function oldestCachedAt(rows: Array<{ raw?: any }>): number | undefined {
-  const oldest = rows.reduce((min, row) => Math.min(min, toMillis(row.raw?.createdDate) ?? Infinity), Infinity);
+function oldestCachedAt(rows: Array<Record<string, any>>): number | undefined {
+  const oldest = rows.reduce((min, row) => Math.min(min, toMillis(row.createdDate) ?? Infinity), Infinity);
 
   return Number.isFinite(oldest) ? oldest : undefined;
 }
@@ -119,23 +134,52 @@ async function serverOldestAt(ctx: SyncContext, ledger: LedgerDefinition, shopId
 }
 
 /**
- * The shop's events from `fromMs` up to `beforeMs`, newest first. The entity list takes the range; the
- * older service has none, so it is paged newest first until a page reaches back past `fromMs`.
+ * Stores the shop's events from `fromMs` up to `beforeMs`, newest first, a page at a time, so the history
+ * fills in as they arrive; resolves to the rows written. The entity list takes the range; the older
+ * service has none, so it is paged newest first until a page reaches back past `fromMs`.
  */
-async function rowsSince(ctx: SyncContext, ledger: LedgerDefinition, shopId: string, fromMs: number, beforeMs?: number) {
+async function loadRowsSince(ctx: SyncContext, ledger: LedgerDefinition, shopId: string, fromMs: number, beforeMs?: number, cachedCount = 0) {
   const range = { shopId, createdDate_from: fromMs, ...(beforeMs === undefined ? {} : { createdDate_thru: beforeMs }), orderByField: "-createdDate" };
-  const rows: Array<Record<string, any>> = [];
-  for(let pageIndex = 0; pageIndex < BACKFILL_MAX_PAGES; pageIndex++) {
-    const page = await workerGet(ctx, ledger.endpoint, { ...range, pageSize: PAGE_SIZE, pageIndex });
+  const read = (pageIndex: number) => workerGet(ctx, ledger.endpoint, { ...range, pageSize: PAGE_SIZE, pageIndex });
+  const newestOf = (page: any) => toMillis(ledgerRowsOf(page, ledger.endpoint)[0]?.createdDate) ?? 0;
+  let pageIndex = 0;
+  let page = await read(pageIndex);
+  let requests = 1;
+  // The older service has no range and pages from the newest row, so a ledger longer than the cap never
+  // reached past the cached rows. Jump behind them, stepping back while the landed page starts past the
+  // cache's oldest row: the purge can drop settled rows the cache still holds, so the count can overshoot.
+  if(!Array.isArray(page) && page?.hasMore && beforeMs !== undefined) {
+    for(let target = Math.floor(cachedCount / PAGE_SIZE) - 1; target > 0 && requests < BACKFILL_MAX_PAGES; target--) {
+      const landed = await read(target);
+      requests++;
+      if(newestOf(landed) >= beforeMs) {
+        page = landed;
+        pageIndex = target;
+        break;
+      }
+    }
+  }
+  // Only rows the cache does not reach yet, so a load that writes nothing has reached `fromMs`.
+  const uncached = (row: Record<string, any>) => {
+    const createdAt = toMillis(row.createdDate) ?? 0;
+
+    return createdAt >= fromMs && (beforeMs === undefined || createdAt < beforeMs);
+  };
+  let written = 0;
+  for(;;) {
     const pageRows = ledgerRowsOf(page, ledger.endpoint);
-    rows.push(...pageRows);
+    // Each page continues the cache's run downward, so writing it now leaves no gap behind it.
+    const fresh = pageRows.filter(uncached);
+    if(fresh.length) {written += await ledger.entity.upsertMany(fresh);}
     const more = Array.isArray(page)
       ? pageRows.length === PAGE_SIZE
       : page.hasMore && (toMillis(pageRows[pageRows.length - 1]?.createdDate) ?? 0) >= fromMs;
-    if(!more) {break;}
+    if(!more || requests >= BACKFILL_MAX_PAGES) {break;}
+    page = await read(++pageIndex);
+    requests++;
   }
 
-  return rows.filter((row) => (toMillis(row.createdDate) ?? 0) >= fromMs);
+  return written;
 }
 
 function cursorRead(
@@ -151,67 +195,75 @@ function cursorRead(
     collectionKey: null,
     strictCollection: true,
     batchSize: PAGE_SIZE,
-    keyOf: ledger.keyOf,
+    keyOf: ledgerPageKey(ledger),
     label: `${ledger.endpoint}:${cursorField}`,
     params: { shopId, [`${cursorField}_from`]: Math.max(0, cursor - CURSOR_OVERLAP_MS), orderByField: cursorField },
   });
 }
 
-for(const ledger of Object.values(INVENTORY_LEDGERS)) {
-  registerSyncDomain({
+function ledgerDomains(ledger: LedgerDefinition): SyncDomain[] {
+  const rowsDomain = defineSyncDomain({
     name: ledger.rowsDomain,
+    table: ledger.table,
+    label: INVENTORY_SYNC_DOMAIN_LABELS[ledger.rowsDomain],
+    syncClass: "A",
     intervalMs: POLL_INTERVAL_MS,
     async sync(ctx, args: ShopArgs = {}, options) {
       const shopId = shopOf(args);
       // An unscoped list would pull every shop's ledger into this shop's cache.
       if(!shopId) {return 0;}
       const windowKey = `${ledger.kind}|${shopId}`;
-      if(windowOnlyLedgers.has(windowKey) && !options?.force) {return 0;}
-      const cursor = windowOnlyLedgers.has(windowKey)
+      const windowReadAt = windowOnlyLedgers.get(windowKey);
+      if(windowReadAt !== undefined && !options?.force && Date.now() - windowReadAt < WINDOW_ONLY_REFRESH_MS) {return 0;}
+      const cursor = windowReadAt !== undefined
         ? undefined
-        : await ledger.cache.newestCursor("detailLastUpdatedStamp", { field: "shopId", value: shopId });
+        : await ledger.entity.newestCursor("detailLastUpdatedStamp", { field: "shopId", value: shopId });
       let changed: Array<Record<string, any>>;
       if(cursor === undefined) {
         const rows = ledgerRowsOf(await workerGet(ctx, ledger.endpoint, {
           shopId, orderByField: "-createdDate", pageSize: RECENT_WINDOW, pageIndex: 0,
         }), ledger.endpoint);
         const stamped = rows.some((row) => toMillis(row?.detailLastUpdatedStamp) !== undefined);
-        if(rows.length && !stamped) {windowOnlyLedgers.add(windowKey);} else {windowOnlyLedgers.delete(windowKey);}
-        // Written whole, so a row cached by an older build's projection is rewritten in this one's shape.
+        if(rows.length && !stamped) {windowOnlyLedgers.set(windowKey, Date.now());} else {windowOnlyLedgers.delete(windowKey);}
         changed = rows;
       } else {
         changed = await changedRows(ledger, await cursorRead(ctx, ledger, shopId, "detailLastUpdatedStamp", cursor));
       }
 
-      return changed.length ? ledger.cache.upsertMany(changed) : 0;
+      return changed.length ? ledger.entity.upsertMany(changed) : 0;
     },
     /** The history's date filter reaching past the cache: load the shop's events back to `pk.fromMs`. */
     async refetchOne(ctx, pk, args: ShopArgs = {}) {
       const shopId = shopOf(args);
       const fromMs = Number(pk?.fromMs);
       if(!shopId || !Number.isFinite(fromMs)) {return 0;}
-      const cachedOldest = oldestCachedAt(await scopedRows(ledger.cache, shopId));
+      const cached = await scopedRows(ledger, shopId);
+      const cachedOldest = oldestCachedAt(cached);
       if(cachedOldest !== undefined && fromMs >= cachedOldest) {return 0;}
-      const rows = await rowsSince(ctx, ledger, shopId, fromMs, cachedOldest);
 
-      return rows.length ? ledger.cache.upsertMany(rows) : 0;
+      return loadRowsSince(ctx, ledger, shopId, fromMs, cachedOldest, cached.length);
     },
   });
 
-  registerSyncDomain({
+  const messageDomain = defineSyncDomain({
     name: ledger.messageDomain,
+    table: ledger.table,
+    label: INVENTORY_SYNC_DOMAIN_LABELS[ledger.messageDomain],
+    syncClass: "A",
     intervalMs: POLL_INTERVAL_MS,
     async sync(ctx, args: ShopArgs = {}) {
       const shopId = shopOf(args);
       if(!shopId) {return 0;}
-      const cursor = await ledger.cache.newestCursor("systemMessageLastUpdatedStamp", { field: "shopId", value: shopId });
+      const cursor = await ledger.entity.newestCursor("systemMessageLastUpdatedStamp", { field: "shopId", value: shopId });
       // Nothing is batched yet; the rows poller brings the first message stamp in.
       if(cursor === undefined) {return 0;}
       const changed = await changedRows(ledger, await cursorRead(ctx, ledger, shopId, "systemMessageLastUpdatedStamp", cursor));
 
-      return changed.length ? ledger.cache.upsertMany(changed) : 0;
+      return changed.length ? ledger.entity.upsertMany(changed) : 0;
     },
   });
+
+  return [rowsDomain, messageDomain];
 }
 
 /**
@@ -219,43 +271,49 @@ for(const ledger of Object.values(INVENTORY_LEDGERS)) {
  * loads, never polled. The server purges old rows, so a cached row older than the server's oldest is
  * gone there and leaves the cache too: the cache mirrors the purge instead of guessing at it.
  */
-registerSyncDomain({
+const inventoryEventBoundsDomain = defineSyncDomain({
   name: INVENTORY_EVENT_DOMAINS.bounds,
+  table: "inventoryLedgerBounds",
+  label: INVENTORY_SYNC_DOMAIN_LABELS[INVENTORY_EVENT_DOMAINS.bounds],
+  syncClass: "A",
   sync: () => Promise.resolve(0),
   async refetchOne(ctx, pk) {
     const shopId = shopOf(pk);
     const ledger = INVENTORY_LEDGERS[pk?.kind as InventoryEventKind];
     if(!shopId || !ledger) {return 0;}
     const oldest = await serverOldestAt(ctx, ledger, shopId);
-    const written = await inventoryLedgerBoundCache.upsertMany([{ kind: ledger.kind, shopId, oldestCreatedDate: oldest ?? null }]);
+    const written = await ledgerBoundEntity.upsertMany([{ kind: ledger.kind, shopId, oldestCreatedDate: oldest ?? null }]);
     // An empty ledger on the server means nothing cached for this shop is still there.
-    const stale = (await scopedRows(ledger.cache, shopId)).filter((row) => (toMillis(row.raw?.createdDate) ?? Infinity) < (oldest ?? Infinity));
-    await ledger.cache.removeMany(stale.map((row) => ledger.keyOf(row.raw as Record<string, unknown>) ?? "").filter(Boolean));
+    const stale = (await scopedRows(ledger, shopId)).filter((row) => (toMillis(row.createdDate) ?? Infinity) < (oldest ?? Infinity));
+    await ledger.entity.bulkRemove(stale.map((row) => ledgerKeyOf(ledger, row)).filter((key): key is DbKey => key !== undefined));
 
     return written;
   },
 });
 
 /** Unsettled batches' messages, one request each: `admin/systemMessages` ignores `_op=in` (verified live). */
-registerSyncDomain({
+const inventoryEventSystemMessageDomain = defineSyncDomain({
   name: INVENTORY_EVENT_DOMAINS.systemMessages,
+  table: "systemMessages",
+  label: INVENTORY_SYNC_DOMAIN_LABELS[INVENTORY_EVENT_DOMAINS.systemMessages],
+  syncClass: "A",
   intervalMs: POLL_INTERVAL_MS,
   async sync(ctx, args: ShopArgs = {}) {
     const shopId = shopOf(args);
     if(!shopId) {return 0;}
-    const rows = (await Promise.all(Object.values(INVENTORY_LEDGERS).map((ledger) => scopedRows(ledger.cache, shopId)))).flat()
-      .filter((row) => row.raw?.systemMessageId);
+    const rows = (await Promise.all(Object.values(INVENTORY_LEDGERS).map((ledger) => scopedRows(ledger, shopId)))).flat()
+      .filter((row) => row.systemMessageId);
     const newestRowByMessage = new Map<string, any>();
     for(const row of rows) {
-      const id = String(row.raw.systemMessageId);
-      if((row.cachedAt ?? 0) >= (newestRowByMessage.get(id)?.cachedAt ?? -1)) {newestRowByMessage.set(id, row);}
+      const id = String(row.systemMessageId);
+      if((row.syncedAt ?? 0) >= (newestRowByMessage.get(id)?.syncedAt ?? -1)) {newestRowByMessage.set(id, row);}
     }
     const ids = [...newestRowByMessage.keys()];
-    const cachedMessages = await systemMessageCache.getMany(ids);
-    const unsettled = ids.filter((id, index) => {
+    const cachedMessages = new Map((await systemMessageEntity.getMany(ids)).map((message: any) => [String(message.systemMessageId), message]));
+    const unsettled = ids.filter((id) => {
       const row = newestRowByMessage.get(id);
-      const cached = cachedMessages[index];
-      const message = effectiveMessageOf(row.raw, row.cachedAt, cached ? { statusId: String(cached.raw?.statusId ?? ""), cachedAt: cached.cachedAt } : undefined);
+      const cached = cachedMessages.get(id);
+      const message = effectiveMessageOf(row, row.syncedAt, cached ? { statusId: String(cached.statusId ?? ""), syncedAt: cached.syncedAt } : undefined);
 
       return isUnsettledMessage(message?.statusId);
     }).sort((a, b) => b.localeCompare(a, undefined, { numeric: true })).slice(0, MESSAGE_REFRESH_MAX);
@@ -265,7 +323,7 @@ registerSyncDomain({
       try {
         const response = await workerGet(ctx, "admin/systemMessages", { systemMessageId, pageSize: 1 });
         const message = response?.systemMessages?.find((entry: any) => String(entry?.systemMessageId) === systemMessageId);
-        if(message) {written += await systemMessageCache.upsertMany([message]);}
+        if(message) {written += await systemMessageEntity.upsertMany([message]);}
       } catch {
         // One message must not sink the pass; the next tick retries it.
       }
@@ -339,26 +397,35 @@ function inventoryItemRowOf(shopId: string, shopifyInventoryItemId: string, node
 }
 
 /** Uncached inventory items, newest row first so the top of the history is named before the tail. */
+/** Items known to be gone, keyed per shop: Shopify's inventory item id is only unique per shop. */
+function inventoryItemKey(shopId: string, shopifyInventoryItemId: string): string {
+  return `${shopId}|${shopifyInventoryItemId}`;
+}
+
 async function unresolvedInventoryItems(shopId: string): Promise<string[]> {
-  const rows = (await Promise.all(Object.values(INVENTORY_LEDGERS).map((ledger) => scopedRows(ledger.cache, shopId)))).flat()
-    .sort((a, b) => (toMillis(b.raw?.createdDate) ?? 0) - (toMillis(a.raw?.createdDate) ?? 0));
+  const rows = (await Promise.all(Object.values(INVENTORY_LEDGERS).map((ledger) => scopedRows(ledger, shopId)))).flat()
+    .sort((a, b) => (toMillis(b.createdDate) ?? 0) - (toMillis(a.createdDate) ?? 0));
   const items = new Set<string>();
   for(const row of rows) {
-    const item = String(row.raw?.shopifyInventoryItemId ?? "");
-    if(!item || unknownInventoryItems.has(shopifyInventoryItemKey(shopId, item))) {continue;}
+    const item = String(row.shopifyInventoryItemId ?? "");
+    if(!item || unknownInventoryItems.has(inventoryItemKey(shopId, item))) {continue;}
     // Only a numeric id can be a Shopify global id; one malformed id would fail its whole batch forever.
-    if(!/^\d+$/.test(item)) {unknownInventoryItems.add(shopifyInventoryItemKey(shopId, item)); continue;}
+    if(!/^\d+$/.test(item)) {unknownInventoryItems.add(inventoryItemKey(shopId, item)); continue;}
     items.add(item);
   }
   const candidates = [...items];
-  const cached = await shopifyInventoryItemCache.getMany(candidates.map((item) => shopifyInventoryItemKey(shopId, item)));
+  const cached = new Set((await inventoryItemEntity.getMany(candidates.map((item) => [shopId, item])))
+    .map((row: any) => String(row.shopifyInventoryItemId)));
 
-  return candidates.filter((_, index) => !cached[index]);
+  return candidates.filter((item) => !cached.has(item));
 }
 
 /** The ledgers name an inventory item, not a product, so Shopify's `nodes` query names it. */
-registerSyncDomain({
+const inventoryEventProductDomain = defineSyncDomain({
   name: INVENTORY_EVENT_DOMAINS.products,
+  table: "shopifyInventoryItems",
+  label: INVENTORY_SYNC_DOMAIN_LABELS[INVENTORY_EVENT_DOMAINS.products],
+  syncClass: "A",
   intervalMs: POLL_INTERVAL_MS,
   async sync(ctx, args: ShopArgs = {}) {
     const shopId = shopOf(args);
@@ -394,12 +461,20 @@ registerSyncDomain({
       const rows: Array<Record<string, string>> = [];
       for(const id of ids) {
         const node = nodesById.get(id);
-        if(node?.variant) {rows.push(inventoryItemRowOf(shopId, id, node));} else {unknownInventoryItems.add(shopifyInventoryItemKey(shopId, id));}
+        if(node?.variant) {rows.push(inventoryItemRowOf(shopId, id, node));} else {unknownInventoryItems.add(inventoryItemKey(shopId, id));}
       }
-      if(rows.length) {written += await shopifyInventoryItemCache.upsertMany(rows);}
+      if(rows.length) {written += await inventoryItemEntity.upsertMany(rows);}
       if(budgetRunningLow(envelope)) {break;}
     }
 
     return written;
   },
 });
+
+/** Every inventory sync area domain, for `appSync.worker.ts` to register. */
+export const inventoryEventDomains: SyncDomain[] = [
+  ...Object.values(INVENTORY_LEDGERS).flatMap(ledgerDomains),
+  inventoryEventBoundsDomain,
+  inventoryEventSystemMessageDomain,
+  inventoryEventProductDomain,
+];

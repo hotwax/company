@@ -38,7 +38,7 @@
           v-if="shipmentMethod.carrierServiceCode"
           outline
           :disabled="disabled || isPending(shipmentMethod)"
-          @click.stop="editCarrierCode(shipmentMethod)"
+          @click.stop="editCarrierServiceCode(shipmentMethod)"
         >
           <ion-label>{{ shipmentMethod.carrierServiceCode }}</ion-label>
         </ion-chip>
@@ -46,7 +46,7 @@
           v-else
           :disabled="!shipmentMethod.isConfigured || disabled || isPending(shipmentMethod)"
           outline
-          @click.stop="editCarrierCode(shipmentMethod)"
+          @click.stop="editCarrierServiceCode(shipmentMethod)"
         >
           <ion-icon :icon="addCircleOutline" />
           <ion-label>{{ translate("carrier code") }}</ion-label>

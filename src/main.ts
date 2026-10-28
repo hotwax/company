@@ -1,7 +1,9 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
-import { createDxpI18n, faroUtil, initialiseConfig, logger } from '@common'
+import { commonUtil, createDxpI18n, faroUtil, initialiseConfig, logger } from '@common'
+import { deleteLegacyCaches } from '@common/db'
+import { companyDb } from '@/db/companyDb'
 
 import { IonicVue } from '@ionic/vue'
 
@@ -46,6 +48,12 @@ const app = createApp(App)
   .use(i18n)
   .use(pinia)
   .use(router)
+
+companyDb.setOmsInstanceResolver(() => commonUtil.getOMSInstanceName())
+
+// Drop the fixed-name databases this one replaced (`CompanyCacheDB`, `DataManagerLogCacheDB`) once
+// per page load; nothing else ever deletes them.
+void deleteLegacyCaches().catch(() => { /* best effort */ })
 
 initialiseConfig({
   postLogin: useUserStore().postLogin,

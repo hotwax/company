@@ -2,65 +2,76 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
-  domains: [] as any[],
   tables: {} as Record<string, Map<string, any>>,
   gets: [] as Array<{ url: string; params: Record<string, unknown> }>,
   pages: [] as any[],
   posts: [] as Array<{ url: string; data: any }>,
   responses: {} as Record<string, (params: Record<string, unknown>) => any>,
   writes: {} as Record<string, number>,
+  /** Each `upsertMany` call's row count, by fake table, in order. */
+  batches: {} as Record<string, number[]>,
 }));
 
-function fakeCache(table: string, keyOf: (raw: any) => string | undefined, fields: string[]) {
-  state.tables[table] ??= new Map();
-  const rows = () => [...state.tables[table].values()];
-  const project = (raw: any) => {
-    const row: Record<string, any> = { raw, cachedAt: Date.now() };
-    for(const field of fields) {if(raw[field] !== undefined) {row[field] = raw[field];}}
+/** A stored row's key in the fake tables: its primary-key values, the way `canonicalKey` joins them. */
+const joinKey = (...values: unknown[]) => values.map(String).join("\u0000");
 
-    return row;
+vi.mock("@/db/companyDb", async (importOriginal) => {
+  const { companyDb } = await importOriginal<typeof import("@/db/companyDb")>();
+  const { canonicalKey, entityKeyOf, projectRow } = await import("@common/db/storage/projection");
+  /** The fake tables' names, by the real table each stands in for. */
+  const TABLE_ALIASES: Record<string, string> = {
+    shopifyInventoryAdjustmentDetails: "channel",
+    shopifyLocationInventoryAdjustmentDetails: "location",
+    systemMessages: "systemMessages",
+    shopifyInventoryItems: "shopifyInventoryItems",
+    inventoryLedgerBounds: "bounds",
   };
 
-  return {
-    table,
-    all: vi.fn(async () => rows()),
-    getMany: vi.fn(async (keys: string[]) => keys.map((key) => state.tables[table].get(key))),
-    upsertMany: vi.fn(async (raws: any[]) => {
-      for(const raw of raws) {state.tables[table].set(keyOf(raw)!, project(raw));}
-      state.writes[table] = (state.writes[table] ?? 0) + raws.length;
+  /** The `EntityClient` surface the domains use, over a Map, projecting through the real schema. */
+  function fakeEntity(table: string) {
+    const alias = TABLE_ALIASES[table];
+    const entity = companyDb.entities[table];
+    state.tables[alias] ??= new Map();
+    const rows = () => [...state.tables[alias].values()];
 
-      return raws.length;
-    }),
-    removeMany: vi.fn(async (keys: string[]) => { keys.forEach((key) => state.tables[table].delete(key)); }),
-    newestCursor: vi.fn(async (field: string, scope?: { field: string; value: unknown }) => {
-      let newest: number | undefined;
-      for(const row of rows()) {
-        if(scope && String(row.raw[scope.field]) !== String(scope.value)) {continue;}
-        const value = Number(row.raw[field]);
-        if(Number.isFinite(value) && row.raw[field] !== undefined && row.raw[field] !== null && (newest === undefined || value > newest)) {newest = value;}
-      }
+    return {
+      table,
+      query: vi.fn(async ({ scope }: any = {}) => rows().filter((row) => !scope || String(row[scope.field]) === String(scope.value))),
+      getMany: vi.fn(async (keys: any[]) => keys.map((key) => state.tables[alias].get(canonicalKey(key))).filter(Boolean)),
+      upsertMany: vi.fn(async (raws: any[]) => {
+        let written = 0;
+        for(const raw of raws) {
+          const row = projectRow(raw, entity, Date.now());
+          if(!row) {continue;}
+          state.tables[alias].set(canonicalKey(entityKeyOf(row, entity)!), row);
+          written++;
+        }
+        state.writes[alias] = (state.writes[alias] ?? 0) + raws.length;
+        (state.batches[alias] ??= []).push(raws.length);
 
-      return newest;
-    }),
-  };
-}
+        return written;
+      }),
+      bulkRemove: vi.fn(async (keys: any[]) => { keys.forEach((key) => state.tables[alias].delete(canonicalKey(key))); }),
+      newestCursor: vi.fn(async (field: string, scope?: { field: string; value: unknown }) => {
+        let newest: number | undefined;
+        for(const row of rows()) {
+          if(scope && String(row[scope.field]) !== String(scope.value)) {continue;}
+          const value = row[field];
+          if(typeof value === "number" && (newest === undefined || value > newest)) {newest = value;}
+        }
 
-const channelKey = (raw: any) => [raw.eventTypeId, raw.eventReferenceId, raw.inventoryChannelId, raw.shopifyInventoryItemId].join("|");
-const locationKey = (raw: any) => [raw.eventTypeId, raw.eventReferenceId, raw.shopId, raw.shopifyLocationId, raw.shopifyInventoryItemId].join("|");
-const itemKey = (raw: any) => `${raw.shopId}|${raw.shopifyInventoryItemId}`;
+        return newest;
+      }),
+    };
+  }
 
-vi.mock("@/utils/cacheEntities", () => ({
-  shopifyInventoryAdjustmentDetailProjection: { buildKey: channelKey },
-  locationInventoryAdjustmentKey: locationKey,
-  shopifyInventoryItemKey: (shopId: unknown, itemId: unknown) => `${shopId}|${itemId}`,
-  shopifyInventoryAdjustmentDetailCache: fakeCache("channel", channelKey, ["shopId"]),
-  shopifyLocationInventoryAdjustmentDetailCache: fakeCache("location", locationKey, ["shopId"]),
-  systemMessageCache: fakeCache("systemMessages", (raw) => String(raw.systemMessageId), []),
-  shopifyInventoryItemCache: fakeCache("shopifyInventoryItems", itemKey, ["shopId"]),
-  inventoryLedgerBoundCache: fakeCache("bounds", (raw) => `${raw.kind}|${raw.shopId}`, ["shopId"]),
-}));
+  return { companyDb: { entities: companyDb.entities, tables: companyDb.tables, entity: fakeEntity } };
+});
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+const channelKey = (raw: any) => joinKey(raw.eventTypeId, raw.eventReferenceId, raw.inventoryChannelId, raw.shopifyInventoryItemId);
+const locationKey = (raw: any) => joinKey(raw.eventTypeId, raw.eventReferenceId, raw.shopId, raw.shopifyLocationId, raw.shopifyInventoryItemId);
+
+vi.mock("@common/core/workerRemoteApi", () => ({
   workerGet: vi.fn(async (_ctx: any, url: string, params: Record<string, unknown>) => {
     state.gets.push({ url, params });
 
@@ -78,18 +89,13 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   }),
 }));
 
-vi.mock("@/workers/syncRegistry", () => ({
-  registerSyncDomain: (domain: any) => { state.domains.push(domain); },
-}));
-
 const ctx = { maargUrl: "https://example.test", token: "token" } as any;
 
 async function load(name: string) {
   vi.resetModules();
-  state.domains = [];
-  await import("@/workers/domains/inventoryEventDomains");
+  const { inventoryEventDomains } = await import("@/workers/domains/inventoryEventDomains");
 
-  return state.domains.find((domain) => domain.name === name);
+  return inventoryEventDomains.find((domain) => domain.name === name) as any;
 }
 
 const locationRow = (over: Record<string, any> = {}) => ({
@@ -104,6 +110,7 @@ beforeEach(() => {
   state.posts = [];
   state.responses = {};
   state.writes = {};
+  state.batches = {};
 });
 
 describe("the rows poller", () => {
@@ -122,7 +129,7 @@ describe("the rows poller", () => {
 
   it("then asks only for rows updated since its cursor, with an overlap", async () => {
     const domain = await load("shopifyInventoryAdjustmentDetail");
-    state.tables.channel.set("seed", { raw: { shopId: "100002", detailLastUpdatedStamp: 500_000 }, shopId: "100002" });
+    state.tables.channel.set("seed", { shopId: "100002", detailLastUpdatedStamp: 500_000 });
 
     await domain.sync(ctx, { shopId: "100002" });
 
@@ -134,20 +141,32 @@ describe("the rows poller", () => {
     });
   });
 
-  it("stores the window from an OMS without update cursors, then rests until a manual refresh", async () => {
-    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
-    // The older location service wraps its rows in `details`, and carries no update stamps.
-    state.responses["sob/shopify/locationInventoryAdjustmentDetails"] = () => ({ details: [locationRow({ detailLastUpdatedStamp: undefined })] });
+  it("stores the window from an OMS without update cursors, then re-reads it every minute or on a manual refresh", async () => {
+    vi.useFakeTimers({ now: 10_000_000 });
+    try {
+      const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+      // The older location service wraps its rows in `details`, and carries no update stamps.
+      state.responses["sob/shopify/locationInventoryAdjustmentDetails"] = () => ({ details: [locationRow({ detailLastUpdatedStamp: undefined })] });
 
-    expect(await domain.sync(ctx, { shopId: "100002" })).toBe(1);
-    expect(state.tables.location.size).toBe(1);
+      expect(await domain.sync(ctx, { shopId: "100002" })).toBe(1);
+      expect(state.tables.location.size).toBe(1);
 
-    expect(await domain.sync(ctx, { shopId: "100002" })).toBe(0);
-    expect(state.gets).toHaveLength(1);
+      // The older service loads the whole ledger per request, so the 10s cadence does not apply.
+      vi.setSystemTime(10_050_000);
+      expect(await domain.sync(ctx, { shopId: "100002" })).toBe(0);
+      expect(state.gets).toHaveLength(1);
 
-    await domain.sync(ctx, { shopId: "100002" }, { force: true });
-    expect(state.gets).toHaveLength(2);
-    expect(state.gets[1].params).toMatchObject({ orderByField: "-createdDate", pageSize: 500 });
+      await domain.sync(ctx, { shopId: "100002" }, { force: true });
+      expect(state.gets).toHaveLength(2);
+      expect(state.gets[1].params).toMatchObject({ orderByField: "-createdDate", pageSize: 500 });
+
+      vi.setSystemTime(10_111_000);
+      await domain.sync(ctx, { shopId: "100002" });
+      expect(state.gets).toHaveLength(3);
+      expect(state.gets[2].params).toMatchObject({ orderByField: "-createdDate", pageSize: 500, pageIndex: 0 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("still reports a response it cannot read at all", async () => {
@@ -160,7 +179,7 @@ describe("the rows poller", () => {
   it("does not rewrite rows a cursor read returns unchanged", async () => {
     const domain = await load("shopifyLocationInventoryAdjustmentDetail");
     const row = locationRow();
-    state.tables.location.set(locationKey(row), { raw: row, shopId: "100002" });
+    state.tables.location.set(locationKey(row), row);
     state.responses["sob/shopify/locationInventoryAdjustmentDetails"] = () => [row, locationRow({ eventReferenceId: "2", detailLastUpdatedStamp: 2_000 })];
 
     const written = await domain.sync(ctx, { shopId: "100002" });
@@ -172,7 +191,7 @@ describe("the rows poller", () => {
     const domain = await load("shopifyInventoryAdjustmentDetail");
     const row = { ...locationRow(), inventoryChannelId: "IC_1", detailLastUpdatedStamp: undefined };
     // Cached by an older build: no top-level shopId, so this build's shop-scoped cursor cannot see it.
-    state.tables.channel.set(channelKey(row), { raw: row });
+    state.tables.channel.set(channelKey(row), row);
     state.responses["sob/shopify/inventoryAdjustmentDetails"] = () => [row];
 
     expect(await domain.sync(ctx, { shopId: "100002" })).toBe(1);
@@ -192,7 +211,7 @@ describe("the history reaching past the cache", () => {
   const LOCATION = "sob/shopify/locationInventoryAdjustmentDetails";
   const cacheRow = (ref: string, createdDate: number) => {
     const row = locationRow({ eventReferenceId: ref, createdDate });
-    state.tables.location.set(locationKey(row), { raw: row, shopId: "100002" });
+    state.tables.location.set(locationKey(row), row);
   };
 
   it("stores the server's oldest row from one sorted row, and drops cached rows the purge already removed", async () => {
@@ -205,8 +224,8 @@ describe("the history reaching past the cache", () => {
 
     // One request, for this ledger only: the page asks once when it loads.
     expect(state.gets).toEqual([{ url: LOCATION, params: { shopId: "100002", orderByField: "createdDate", pageSize: 1, pageIndex: 0 } }]);
-    expect(state.tables.bounds.get("location|100002").raw.oldestCreatedDate).toBe(1_000);
-    expect([...state.tables.location.values()].map((row) => row.raw.eventReferenceId)).toEqual(["KEPT"]);
+    expect(state.tables.bounds.get(joinKey("location", "100002")).oldestCreatedDate).toBe(1_000);
+    expect([...state.tables.location.values()].map((row) => row.eventReferenceId)).toEqual(["KEPT"]);
   });
 
   it("reads the oldest from the older service's count and last page", async () => {
@@ -216,7 +235,7 @@ describe("the history reaching past the cache", () => {
     await domain.refetchOne(ctx, { kind: "location", shopId: "100002" });
 
     expect(state.gets.map((call) => call.params.pageIndex)).toEqual([0, 2]);
-    expect(state.tables.bounds.get("location|100002").raw.oldestCreatedDate).toBe(700);
+    expect(state.tables.bounds.get(joinKey("location", "100002")).oldestCreatedDate).toBe(700);
   });
 
   it("loads the range between a chosen date and the cache's oldest row from the entity list", async () => {
@@ -248,10 +267,71 @@ describe("the history reaching past the cache", () => {
   });
 });
 
+describe("the older service reaching past a long cache", () => {
+  const LOCATION = "sob/shopify/locationInventoryAdjustmentDetails";
+  /** A ledger of `count` rows, newest first one per ms below 100_000, served by the older service's pages. */
+  function olderService(count: number, gone: Set<number> = new Set()) {
+    const ledger = Array.from({ length: count }, (_, index) => 100_000 - index).filter((createdDate) => !gone.has(createdDate));
+    state.responses[LOCATION] = (params) => {
+      const start = Number(params.pageIndex) * 250;
+      const page = ledger.slice(start, start + 250);
+
+      return { hasMore: start + 250 < ledger.length, details: page.map((createdDate) => locationRow({ eventReferenceId: String(createdDate), createdDate })) };
+    };
+  }
+  /** The newest `count` rows of that ledger, cached. */
+  function cacheNewest(count: number) {
+    for(let index = 0; index < count; index++) {
+      const row = locationRow({ eventReferenceId: String(100_000 - index), createdDate: 100_000 - index });
+      state.tables.location.set(locationKey(row), row);
+    }
+  }
+
+  it("jumps behind the cached rows instead of re-reading them from the newest page", async () => {
+    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+    olderService(12_000);
+    cacheNewest(10_000);
+
+    const written = await domain.refetchOne(ctx, { fromMs: 88_500 }, { shopId: "100002" });
+
+    // Page 0 tells the shapes apart; 39 is the last page the 10,000 cached rows certainly fill.
+    expect(state.gets.map((call) => call.params.pageIndex)).toEqual([0, 39, 40, 41, 42, 43, 44, 45, 46]);
+    // Only rows older than the cache, and none older than the chosen date.
+    expect(written).toBe(1_501);
+  });
+
+  it("writes each page as it arrives, so the history fills in while the load runs", async () => {
+    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+    olderService(12_000);
+    cacheNewest(10_000);
+
+    await domain.refetchOne(ctx, { fromMs: 88_500 }, { shopId: "100002" });
+
+    // Page 39 is all cached rows; each later page is its own write, the last one cut at the chosen date.
+    expect(state.batches.location).toEqual([250, 250, 250, 250, 250, 250, 1]);
+  });
+
+  it("steps back when the purge left the server fewer rows than the cache holds", async () => {
+    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+    // 600 settled rows the cache still holds are already purged on the server.
+    olderService(12_000, new Set(Array.from({ length: 600 }, (_, index) => 95_000 - index)));
+    cacheNewest(10_000);
+
+    await domain.refetchOne(ctx, { fromMs: 89_000 }, { shopId: "100002" });
+
+    // With 600 rows gone, pages 39 and 38 start below the cache's oldest row; 37 is the first that starts above it.
+    expect(state.gets.map((call) => call.params.pageIndex)).toEqual([0, 39, 38, 37, 38, 39, 40, 41]);
+    // Nothing between the cache's oldest row and the chosen date was skipped.
+    for(let createdDate = 89_000; createdDate < 90_001; createdDate++) {
+      expect(state.tables.location.has(locationKey(locationRow({ eventReferenceId: String(createdDate) })))).toBe(true);
+    }
+  });
+});
+
 describe("the message poller", () => {
   it("waits until a cached row has been batched", async () => {
     const domain = await load("shopifyLocationInventoryAdjustmentDetailMessage");
-    state.tables.location.set("a", { raw: locationRow(), shopId: "100002" });
+    state.tables.location.set("a", locationRow());
 
     expect(await domain.sync(ctx, { shopId: "100002" })).toBe(0);
     expect(state.pages).toEqual([]);
@@ -260,14 +340,14 @@ describe("the message poller", () => {
   it("asks for rows whose message changed since the newest message stamp", async () => {
     const domain = await load("shopifyLocationInventoryAdjustmentDetailMessage");
     const row = locationRow({ systemMessageId: "M1", systemMessageStatusId: "SmsgProduced", systemMessageLastUpdatedStamp: 900_000 });
-    state.tables.location.set(locationKey(row), { raw: row, shopId: "100002" });
+    state.tables.location.set(locationKey(row), row);
     state.responses["sob/shopify/locationInventoryAdjustmentDetails"] = () => [{ ...row, systemMessageStatusId: "SmsgSent", systemMessageLastUpdatedStamp: 950_000 }];
 
     const written = await domain.sync(ctx, { shopId: "100002" });
 
     expect(state.pages[0].params).toEqual({ shopId: "100002", systemMessageLastUpdatedStamp_from: 840_000, orderByField: "systemMessageLastUpdatedStamp" });
     expect(written).toBe(1);
-    expect(state.tables.location.get(locationKey(row)).raw.systemMessageStatusId).toBe("SmsgSent");
+    expect(state.tables.location.get(locationKey(row)).systemMessageStatusId).toBe("SmsgSent");
   });
 });
 
@@ -276,7 +356,7 @@ describe("the unsettled message poller", () => {
     const domain = await load("inventoryEventSystemMessage");
     for(const [ref, status] of [["1", "SmsgProduced"], ["2", "SmsgSent"], ["3", "SmsgError"]]) {
       const row = locationRow({ eventReferenceId: ref, systemMessageId: `M${ref}`, systemMessageStatusId: status });
-      state.tables.location.set(locationKey(row), { raw: row, shopId: "100002", cachedAt: 1 });
+      state.tables.location.set(locationKey(row), { ...row, syncedAt: 1 });
     }
     state.responses["admin/systemMessages"] = (params) => ({ systemMessages: [{ systemMessageId: params.systemMessageId, statusId: "SmsgSent" }] });
 
@@ -294,7 +374,7 @@ describe("the product resolver", () => {
   function cacheItems(itemIds: string[]) {
     itemIds.forEach((itemId, index) => {
       const row = locationRow({ eventReferenceId: String(index), shopifyInventoryItemId: itemId, createdDate: 1_000 + index });
-      state.tables.location.set(locationKey(row), { raw: row, shopId: "100002" });
+      state.tables.location.set(locationKey(row), row);
     });
   }
 
@@ -346,7 +426,7 @@ describe("the product resolver", () => {
 
     await domain.sync(ctx, { shopId: "100002" });
 
-    expect(state.tables.shopifyInventoryItems.get("100002|45457490215081").raw).toEqual({
+    expect(state.tables.shopifyInventoryItems.get(joinKey("100002", "45457490215081"))).toMatchObject({
       shopId: "100002",
       shopifyInventoryItemId: "45457490215081",
       sku: "SKU-45457490215081",
@@ -356,7 +436,7 @@ describe("the product resolver", () => {
       productTitle: "Getty Wide Leg",
       imageUrl: "https://cdn.test/variant.jpg",
     });
-    expect(state.tables.shopifyInventoryItems.get("100002|45457490215082").raw.imageUrl).toBe("https://cdn.test/product.jpg");
+    expect(state.tables.shopifyInventoryItems.get(joinKey("100002", "45457490215082")).imageUrl).toBe("https://cdn.test/product.jpg");
   });
 
   it("asks about an item Shopify has no variant for once per worker, not once per tick", async () => {

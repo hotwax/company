@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   api: vi.fn(),
-  errorCacheAll: vi.fn(),
-  errorCacheUpsertMany: vi.fn(),
+  refreshAfterMutation: vi.fn(),
+  errorCacheQuery: vi.fn(),
 }));
 
 vi.mock("@common", () => ({
@@ -13,15 +13,17 @@ vi.mock("@common", () => ({
   translate: (value: string) => value,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  shopifyBulkOperationCache: { all: vi.fn(), upsertMany: vi.fn() },
-  systemMessageCache: { all: vi.fn(), upsertMany: vi.fn() },
-  systemMessageErrorCache: {
-    all: (...args: any[]) => mocks.errorCacheAll(...args),
-    upsertMany: (...args: any[]) => mocks.errorCacheUpsertMany(...args),
+vi.mock("@/db/companyDb", () => ({
+  companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) as any,
+    entity: (table: string) => {
+      if (table === "systemMessageErrors") {
+        return { query: (...args: any[]) => mocks.errorCacheQuery(...args) };
+      }
+      return { get: vi.fn(async () => undefined), query: vi.fn(async () => []) };
+    },
   },
-  systemMessageRemoteCache: { all: vi.fn(), upsertMany: vi.fn() },
 }));
+vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: (...args: any[]) => mocks.refreshAfterMutation(...args) }));
 
 import { clearSessionScopedState } from "@/composables/sessionScope";
 import { systemMessageMayHaveErrors, useSystemMessage } from "@/composables/useSystemMessage";
@@ -29,9 +31,8 @@ import { systemMessageMayHaveErrors, useSystemMessage } from "@/composables/useS
 beforeEach(() => {
   clearSessionScopedState();
   mocks.api.mockReset();
-  mocks.errorCacheAll.mockReset();
-  mocks.errorCacheAll.mockResolvedValue([]);
-  mocks.errorCacheUpsertMany.mockReset();
+  mocks.refreshAfterMutation.mockReset().mockResolvedValue(0);
+  mocks.errorCacheQuery.mockReset().mockResolvedValue([]);
 });
 
 /**
@@ -76,62 +77,70 @@ describe("systemMessageMayHaveErrors", () => {
   });
 });
 
-describe("ensureSystemMessageErrors", () => {
-  it("retries after a request failure instead of permanently treating it as a clean result", async () => {
-    mocks.api
-      .mockRejectedValueOnce(new Error("network unavailable"))
-      .mockResolvedValue({ data: [] });
-    const { ensureSystemMessageErrors } = useSystemMessage();
+describe("requestSystemMessageErrors", () => {
+  it("asks the systemMessageError domain, and stores and reads nothing itself", async () => {
+    const { requestSystemMessageErrors } = useSystemMessage();
 
-    expect(await ensureSystemMessageErrors("MSG_1")).toEqual([]);
-    expect(await ensureSystemMessageErrors("MSG_1")).toEqual([]);
-    expect(mocks.api).toHaveBeenCalledTimes(2);
+    expect(await requestSystemMessageErrors("MSG_0")).toBeUndefined();
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("systemMessageError", { systemMessageId: "MSG_0" });
+    expect(mocks.errorCacheQuery).not.toHaveBeenCalled();
+    expect(mocks.api).not.toHaveBeenCalled();
+  });
+
+  it("retries after a request failure instead of permanently treating it as a clean result", async () => {
+    mocks.refreshAfterMutation
+      .mockRejectedValueOnce(new Error("network unavailable"))
+      .mockResolvedValue(0);
+    const { requestSystemMessageErrors } = useSystemMessage();
+
+    await expect(requestSystemMessageErrors("MSG_1")).rejects.toThrow("network unavailable");
+    await requestSystemMessageErrors("MSG_1");
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledTimes(2);
 
     // The successful empty response is the point at which the session memo becomes authoritative.
-    expect(await ensureSystemMessageErrors("MSG_1")).toEqual([]);
-    expect(mocks.api).toHaveBeenCalledTimes(2);
+    await requestSystemMessageErrors("MSG_1");
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledTimes(2);
   });
 
   it("clears confirmed-clean results with the rest of the session", async () => {
-    mocks.api.mockResolvedValue({ data: [] });
-    const { ensureSystemMessageErrors } = useSystemMessage();
+    const { requestSystemMessageErrors } = useSystemMessage();
 
-    await ensureSystemMessageErrors("MSG_2");
-    await ensureSystemMessageErrors("MSG_2");
-    expect(mocks.api).toHaveBeenCalledTimes(1);
+    await requestSystemMessageErrors("MSG_2");
+    await requestSystemMessageErrors("MSG_2");
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledTimes(1);
 
     clearSessionScopedState();
 
-    await ensureSystemMessageErrors("MSG_2");
-    expect(mocks.api).toHaveBeenCalledTimes(2);
+    await requestSystemMessageErrors("MSG_2");
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledTimes(2);
   });
 
-  it("drops a confirmed-clean answer once a fresh fetch finds a retry's error", async () => {
-    const retryError = { errorText: "Shopify timed out", errorDate: 5 };
-    mocks.api.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({ data: [retryError] });
-    const { ensureSystemMessageErrors, fetchSystemMessageErrors } = useSystemMessage();
+  it("drops a confirmed-clean answer once a fresh fetch stores a retry's error", async () => {
+    const { requestSystemMessageErrors, refreshSystemMessageErrors } = useSystemMessage();
 
-    expect(await ensureSystemMessageErrors("MSG_4")).toEqual([]);
-    expect(await fetchSystemMessageErrors("MSG_4")).toEqual([retryError]);
-    mocks.errorCacheAll.mockResolvedValue([{ systemMessageId: "MSG_4", raw: retryError }]);
+    await requestSystemMessageErrors("MSG_4");
+    // A fresh read always asks, even past the memo, and this one stores an error.
+    mocks.refreshAfterMutation.mockResolvedValueOnce(1);
+    await refreshSystemMessageErrors("MSG_4");
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledTimes(2);
 
-    expect(await ensureSystemMessageErrors("MSG_4")).toEqual([retryError]);
+    await requestSystemMessageErrors("MSG_4");
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledTimes(3);
   });
 
   it("does not let a late empty response from the previous session restore the memo", async () => {
-    let resolveOld!: (value: any) => void;
-    const oldResponse = new Promise((resolve) => { resolveOld = resolve; });
-    mocks.api
-      .mockReturnValueOnce(oldResponse)
-      .mockResolvedValue({ data: [] });
-    const { ensureSystemMessageErrors } = useSystemMessage();
+    let resolveOld!: (value: number) => void;
+    mocks.refreshAfterMutation
+      .mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }))
+      .mockResolvedValue(0);
+    const { requestSystemMessageErrors } = useSystemMessage();
 
-    const oldRequest = ensureSystemMessageErrors("MSG_3");
+    const oldRequest = requestSystemMessageErrors("MSG_3");
     clearSessionScopedState();
-    resolveOld({ data: [] });
+    resolveOld(0);
     await oldRequest;
 
-    await ensureSystemMessageErrors("MSG_3");
-    expect(mocks.api).toHaveBeenCalledTimes(2);
+    await requestSystemMessageErrors("MSG_3");
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledTimes(2);
   });
 });

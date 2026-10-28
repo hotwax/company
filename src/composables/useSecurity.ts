@@ -1,10 +1,13 @@
 import { computed, onScopeDispose, ref, watch } from "vue";
-import { api, client, commonUtil, logger } from "@common";
+import { api, client, commonUtil, logger, useLiveEntity } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { useUserStore } from "@/store/user";
-import { resyncDomain } from "@/services/appCacheBootstrap";
-import { permissionCache, userGroupCache } from "@/utils/cacheEntities";
-import { byDescription, useCachedList, useCachedRecord } from "./useCachedList";
+import { resyncDomain } from "@/db/appDbSync";
 import { onSessionCleared } from "./sessionScope";
+
+function byDescription(a: any, b: any): number {
+  return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));
+}
 
 /**
  * Security master entity — user groups, the permission catalog, and what hangs off a group
@@ -19,7 +22,7 @@ import { onSessionCleared } from "./sessionScope";
  */
 
 export function useUserGroups() {
-  const { records, hydrated } = useCachedList<any>(userGroupCache);
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.userGroups);
   const userGroups = computed(() => [...records.value].sort(byDescription));
 
   /** Client-side search over the complete cached set — no server round-trip. */
@@ -33,12 +36,14 @@ export function useUserGroups() {
   return { userGroups, search, records, hydrated };
 }
 
-export const useUserGroupRecord = (userGroupId: string | undefined) =>
-  useCachedRecord(userGroupCache, "userGroupId", userGroupId);
+export const useUserGroupRecord = (userGroupId: string | undefined) => {
+  const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.userGroups, () => userGroupId ? { equals: { userGroupId } } : { filter: () => false });
+  return { record, hydrated };
+};
 
 /** The master permission catalog (moqui.security.UserPermission). */
 export function usePermissions() {
-  const { records, hydrated } = useCachedList<any>(permissionCache);
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.permissions);
   return { permissions: computed(() => [...records.value].sort(byDescription)), records, hydrated };
 }
 
@@ -80,7 +85,7 @@ export function useUserAccountActions() {
   };
 
   const resetPassword = async (payload: any, maarg: string) => {
-    return client({
+    const resp: any = await client({
       baseURL: getBaseURL(maarg),
       url: `admin/users/${payload.userId}/changePassword`,
       method: "post",
@@ -91,6 +96,13 @@ export function useUserAccountActions() {
         newPasswordVerify: payload.newPasswordVerify
       }
     });
+
+    // update#Password reports failures (wrong/missing old password, no permission, weak password) as a public
+    // "danger" message with updateSuccessful: false, not as commonUtil.hasError's generic error shape.
+    if (commonUtil.hasError(resp) || !resp.data?.updateSuccessful) {
+      throw resp.data;
+    }
+    return resp;
   };
 
   const setUserCreationDraftFromSearch = (search: string) => {
@@ -396,7 +408,7 @@ export function deleteArtifactAuthz(payload: { userGroupId: string; artifactAuth
  *
  * Write-through is `resyncDomain`, NOT `refreshAfterMutation`: the `userGroup` domain is registered
  * as a plain lookup (referenceDomains.ts:155) with neither `byPk` nor `refetchScope`, and for such
- * a domain `refetchOne` silently returns 0 (snapshotDomain.ts:256) — the row would keep its old
+ * a domain `refetchOne` silently returns 0 (defineSnapshotDomain.ts:256) — the row would keep its old
  * description until the next login sync. Re-snapshotting the whole lookup table is one small
  * request and actually lands the update; it also supersedes the old `updateUserGroupInState`
  * hand-patch, because cached readers re-emit via liveQuery.

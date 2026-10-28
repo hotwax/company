@@ -1,9 +1,8 @@
 import { computed, reactive, toRefs, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
-import { api, logger } from '@common'
-import { dataManagerLogCache } from '@/utils/cacheEntities';
-import { useCachedList, useCachedRecord } from './useCachedList';
-import { clearStorage, getErrorRecords, setErrorRecords } from '@/utils/storage';
-import Papa from 'papaparse';
+import { api, logger, useLiveEntity } from '@common'
+import { companyDb } from '@/db/companyDb';
+import { refreshAfterMutation } from '@/db/appDbSync';
+import { ERROR_RECORD_TTL_MS } from '@/config/appSyncConfig';
 
 /**
  * The newest imports for one DataManager config, LIVE from the cache.
@@ -30,7 +29,7 @@ export function useRecentDataManagerLogs(
   limit = 10,
   systemMessageIds?: MaybeRefOrGetter<readonly string[]>,
 ) {
-  const { records: configLogs, hydrated } = useCachedList<any>(dataManagerLogCache, {
+  const { records: configLogs, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, {
     dateField: "createdDate",
     equals: { configId },
   });
@@ -49,19 +48,46 @@ export function useDataManager() {
   const state = reactive({
     currentMdmLog: {} as Record<string, any>,
     recentMdmLogs: [] as any[],
-    errorLogs: [] as any[],
-    errorCsvRecords: null as any,
+    /** The error files `errorLogs` shows, in order; `logId` is stamped onto their records when set. */
+    errorLogSources: [] as Array<{ logContentId: string; logId?: string }>,
     loading: false
   });
 
-  const isValidJSON = (data: any) => {
-    try {
-      JSON.parse(data);
-      return true;
-    } catch (err) {
-      return false;
+  // The error records of the logs in `errorLogSources`, downloaded by the dataManagerErrorRecord
+  // domain. Rows past the two-hour expiry are hidden until that domain replaces or prunes them.
+  const { records: errorRecordRows } = useLiveEntity<any>(companyDb.tables.dataManagerErrorRecords, () => {
+    const logContentIds = new Set(state.errorLogSources.map((source) => source.logContentId));
+    if (!logContentIds.size) return { filter: () => false };
+    return { filter: (row: any) => logContentIds.has(row.logContentId) && Number(row.fetchedAt) > Date.now() - ERROR_RECORD_TTL_MS };
+  });
+
+  const errorLogs = computed(() => {
+    const rowsByLog = new Map<string, any[]>();
+    for (const row of errorRecordRows.value) {
+      const rows = rowsByLog.get(row.logContentId) ?? [];
+      rows.push(row);
+      rowsByLog.set(row.logContentId, rows);
     }
-  };
+    return state.errorLogSources.flatMap((source) =>
+      (rowsByLog.get(source.logContentId) ?? [])
+        .sort((a, b) => a.seqId - b.seqId)
+        .map((row) => ({
+          ...row.raw,
+          numericId: row.numericId,
+          title: row.title,
+          handle: row.handle,
+          sku: row.sku,
+          error: row.error,
+          ...(source.logId ? { logId: source.logId } : {}),
+        })));
+  });
+
+  /**
+   * Ask the dataManagerErrorRecord domain for one error file. It answers from the table while the
+   * file is younger than two hours, and resolves with the file's record count.
+   */
+  const requestErrorRecords = (configId: string, logContentId: string) =>
+    refreshAfterMutation("dataManagerErrorRecord", { configId, logContentId });
 
   const downloadDataManagerFile = async (configId: string, logContentId: string) => {
     if (!configId || !logContentId) return null;
@@ -78,34 +104,14 @@ export function useDataManager() {
 
   const fetchFailedRecords = async (configId: string, errorLogContentId: string) => {
     state.loading = true;
-    const cachedData = await getErrorRecords(errorLogContentId);
-    if (cachedData && cachedData.length > 0) {
-      state.errorLogs = cachedData;
-      state.loading = false;
-      return;
-    }
-
+    state.errorLogSources = [{ logContentId: errorLogContentId }];
     try {
-      const resp = await downloadDataManagerFile(configId, errorLogContentId);
-
-      state.errorCsvRecords = resp?.data?.csvData || resp?.data;
-      if (isValidJSON(state.errorCsvRecords)) {
-        state.errorLogs = JSON.parse(state.errorCsvRecords);
-        await setErrorRecords(errorLogContentId, state.errorLogs);
-      } else {
-        state.errorLogs = typeof state.errorCsvRecords === 'string'
-          ? (Papa.parse<Record<string, any>>(state.errorCsvRecords, {
-            header: true,
-            skipEmptyLines: true,
-            transformHeader: (header) => header.trim()
-          }).data || [])
-          : [];
-      }
-      state.loading = false;
+      await requestErrorRecords(configId, errorLogContentId);
     } catch (err) {
-      state.loading = false;
       logger.error("Failed to download the error records", err);
       throw err;
+    } finally {
+      state.loading = false;
     }
   };
 
@@ -133,8 +139,7 @@ export function useDataManager() {
 
     state.loading = true;
     state.currentMdmLog = {};
-    state.errorLogs = [];
-    state.errorCsvRecords = null;
+    state.errorLogSources = [];
     try {
       const resp = await api({
         url: "admin/dataManager/details",
@@ -158,37 +163,20 @@ export function useDataManager() {
   };
 
   /**
-   * One import by `logId`, CACHE-FIRST and WRITE-THROUGH.
+   * Ask the dataManagerLog domain to fetch one import by `logId`, and return nothing.
    *
-   * The counterpart to `ensureSystemMessageById`. A finished import never changes, so once cached this
-   * costs nothing — which is what makes per-id enrichment viable where a shop-scoped log feed is not:
-   * `admin/dataManager/details` ignores shop filters entirely, but by-id always works.
+   * Screens read imports live, and call this only when their live rows show one missing. A finished
+   * import never changes, so once fetched it is never asked for again — which is what makes per-id
+   * enrichment viable where a shop-scoped log feed is not: `admin/dataManager/details` ignores shop
+   * filters entirely, but by-id always works.
    */
-  const ensureDataManagerLog = async (logId: string) => {
-    if (!logId) return null;
+  const requestDataManagerLog = async (logId: string) => {
+    if (!logId) return;
     try {
-      const cached = (await dataManagerLogCache.all())
-        .find((row: any) => String(row.logId) === String(logId));
-      if (cached) return cached.raw ?? cached;
-    } catch {
-      // cache unavailable — fall through to the network
-    }
-
-    try {
-      const resp = await api({
-        url: "admin/dataManager/details",
-        method: "GET",
-        params: { logId },
-      }) as any;
-      const row = getFirstMdmLog(resp?.data);
-      if (row) {
-        await dataManagerLogCache.upsertMany([row]);
-        return row;
-      }
+      await refreshAfterMutation("dataManagerLog", { logId: String(logId) });
     } catch (err) {
       logger.error(`Failed to fetch DataManager log ${logId}`, err);
     }
-    return null;
   };
 
   const fetchMdmLogBySystemMessageIds = async (systemMessageIds: string[]) => {
@@ -207,8 +195,7 @@ export function useDataManager() {
   const fetchLogDetails = async (logId: string) => {
     state.loading = true;
     state.currentMdmLog = {};
-    state.errorLogs = [];
-    state.errorCsvRecords = null;
+    state.errorLogSources = [];
     try {
       const resp = await api({
         url: "admin/dataManager/details",
@@ -257,38 +244,28 @@ export function useDataManager() {
     return [];
   };
 
+  /**
+   * The error records of the given logs, in the order given, until at least 100 are collected.
+   */
   const fetchAllRecentFailedRecords = async (configId: string, logs: any[]) => {
     state.loading = true;
-    const accumulatedLogs: any[] = [];
-    
+    const sources: Array<{ logContentId: string; logId?: string }> = [];
+    let recordCount = 0;
+
     try {
       for (const log of logs) {
         const errorLogContentId = log.errorLogContentId;
         if (!errorLogContentId) continue;
 
-        let records = await getErrorRecords(errorLogContentId);
-        
-        if (!records || records.length === 0) {
-          const resp = await downloadDataManagerFile(configId, errorLogContentId);
-          const data = resp?.data?.csvData || resp?.data;
-          if (isValidJSON(data)) {
-            records = JSON.parse(data);
-            await setErrorRecords(errorLogContentId, records);
-          }
-        }
-
-        if (records && records.length > 0) {
-          // Flatten to include the logId for context if needed
-          const logId = log.logId;
-          accumulatedLogs.push(...records.map(r => ({ ...r, logId })));
-        }
+        recordCount += await requestErrorRecords(configId, errorLogContentId);
+        sources.push({ logContentId: errorLogContentId, logId: log.logId });
 
         // Target at least 100 errors total across all processed logs
-        if (accumulatedLogs.length >= 100) {
+        if (recordCount >= 100) {
           break;
         }
       }
-      state.errorLogs = accumulatedLogs;
+      state.errorLogSources = sources;
     } catch (err) {
       logger.error("Failed to aggregate error records", err);
     } finally {
@@ -298,15 +275,15 @@ export function useDataManager() {
 
   return {
     ...toRefs(state),
+    errorLogs,
     downloadDataManagerFile,
     fetchFailedRecords,
     fetchMdmLogBySystemMessageId,
     fetchMdmLogBySystemMessageIds,
     fetchLogDetails,
-    ensureDataManagerLog,
+    requestDataManagerLog,
     fetchAllRecentFailedRecords,
-    fetchRecentLogsByConfigId,
-    clearStorage
+    fetchRecentLogsByConfigId
   };
 }
 
@@ -321,7 +298,7 @@ export function useDataManager() {
 
 /** Cached DataManagerLogs, newest created first. Scope by config to follow one import type. */
 export function useDataManagerLogs(configId?: string) {
-  const { records, hydrated } = useCachedList<any>(dataManagerLogCache, {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, {
     dateField: 'createdDate',
     ...(configId ? { scope: { field: 'configId', value: configId } } : {}),
   });
@@ -339,8 +316,10 @@ export function useDataManagerLogs(configId?: string) {
   return { logs: records, running, totals, records, hydrated };
 }
 
-export const useDataManagerLogRecord = (logId: string | undefined) =>
-  useCachedRecord(dataManagerLogCache, 'logId', logId);
+export function useDataManagerLogRecord(logId: string | undefined) {
+  const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, () => logId ? { equals: { logId } } : { filter: () => false });
+  return { record, hydrated };
+}
 
 /**
  * The MDM log for one system message — the second half of a sync run.
@@ -353,7 +332,7 @@ export function useDataManagerLogForMessages(systemMessageIds: Ref<string[]> | (
   const ids = computed<string[]>(() =>
     (typeof systemMessageIds === 'function' ? systemMessageIds() : systemMessageIds.value) ?? []);
 
-  const { records, hydrated } = useCachedList<any>(dataManagerLogCache, { dateField: 'createdDate' });
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, { dateField: 'createdDate' });
 
   const log = computed<any>(() => {
     if (!ids.value.length) return undefined;
