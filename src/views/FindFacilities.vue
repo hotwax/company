@@ -48,7 +48,7 @@
       </ion-list-header>
       <!-- While the login seed is still running the cache is legitimately empty; showing the
            "No facilities found" branch then would be wrong. -->
-      <main v-if="!hydrated">
+      <main v-if="!isHydrated">
         <ion-item v-for="n in 6" :key="`sk-${n}`" lines="full">
           <ion-label><ion-skeleton-text animated style="width: 40%" /></ion-label>
         </ion-item>
@@ -217,15 +217,16 @@ import router from '@/router';
 
 // Physical facilities only. The cache holds parkings too, which this screen never showed —
 // its previous fetch excluded the VIRTUAL_FACILITY hierarchy server-side.
-const { facilities: allCachedFacilities, hydrated } = useFacilities({ excludeVirtual: true });
+const { facilities: allCachedFacilities, hydrated: facilitiesHydrated } = useFacilities({ excludeVirtual: true });
 // The Type filter offers physical types only — the parking hierarchy is not selectable here.
 const { facilityTypes } = useFacilityTypes({ excludeVirtual: true });
 const { facilityGroups: allCachedGroups } = useFacilityGroups();
 const { productStores } = useProductStores();
 const { groupsByFacility, facilityIdsByGroup } = useGroupMembershipIndex();
-const { storesByFacility } = useFacilityProductStores();
+const { storesByFacility, hydrated: storesHydrated } = useFacilityProductStores();
 
 const { query, setQuery, resetQuery } = useFacilitySearchQuery();
+const isHydrated = computed(() => facilitiesHydrated.value && (!query.value.productStoreId || storesHydrated.value));
 const { fetchOrderCounts } = useFacilityOrderCounts();
 const { fetchGroupMemberships } = useFacilityGroupMembershipReader();
 const { setGroupMembership } = useFacilitySellOnline();

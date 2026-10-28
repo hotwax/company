@@ -9,6 +9,7 @@ import { companyDb } from "@/db/companyDb";
 import { useShopifyFacilityMappings } from "./useShopify";
 import { useTypedEnums } from "./useSeed";
 import { useFacilityIdentifications } from "./useNetSuite";
+import { useEffectiveNow } from "./useEffectiveNow";
 
 function byDescription(a: any, b: any): number {
   return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));
@@ -357,9 +358,11 @@ export function useFacilityProductStores(facilityId?: string) {
     facilityId ? { scope: { field: "facilityId", value: facilityId } } : {},
   );
 
+  const effectiveNow = useEffectiveNow(records);
+
   /** facilityId → productStoreId[] — the index the facility list filters on. */
   const storesByFacility = computed<Record<string, string[]>>(() => {
-    const now = Date.now();
+    const now = effectiveNow.value;
     return records.value.reduce((map: Record<string, string[]>, row: any) => {
       if (row.facilityId && row.productStoreId && isEffectiveNow(row, now)) {
         (map[row.facilityId] ||= []).push(row.productStoreId);
