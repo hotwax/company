@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
-import { commonUtil, createDxpI18n, initialiseConfig, logger } from '@common'
+import { commonUtil, createDxpI18n, faroUtil, initialiseConfig, logger } from '@common'
 import { deleteLegacyCaches } from '@common/db'
 import { companyDb } from '@/db/companyDb'
 
@@ -31,6 +31,8 @@ import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import { useUserStore } from './store/user'
 import localeMessages from './locales'
 
+faroUtil.initialiseFaro()
+
 const pinia = createPinia().use(piniaPluginPersistedstate)
 const i18n = createDxpI18n(localeMessages)
 
@@ -40,7 +42,8 @@ const app = createApp(App)
     innerHTMLTemplatesEnabled: true
   })
   .use(logger, {
-    level: import.meta.env.VITE_DEFAULT_LOG_LEVEL
+    level: import.meta.env.VITE_DEFAULT_LOG_LEVEL,
+    afterHooks: [faroUtil.faroLoggerHook]
   })
   .use(i18n)
   .use(pinia)
