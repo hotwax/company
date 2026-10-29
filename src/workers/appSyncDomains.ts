@@ -17,6 +17,7 @@ import { dataManagerErrorRecordDomain } from "./domains/dataManagerErrorRecordDo
 import { systemMessageDomain } from "./domains/systemMessageDomain";
 import { systemMessageErrorDomain } from "./domains/systemMessageErrorDomain";
 import { shopifyBulkOperationDomain } from "./domains/shopifyBulkOperationDomain";
+import { documentTemplateDomain } from "./domains/documentTemplateDomain";
 import { serviceJobRunDomain } from "./domains/serviceJobRunDomain";
 import { syncRunDomain } from "./domains/syncRunDomain";
 import { productUpdateHistoryDomain } from "./domains/productUpdateHistoryDomain";
@@ -56,6 +57,7 @@ export const appSyncDomains: SyncDomain[] = [
   systemMessageDomain,
   systemMessageErrorDomain,
   shopifyBulkOperationDomain,
+  documentTemplateDomain,
   serviceJobRunDomain,
   syncRunDomain,
   productUpdateHistoryDomain,

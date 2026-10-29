@@ -48,7 +48,8 @@ export const companyDb = defineAppDb({
   // v5: re-keyed enumGroupMembers on fromDate, so an expired membership and its re-added
   //     replacement are two rows rather than one.
   // v6: added dataManagerErrorRecords (the DataManager error files ShopifySyncDB used to hold).
-  version: 6,
+  // v7: added documentTemplates (packing slip and pick list templates, fetched when opened).
+  version: 7,
   schema: mergeSchemas(commonSchema.pick([...COMPANY_SEED_TABLES]), companySchema),
 });
 
