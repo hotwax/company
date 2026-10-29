@@ -1,0 +1,20 @@
+{
+  "available": true,
+  "target": {
+    "project": "hotwax-digital-commerce-uat",
+    "site": "hotwax-company-uat",
+    "environment": "uat",
+    "origin": "https://hotwax-company-uat.web.app"
+  },
+  "versions": [
+    "v2.9.0",
+    "v2.8.1"
+  ],
+  "defaultVersion": "v2.9.0",
+  "configuredEnvironment": "AppEnvUAT",
+  "defaultSource": "Hosting manifest",
+  "checkedAt": "2026-10-29T13:07:37.211Z",
+  "deployedAt": "2026-10-25T08:28:02.734Z",
+  "release": "sites/hotwax-company-uat/channels/live/releases/1792916882734000",
+  "fileCount": 976
+}
