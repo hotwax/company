@@ -205,7 +205,7 @@ async function createFacility() {
       throw resp.data;
     }
   } catch (error: any) {
-    const serverError = commonUtil.getErrorMessage(error);
+    const serverError = error?.response?.data?.error?.message || commonUtil.getErrorMessage(error);
     logger.error(error);
     commonUtil.showToast(`${translate("Failed to create facility.")} ${serverError}`);
   }

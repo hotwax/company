@@ -432,10 +432,11 @@ const saveManageGroups = async () => {
     }
 
     const outcome = await savePermissionGroups(managePermission.value.permissionId, originalGroups, selected)
+    const serverError = outcome.error ? commonUtil.getErrorMessage(outcome.error) : "";
     if(outcome.failed && outcome.succeeded) {
-      commonUtil.showToast(translate("Some permission assignments were updated, but others failed. The latest state has been reloaded."))
+      commonUtil.showToast(`${translate("Some permission assignments were updated, but others failed. The latest state has been reloaded.")} ${serverError}`);
     } else if(outcome.failed) {
-      commonUtil.showToast(translate("Failed to update user group permission association."))
+      commonUtil.showToast(`${translate("Failed to update user group permission association.")} ${serverError}`);
     } else {
       commonUtil.showToast(translate("User group permission association successfully updated."))
     }

@@ -221,7 +221,7 @@ describe("organization mutations", () => {
 
   it("translates rename and hierarchy validation failures", async () => {
     mocks.api.mockResolvedValueOnce({ data: { _ERROR_MESSAGE_: "backend failure" } });
-    await expect(renameOrganization("A", "Renamed")).rejects.toThrow("Failed to rename the organization.");
+    await expect(renameOrganization("A", "Renamed")).rejects.toEqual({ data: { _ERROR_MESSAGE_: "backend failure" } });
 
     const cycleMove = reparentOrganization(
       "ROOT",
@@ -275,7 +275,7 @@ describe("organization mutations", () => {
     mocks.api.mockResolvedValueOnce({ data: { _ERROR_MESSAGE_: "backend failure" } });
 
     await expect(updateOrganizationExternalId("A", "42"))
-      .rejects.toThrow("Failed to update external ID.");
+      .rejects.toEqual({ data: { _ERROR_MESSAGE_: "backend failure" } });
     expect(mocks.refreshAfterMutation).not.toHaveBeenCalled();
   });
 

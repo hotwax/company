@@ -182,7 +182,7 @@ const createUser = async () => {
     commonUtil.showToast(translate("User created successfully"));
     router.replace({ path: `/user-confirmation/${partyId}` });
   } catch (err: any) {
-    const serverError = commonUtil.getErrorMessage(err);
+    const serverError = err?.response?.data?.error?.message || commonUtil.getErrorMessage(err);
     logger.error("error", err);
     commonUtil.showToast(`${translate("Failed to create user.")} ${serverError}`);
   }

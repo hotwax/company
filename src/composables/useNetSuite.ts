@@ -252,7 +252,7 @@ export function useNetSuite(integrationTypeId?: any) {
     } catch (error) {
       const serverError = commonUtil.getErrorMessage(error);
       logger.error(error);
-      commonUtil.showToast(`${translate("Failed to update NetSuite ID.")} ${serverError}`);
+      commonUtil.showToast(`${translate("Failed to update NetSuite ID")}. ${serverError}`);
     }
     emitter.emit("dismissLoader");
   };
