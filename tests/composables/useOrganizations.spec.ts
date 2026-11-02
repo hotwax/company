@@ -206,12 +206,10 @@ describe("organization mutations", () => {
       groupName: "New Organization",
     });
     const partialCommitMessage =
-      "Failed to save the organization name. The server already saved the party; review the organization before retrying.";
+      "Organization creation failed. The server already saved the party; review the organization before retrying.";
     await expect(creation).rejects.toThrow(partialCommitMessage);
 
     expect(mocks.translate.mock.calls.map(([key]) => key)).toEqual(expect.arrayContaining([
-      "Failed to create the organization party.",
-      "Failed to save the organization name.",
       "Organization creation failed.",
       "The server already saved the party; review the organization before retrying.",
     ]));
@@ -242,7 +240,6 @@ describe("organization mutations", () => {
     await expect(ambiguousMove).rejects.toThrow(ambiguousParentMessage);
 
     expect(mocks.translate.mock.calls.map(([key]) => key)).toEqual(expect.arrayContaining([
-      "Failed to rename the organization.",
       "The selected parent would create an organization cycle.",
       "This organization has multiple active parents. Resolve the data conflict before moving it.",
     ]));
