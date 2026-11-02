@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { flushPromises, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, nextTick, ref } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
   carrier: undefined as any,
@@ -515,4 +515,11 @@ describe("CarrierDetails", () => {
     expect(harness.push).toHaveBeenCalledWith({ path: "/klaviyo" });
     expect(wrapper.find("ion-input").exists()).toBe(false);
   });
+});
+
+enableAutoUnmount(afterEach);
+
+// Load the lazy view during setup, before the first test's assertion timeout.
+beforeAll(async () => {
+  await import("@/views/CarrierDetails.vue");
 });

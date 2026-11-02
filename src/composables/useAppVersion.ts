@@ -1,6 +1,8 @@
-import { api, commonUtil, useLiveEntity } from "@common";
+import { api, commonUtil, logger, useLiveEntity } from "@common";
 import { companyDb } from "@/db/companyDb";
-import { computed } from "vue";
+import { appVersionCache } from "@/db/appVersionCache";
+import { computed, ref } from "vue";
+import { AppDeployment, sanitizeHostedVersions } from "@/utils/appVersionOptions";
 import { resyncDomain } from "@/db/appDbSync";
 import { useTypedEnums } from "./useSeed";
 
@@ -85,7 +87,7 @@ export function useAppVersionMutations() {
     return resp;
   }
 
-  async function updateAppVersion(payload: { appId: string; environmentTypeId: string; currentVersion: string }) {
+  async function updateAppVersion(payload: { appId: string; environmentTypeId: string; currentVersion: string | null }) {
     const resp: any = await api({ url: versionsUrl(payload.appId), method: "put", data: payload });
     if(commonUtil.hasError(resp)) {throw resp;}
     await refreshAppVersions();
@@ -102,4 +104,77 @@ export function useAppVersionMutations() {
   }
 
   return { createAppVersion, updateAppVersion, removeAppVersion, refreshAppVersions };
+}
+
+// Public deployment metadata is not tenant data. Never attach OMS credentials.
+export function useHostedAppVersions() {
+  const deployments = ref<Record<string, AppDeployment>>({});
+  const loading = ref(false);
+  const error = ref(false);
+  const endpoint = import.meta.env.VITE_APP_VERSION_DISCOVERY_URL || "https://us-central1-hotwax-digital-commerce.cloudfunctions.net/appVersions";
+  const prefix = (app: string, env: string) => `public-check-v2:${endpoint}:${app}:${env}:`;
+
+  function project(rows: any[]): AppDeployment | undefined {
+    const root = rows.find(row => row.version === "");
+    if(!root) {return undefined;}
+    return {
+      origin: root.origin, site: null, available: root.status === "available",
+      versions: rows.filter(row => row.version && row.status === "available").map(row => row.version),
+      checks: Object.fromEntries(rows.map(row => [row.version, row])),
+      defaultBuild: root.defaultBuild || null, configuredEnvironmentTypeId: root.configuredEnvironmentTypeId || undefined,
+      verifiedAt: rows.map(row => row.checkedAt).sort()[0]
+    };
+  }
+  async function readCachedHostedVersions(app: string, env: string) {
+    return project(await appVersionCache.matching(prefix(app, env)));
+  }
+  async function refreshHostedVersions(appId: string, environmentTypeId: string, fresh = false, candidates: string[] = []): Promise<AppDeployment> {
+    loading.value = true;
+    error.value = false;
+    const key = `${appId}_${environmentTypeId}`;
+    const tags = sanitizeHostedVersions(appId, environmentTypeId, candidates.filter(Boolean));
+    try {
+      const missing = [];
+      for(const version of ["", ...tags]) {
+        if(fresh || !await appVersionCache.get(prefix(appId, environmentTypeId) + version)) {missing.push(version);}
+      }
+      const rows: any[] = [];
+      // Each request verifies the root and at most twenty version paths, with bounded service concurrency.
+      const versionChecks = missing.filter(Boolean);
+      for(let offset = 0; offset < Math.max(versionChecks.length, missing.length ? 1 : 0); offset += 20) {
+        const url = new URL(endpoint);
+        url.searchParams.set("app", appId);
+        url.searchParams.set("environment", environmentTypeId);
+        url.searchParams.set("versions", versionChecks.slice(offset, offset + 20).join(","));
+        const response = await fetch(url.toString(), { credentials: "omit", cache: "no-store", signal: AbortSignal.timeout(60000) });
+        if(!response.ok) {throw new Error("Could not check hosted versions");}
+        const data = await response.json();
+        const expected = ["", ...versionChecks.slice(offset, offset + 20)];
+        if(data?.schemaVersion !== 2 || data.appId !== appId || data.environmentTypeId !== environmentTypeId || !Array.isArray(data.checks) || data.checks.length !== expected.length || expected.some(version => data.checks.filter((row: any) => row.version === version).length !== 1) || data.checks.some((row: any) => !["available", "unavailable", "unknown"].includes(row.status) || !Number.isFinite(Date.parse(row.checkedAt)))) {throw new Error("Invalid version check response");}
+        for(const row of data.checks) {
+          const value = { ...row, origin: data.origin };
+          rows.push(value);
+          await appVersionCache.put(prefix(appId, environmentTypeId) + row.version, value, row.status === "available" ? 5 * 60000 : row.status === "unavailable" ? 60000 : 0);
+        }
+      }
+      for(const version of ["", ...tags]) {
+        if(!rows.some(row => row.version === version)) {
+          const cached = await appVersionCache.get(prefix(appId, environmentTypeId) + version, true);
+          if(cached) {rows.push(cached);}
+        }
+      }
+      const deployment = project(rows);
+      if(!deployment || deployment.checks?.[""]?.status === "unknown") {throw new Error("Could not verify the app deployment");}
+      deployments.value[key] = deployment;
+      return deployment;
+    } catch(cause) {
+      delete deployments.value[key];
+      error.value = true;
+      logger.error(cause);
+      throw cause;
+    } finally { loading.value = false; }
+  }
+  const deploymentFor = (app: string, env: string) => deployments.value[`${app}_${env}`];
+  const hostedVersionsFor = (app: string, env: string) => deploymentFor(app, env)?.versions ?? [];
+  return { hostedVersionsFor, deploymentFor, readCachedHostedVersions, refreshHostedVersions, loading, error };
 }

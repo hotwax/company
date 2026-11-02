@@ -14,7 +14,7 @@ describe("company database declaration", () => {
 
   it("picks statuses as a seed table from commonSchema", () => {
     expect(companyDb.tableNames).toContain("statuses");
-    expect(companyDb.seedTables.has("statuses")).toBe(true);
+    expect(companyDb.frameworkTables.has("statuses")).toBe(true);
   });
 
   it("creates none of the seed tables Company does not read", () => {
@@ -39,10 +39,10 @@ describe("company database declaration", () => {
     expect(companyDb.entities.groupFacilities.primaryKeyFields).toEqual([
       "facilityGroupId", "facilityId", "fromDate",
     ]);
-    expect(companyDb.seedTables.has("groupFacilities")).toBe(true);
+    expect(companyDb.frameworkTables.has("groupFacilities")).toBe(true);
   });
 
   it("picks all 17 seed tables", () => {
-    expect(companyDb.seedTables.size).toBe(17);
+    expect(companyDb.frameworkTables.size).toBe(17);
   });
 });

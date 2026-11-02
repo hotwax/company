@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { flushPromises, mount } from "@vue/test-utils"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils"
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { computed, nextTick, onMounted, reactive, ref, toRefs } from "vue"
 import { PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
 
@@ -1456,3 +1456,10 @@ describe("ProductStoreOnboarding", () => {
     expect(wrapper.text()).toContain("Queued imports are still in progress. Verify each initial load completes successfully before finishing.")
   })
 })
+
+enableAutoUnmount(afterEach);
+
+// Load the lazy view during setup, before the first test's assertion timeout.
+beforeAll(async () => {
+  await import("@/views/ProductStoreOnboarding.vue");
+});

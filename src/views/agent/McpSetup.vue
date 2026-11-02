@@ -265,7 +265,6 @@
           </ion-accordion>
         </ion-accordion-group>
         <p class="ion-padding"><ion-note>{{ translate("Setup references checked September 11, 2026. Client screens and instance capabilities can vary.") }}</ion-note></p>
-        <p class="ion-padding" role="status" aria-live="polite">{{ copyStatus }}</p>
       </main>
     </ion-content>
   </ion-page>
@@ -284,7 +283,6 @@ const backendUrl = ref(commonUtil.getMaargURL());
 const connection = computed(() => getMcpConnection(backendUrl.value));
 const client = ref<McpClient>("codex");
 const claudeSurface = ref("code");
-const copyStatus = ref("");
 const expireDays = ref(30);
 const { username, token, expirationTime, pending: tokenPending, error: tokenError, generate, clear: clearToken } = useUserToken(() => backendUrl.value);
 const generateToken = () => generate({ purpose: "MCP", expireDays: expireDays.value });
@@ -297,7 +295,6 @@ const configuration = computed(() => connection.value ? getMcpConfig(client.valu
 onIonViewWillEnter(() => {
   clearToken();
   backendUrl.value = commonUtil.getMaargURL();
-  copyStatus.value = "";
 });
 onIonViewWillLeave(clearToken);
 
@@ -327,14 +324,14 @@ const troubleshooting = [
 ];
 
 async function copy(value: string) {
+  let message = "";
   try {
     await navigator.clipboard.writeText(value);
-    copyStatus.value = translate("Copied to clipboard");
+    message = translate("Copied to clipboard");
   } catch {
-    copyStatus.value = translate("Could not copy. Select and copy the text manually.");
+    message = translate("Could not copy. Select and copy the text manually.");
   }
-  const toast = await toastController.create({ message: copyStatus.value, duration: 2500 });
-  await toast.present();
+  await commonUtil.showToast(message)
 }
 </script>
 

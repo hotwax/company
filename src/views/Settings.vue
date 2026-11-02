@@ -4,6 +4,12 @@
       <ion-toolbar>
         <ion-menu-button slot="start" />
         <ion-title>{{ translate("Settings") }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button fill="clear" @click="openLogs()">
+            <ion-icon slot="start" :icon="documentTextOutline" />
+            {{ translate("View logs") }}
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
     
@@ -50,7 +56,7 @@
           <ion-card-content>
             {{ $t('This is the name of the OMS you are connected to right now. Make sure that you are connected to the right instance before proceeding.') }}
           </ion-card-content>
-          <ion-button v-if="!commonUtil.isMoqui()" :disabled="!userStore.hasPermission(Actions.APP_COMMERCE_VIEW)" @click="openOms" fill="clear">
+          <ion-button v-if="!isMoquiOmsRef" :disabled="!userStore.hasPermission(Actions.APP_COMMERCE_VIEW)" @click="commonUtil.goToOms" fill="clear">
             {{ $t('Go to OMS') }}
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
@@ -142,18 +148,18 @@
 </template>
 
 <script setup lang="ts">
-import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonMenuButton, IonPage, IonSpinner, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonAvatar, IonButtons, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonMenuButton, IonPage, IonSpinner, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 
 import { computed, onMounted, ref , defineProps} from "vue";
 import { useUserStore } from '@/store/user';
-import { useAuth } from '@common/composables/useAuth';
+import { useAuth, isMoquiOmsRef } from '@common/composables/useAuth';
 import TimeZoneModal from "@/components/common/TimezoneModal.vue";
 import Image from "@/components/common/Image.vue"
 import DxpAppVersionInfo from "@/components/common/DxpAppVersionInfo.vue"
 import { DateTime } from "luxon";
-import { translate, commonUtil, cookieHelper } from '@common'
+import { translate, commonUtil, cookieHelper, DxpLogsModal } from '@common'
 import router from '@/router'
-import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
+import { openOutline, syncOutline, checkmarkCircle, closeCircle, documentTextOutline } from "ionicons/icons"
 
 import { getCurrentTime } from "../utils"
 import { catalogFrom, useDbStatus } from "@common/db";
@@ -169,8 +175,6 @@ const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componen
 
 const userProfile = computed(() => userStore.getUserProfile)
 const oms = computed(() => cookieHelper().get("oms") || userStore.oms || translate("Not set"))
-
-const openOms = () => window.open(commonUtil.getMaargURL(), '_blank')
 
 const omsVersionLabel = computed(() => omsVersion.value || translate("Not available"))
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)
@@ -295,6 +299,13 @@ async function logout() {
 
 function goToLaunchpad() {
   window.location.href = import.meta.env.VITE_LOGIN_URL || '/';
+}
+
+async function openLogs() {
+  const logsModal = await modalController.create({
+    component: DxpLogsModal
+  });
+  return logsModal.present();
 }
 </script>
 

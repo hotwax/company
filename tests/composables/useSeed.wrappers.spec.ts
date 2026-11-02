@@ -38,7 +38,6 @@ vi.mock("@common/db", () => ({
       geos: () => rows("geos"),
       countries: () => rows("geos").filter((geo: any) => geo.geoTypeEnumId === "GEOT_COUNTRY"),
       statesForCountry: (id: string) => rows("geos").filter((geo: any) => geo.parent === id),
-      dbicCountries: () => [],
       shipmentMethodTypes: () => rows("shipmentMethodTypes"),
       paymentMethodTypes: () => rows("paymentMethodTypes"),
       roleTypes: () => rows("roleTypes"),
