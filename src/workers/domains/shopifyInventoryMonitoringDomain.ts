@@ -25,6 +25,13 @@ const CHANNEL_ENDPOINT = "sob/shopify/inventoryChannels";
 const DETAIL_COLLECTION = null;
 const SHOPIFY_INVENTORY_EVENT_FEED_ID = "ShopifyInventoryChannelEventFeed";
 const SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID = "ShopifyShopLocationInventoryEventFeed";
+/** Records pre-order and back-order supply changes; seeded by connector releases with future channels. */
+const SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID = "ShopifyFutureInventoryEventFeed";
+const INVENTORY_EVENT_FEED_IDS = [
+  SHOPIFY_INVENTORY_EVENT_FEED_ID,
+  SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID,
+  SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID,
+];
 
 async function fetchInventoryEventFeed(ctx: SyncContext, feedId: string = SHOPIFY_INVENTORY_EVENT_FEED_ID): Promise<any | null> {
   const response = await workerGet(
@@ -42,18 +49,18 @@ export const shopifyInventoryEventFeedDomain = defineSyncDomain({
   syncClass: "B",
   async sync(ctx, _args, options) {
     if (!options?.force && await companyClient.syncedThisLogin("shopifyInventoryEventFeed")) return 0;
-    const [channelFeed, locationFeed] = await Promise.all([
-      fetchInventoryEventFeed(ctx, SHOPIFY_INVENTORY_EVENT_FEED_ID),
-      fetchInventoryEventFeed(ctx, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID),
-    ]);
-    const feeds = [channelFeed, locationFeed].filter(Boolean);
+    // A connector without future channels has no future feed: that is "not configured", not a failed sync.
+    const feeds = (await Promise.all(INVENTORY_EVENT_FEED_IDS.map((feedId) => feedId === SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID
+      ? fetchInventoryEventFeed(ctx, feedId).catch(() => null)
+      : fetchInventoryEventFeed(ctx, feedId))))
+      .filter(Boolean);
     const result = await dataFeedEntity.snapshotReplace(feeds);
     await companyClient.markSyncedThisLogin("shopifyInventoryEventFeed");
     return result.written;
   },
   async refetchOne(ctx, pk) {
     const feedId = String(pk?.dataFeedId ?? "");
-    if (feedId !== SHOPIFY_INVENTORY_EVENT_FEED_ID && feedId !== SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID) return 0;
+    if (!INVENTORY_EVENT_FEED_IDS.includes(feedId)) return 0;
     const feed = await fetchInventoryEventFeed(ctx, feedId);
     if (!feed) {
       await dataFeedEntity.remove(feedId);

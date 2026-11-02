@@ -46,7 +46,7 @@
             <p>{{ translate("{count} events summed", { count: entry.eventCount }) }}</p>
           </ion-label>
           <ion-note slot="end">
-            {{ `${entry.delta > 0 ? "+" : ""}${entry.delta}` }}
+            {{ entry.absolute ? translate("Set to {quantity}", { quantity: entry.delta }) : `${entry.delta > 0 ? "+" : ""}${entry.delta}` }}
           </ion-note>
         </ion-item>
 

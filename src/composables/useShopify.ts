@@ -209,6 +209,28 @@ export async function updateShopifyLocationInventoryEventFeedType(dataFeedTypeEn
   });
 }
 
+/**
+ * The OMS-wide feed that records pre-order and back-order supply changes (FutureInventoryItemDetail)
+ * for every shop's future channels. It ships real-time; while it is on manual pull, a future channel
+ * only changes on Shopify when its reset runs.
+ */
+export const SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID = "ShopifyFutureInventoryEventFeed";
+
+export async function updateShopifyFutureInventoryEventFeedType(dataFeedTypeEnumId: string): Promise<void> {
+  if(![SHOPIFY_INVENTORY_EVENT_FEED_MANUAL, SHOPIFY_INVENTORY_EVENT_FEED_PUSH].includes(dataFeedTypeEnumId)) {
+    throw new Error(`Unsupported future inventory event feed type: ${dataFeedTypeEnumId}`);
+  }
+  const resp: any = await api({
+    url: `admin/dataFeeds/${SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID}`,
+    method: "put",
+    data: { dataFeedId: SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID, dataFeedTypeEnumId },
+  });
+  if(commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the future inventory event feed update.");
+  }
+  await refreshAfterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID });
+}
+
 
 /**
  * The DataDocuments this feature ships, in the order the pipeline reads best.
@@ -352,12 +374,114 @@ export async function setInventoryEventDocumentAttached(
 }
 
 /**
+ * Point a pre-order or back-order channel at a parking facility: map the facility to the channel's Shopify
+ * location for this shop (a facility maps to one location per shop, so a previous mapping moves), then make
+ * it the store's only active parking purpose of the channel's type. Both are what the connector's order
+ * location projection reads.
+ */
+export async function configureFutureChannelParking(params: {
+  shopId: string;
+  productStoreId: string;
+  channelTypeEnumId: string;
+  shopifyLocationId: string;
+  facilityId: string;
+  locationByFacility: Record<string, string>;
+  activePurposes: any[];
+}): Promise<void> {
+  const parking = FUTURE_CHANNEL_PARKING[params.channelTypeEnumId];
+  if(!parking) {throw new Error(translate("Only pre-order and back-order channels use a parking facility."));}
+  if(!params.productStoreId) {throw new Error(translate("This Shopify connection has no product store."));}
+  if(params.locationByFacility[params.facilityId] !== String(params.shopifyLocationId)) {
+    const resp: any = await useShopifyShopMutations(params.shopId).saveLocation({
+      facilityId: params.facilityId,
+      shopifyLocationId: String(params.shopifyLocationId),
+    });
+    if(commonUtil.hasError(resp)) {throw new Error(translate("The OMS rejected mapping the parking facility to the Shopify location."));}
+  }
+  await setStoreParkingFacility({
+    productStoreId: params.productStoreId,
+    facilityId: params.facilityId,
+    purposeEnumId: parking.purposeEnumId,
+    activePurposes: params.activePurposes,
+  });
+}
+
+/**
+ * ShopifyInventoryChannelType. A physical channel publishes its facility group's ATP; a pre-order or
+ * back-order channel publishes that type of future inventory at the group's facilities, and its orders
+ * show at the store's matching parking facility.
+ */
+export const CHANNEL_TYPE = {
+  physical: "SICT_PHYSICAL",
+  preOrder: "SICT_PRE_ORDER",
+  backOrder: "SICT_BACK_ORDER",
+} as const;
+export type InventoryChannelType = typeof CHANNEL_TYPE[keyof typeof CHANNEL_TYPE];
+
+/** The store facility purpose each future channel type needs, and the facility type its parking uses. */
+export const FUTURE_CHANNEL_PARKING: Record<string, { purposeEnumId: string; facilityTypeId: string }> = {
+  [CHANNEL_TYPE.preOrder]: { purposeEnumId: "FP_PRE_ORDER_PARK", facilityTypeId: "PRE_ORDER" },
+  [CHANNEL_TYPE.backOrder]: { purposeEnumId: "FP_BACKORDER_PARK", facilityTypeId: "BACKORDER" },
+};
+
+/** A channel row from before the type existed reads as physical, as the server defaults it. */
+export function channelTypeOf(channel: any): InventoryChannelType {
+  return (channel?.channelTypeEnumId || CHANNEL_TYPE.physical) as InventoryChannelType;
+}
+
+/** Every store's facility purposes (class B), for the parking half of the future channel checks. */
+export function useProductStoreFacilityPurposes() {
+  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.productStoreFacilityPurposes);
+
+  return { purposes: records, hydrated };
+}
+
+/**
+ * Make `facilityId` the store's only active parking facility for `purposeEnumId`. The purpose is "(One)":
+ * the connector refuses to project a future channel when the store has two active rows, so any other
+ * active row of that purpose is ended (PUT thruDate) after the new one is created.
+ */
+export async function setStoreParkingFacility(params: {
+  productStoreId: string;
+  facilityId: string;
+  purposeEnumId: string;
+  activePurposes: any[];
+}): Promise<void> {
+  const { productStoreId, facilityId, purposeEnumId } = params;
+  const current = params.activePurposes.filter((row: any) =>
+    row.productStoreId === productStoreId && row.facilityPurposeEnumId === purposeEnumId);
+  if(current.length === 1 && current[0].facilityId === facilityId) {return;}
+  const now = Date.now();
+  if(!current.some((row: any) => row.facilityId === facilityId)) {
+    const created: any = await api({
+      url: "oms/productStoreFacilityPurposes",
+      method: "post",
+      data: { productStoreId, facilityId, facilityPurposeEnumId: purposeEnumId, fromDate: now },
+    });
+    if(commonUtil.hasError(created)) {throw new Error(translate("The OMS rejected the parking facility."));}
+  }
+  for(const row of current.filter((row: any) => row.facilityId !== facilityId)) {
+    const ended: any = await api({
+      url: "oms/productStoreFacilityPurposes",
+      method: "put",
+      data: {
+        productStoreId, facilityId: row.facilityId, facilityPurposeEnumId: purposeEnumId,
+        fromDate: row.fromDate, thruDate: now,
+      },
+    });
+    if(commonUtil.hasError(ended)) {throw new Error(translate("The new parking facility was added, but the previous one could not be ended."));}
+  }
+  await refreshAfterMutation("productStoreFacilityPurpose", { productStoreId });
+}
+
+/**
  * Map one facility group to one Shopify location as an aggregate inventory channel.
  */
 export async function createInventoryChannel(params: {
   shopId: string;
   facilityGroupId: string;
   shopifyLocationId: string;
+  channelTypeEnumId?: InventoryChannelType;
   description?: string;
   fromDate?: number | string;
 }): Promise<string | undefined> {
@@ -368,6 +492,7 @@ export async function createInventoryChannel(params: {
       shopId: params.shopId,
       facilityGroupId: params.facilityGroupId,
       shopifyLocationId: params.shopifyLocationId,
+      channelTypeEnumId: params.channelTypeEnumId ?? CHANNEL_TYPE.physical,
       fromDate: params.fromDate ?? Date.now(),
       ...(params.description ? { description: params.description } : {}),
     },
@@ -460,6 +585,8 @@ export async function ensureChannelEventPublisherJob(inventoryChannelId: string)
     method: "PUT",
     data: {
       jobName,
+      // The clone copies the template's "TEMPLATE (clone per inventory channel)" description otherwise.
+      description: `Publish pending Shopify inventory events for channel ${inventoryChannelId}`,
       paused: "Y",
       serviceJobParameters: [
         { parameterName: "inventoryChannelId", parameterValue: inventoryChannelId },

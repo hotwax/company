@@ -60,6 +60,11 @@ export interface InventoryEvent {
   source: InventoryEventSource;
   inventoryItemId: string;
   delta: number;
+  /**
+   * `resetInventoryLevel = Y`: `delta` is the quantity Shopify is set to, not a change. Future channel
+   * events and resets carry absolute quantities, so a zero here still changes Shopify.
+   */
+  absolute: boolean;
   /** `correction` when the type maps to no Shopify reason, which is what the batcher sends. */
   reason: string;
   reasonMapped: boolean;
@@ -108,8 +113,8 @@ export function deltaOutcome(delta: number): "noChange" | "publish" | "quarantin
 }
 
 /** Cancelled/rejected are the batcher's markers and nothing retries them; `SmsgError` is retried. */
-export function deliveryStateOf(messageId: string | undefined, delta: number, statusId?: string): DeliveryState {
-  if(!messageId) {return { id: roundDelta(delta) === 0 ? "noChange" : "waiting" };}
+export function deliveryStateOf(messageId: string | undefined, delta: number, statusId?: string, absolute = false): DeliveryState {
+  if(!messageId) {return { id: !absolute && roundDelta(delta) === 0 ? "noChange" : "waiting" };}
   const status = String(statusId ?? "");
   if(isSuccess(status)) {return { id: "sent", statusId: status };}
   if(status === "SmsgCancelled" || status === "SmsgRejected") {return { id: "cancelled", statusId: status };}
@@ -170,7 +175,8 @@ export function toInventoryEvent(
 ): InventoryEvent {
   const delta = roundDelta(raw?.computedInventoryChange);
   const messageId = text(raw?.systemMessageId) || undefined;
-  const delivery = deliveryStateOf(messageId, delta, message?.statusId);
+  const absolute = text(raw?.resetInventoryLevel) === "Y";
+  const delivery = deliveryStateOf(messageId, delta, message?.statusId, absolute);
   const retargetLocationId = kind === "channel" ? text(raw?.publishShopifyLocationId) : "";
   const reason = text(raw?.shopifyReason);
   const eventTypeId = text(raw?.eventTypeId);
@@ -188,6 +194,7 @@ export function toInventoryEvent(
     source: sourceOf(eventTypeId, text(raw?.eventReferenceId)),
     inventoryItemId: text(raw?.shopifyInventoryItemId),
     delta,
+    absolute,
     reason: reason || "correction",
     reasonMapped: !!reason,
     messageId,
@@ -243,14 +250,21 @@ function groupBy<T>(rows: readonly T[], keyOf: (row: T) => string | undefined): 
   return grouped;
 }
 
-/** What Shopify receives: the batcher sums a batch's rows per (inventory item, location). */
+/**
+ * What Shopify receives: the batcher sums a batch's rows per (inventory item, location). An absolute row
+ * sets the level, so the entry is the latest absolute quantity plus any deltas recorded after it.
+ */
 export function changeEntriesOf<T extends InventoryEvent>(events: readonly T[]) {
   return [...groupBy(events, (event) => `${event.inventoryItemId}@${event.locationId}`)].map(([key, rows]) => {
-    const delta = sumDelta(rows.map((row) => row.delta));
+    const ordered = [...rows].sort((a, b) => a.createdAt - b.createdAt);
+    const lastAbsolute = ordered.map((row) => row.absolute).lastIndexOf(true);
+    const counted = lastAbsolute >= 0 ? ordered.slice(lastAbsolute) : ordered;
+    const delta = sumDelta(counted.map((row) => row.delta));
+    const absolute = lastAbsolute >= 0;
 
     return {
-      key, inventoryItemId: rows[0].inventoryItemId, delta,
-      eventCount: rows.length, outcome: deltaOutcome(delta), sample: rows[0],
+      key, inventoryItemId: rows[0].inventoryItemId, delta, absolute,
+      eventCount: rows.length, outcome: absolute ? "publish" as const : deltaOutcome(delta), sample: rows[0],
     };
   }).sort((a, b) => a.inventoryItemId.localeCompare(b.inventoryItemId));
 }

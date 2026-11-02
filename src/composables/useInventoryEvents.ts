@@ -169,7 +169,9 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
       productSku: String(item?.sku ?? ""),
       productVariant: variantLabelOf(String(item?.variantTitle ?? ""), productName),
       productImageUrl: String(item?.imageUrl ?? ""),
-      change: `${event.delta > 0 ? "+" : ""}${event.delta}`,
+      change: event.absolute
+        ? translate("Set to {quantity}", { quantity: event.delta })
+        : `${event.delta > 0 ? "+" : ""}${event.delta}`,
       deliveryLabel: deliveryLabelOf(event, statusLabel),
       deliveryColor: DELIVERY_STATE_COLORS[event.delivery.id],
       sourceLabel: sourceLabelOf(event),

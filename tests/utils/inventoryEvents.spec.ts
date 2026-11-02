@@ -226,3 +226,24 @@ describe("delta arithmetic", () => {
     expect(changeEntriesOf(rows)[0]).toMatchObject({ delta: 0, outcome: "noChange", eventCount: 2 });
   });
 });
+
+describe("absolute rows (resetInventoryLevel = Y)", () => {
+  it("reads the flag, and treats an unbatched absolute zero as waiting rather than no change", () => {
+    const event = toInventoryEvent("channel", "1", channelRow({ eventTypeId: "SIE_FUTURE_RESET", computedInventoryChange: 0, resetInventoryLevel: "Y" }), undefined);
+
+    expect(event.absolute).toBe(true);
+    expect(event.delivery.id).toBe("waiting");
+    expect(deliveryStateOf(undefined, 0, undefined, true).id).toBe("waiting");
+    expect(toInventoryEvent("channel", "2", channelRow({ computedInventoryChange: 0 }), undefined).absolute).toBe(false);
+  });
+
+  it("enters the latest absolute quantity plus the deltas after it, as what Shopify ends up holding", () => {
+    const rows = [
+      toInventoryEvent("channel", "1", channelRow({ eventReferenceId: "A", computedInventoryChange: 5, createdDate: 1 }), undefined),
+      toInventoryEvent("channel", "2", channelRow({ eventReferenceId: "B", computedInventoryChange: 9, resetInventoryLevel: "Y", createdDate: 2 }), undefined),
+      toInventoryEvent("channel", "3", channelRow({ eventReferenceId: "C", computedInventoryChange: -1, createdDate: 3 }), undefined),
+    ];
+
+    expect(changeEntriesOf(rows)[0]).toMatchObject({ delta: 8, absolute: true, outcome: "publish", eventCount: 3 });
+  });
+});

@@ -28,6 +28,8 @@ const INVENTORY_LEDGER_FIELDS = {
   shopifyLocationId: "text",
   shopifyInventoryItemId: "text",
   computedInventoryChange: "count",
+  // Y: computedInventoryChange is the quantity Shopify is set to (future channels, channel resets).
+  resetInventoryLevel: "text",
   decisionComment: "text",
   systemMessageId: "text",
   systemMessageStatusId: "text",
@@ -339,6 +341,8 @@ export const companySchema = defineSchema({
     fields: {
       inventoryChannelId: "text",
       shopId: "text",
+      // SICT_PHYSICAL, SICT_PRE_ORDER or SICT_BACK_ORDER; the server defaults existing channels to physical.
+      channelTypeEnumId: "text",
       facilityGroupId: "text",
       facilityGroupName: "text",
       shopifyLocationId: "text",
@@ -348,6 +352,24 @@ export const companySchema = defineSchema({
       lastUpdatedStamp: "date",
     },
     indexes: ["shopId", "facilityGroupId", "shopifyLocationId", "fromDate", "thruDate", "[shopId+fromDate]"],
+  }),
+
+  /**
+   * ProductStoreFacilityPurpose — which facility a store uses for a purpose (FP_PRE_ORDER_PARK,
+   * FP_BACKORDER_PARK, ...), date-effective. The connector projects a pre-order or back-order channel's
+   * orders onto Shopify only when the store has exactly one active parking purpose of that type whose
+   * facility maps to the channel's Shopify location.
+   */
+  productStoreFacilityPurposes: defineEntity({
+    primaryKey: "productStoreId,facilityId,facilityPurposeEnumId,fromDate",
+    fields: {
+      productStoreId: "text",
+      facilityId: "text",
+      facilityPurposeEnumId: "text",
+      fromDate: "date",
+      thruDate: "date",
+    },
+    indexes: ["productStoreId", "facilityId", "facilityPurposeEnumId"],
   }),
 
   /** Internal organization — Party(PARTY_GROUP) + PartyGroup + INTERNAL_ORGANIZATIO PartyRole. */

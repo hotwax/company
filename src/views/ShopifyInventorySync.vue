@@ -134,6 +134,7 @@
             <ion-item lines="full" button detail @click="openChannelEdit(channel)">
               <ion-label class="ion-text-wrap">
                 {{ channel.facilityGroupName || channel.description || channel.facilityGroupId || channel.inventoryChannelId }}
+                <p>{{ translate("{type} channel", { type: channelTypeLabel(channel) }) }}</p>
               </ion-label>
               <ion-label slot="end" class="ion-text-end">
                 {{ channel.shopifyLocationId }}
@@ -158,6 +159,25 @@
                   {{ translate("Delivered in the last 24 hours") }}
                 </ion-label>
                 <ion-label slot="end" class="ion-text-end">{{ channelStats(channel).delivered }}</ion-label>
+              </ion-item>
+            </ion-list>
+
+            <!-- What the connector checks before this channel publishes; see utils/inventoryChannelReadiness. -->
+            <ion-list lines="none">
+              <ion-item v-for="check in readinessFor(channel).checks" :key="check.id">
+                <ion-icon slot="start" :icon="readinessIcon(check.level)" :color="readinessColor(check.level)" />
+                <ion-label class="ion-text-wrap">{{ check.label }}</ion-label>
+                <ion-button
+                  v-if="check.id === 'parking'"
+                  slot="end"
+                  fill="outline"
+                  size="small"
+                  :disabled="!!savingParkingFor"
+                  @click="chooseChannelParking(channel)"
+                >
+                  <ion-spinner v-if="savingParkingFor === String(channel.inventoryChannelId)" name="crescent" />
+                  <template v-else>{{ check.level === "ok" ? translate("Change") : translate("Set parking") }}</template>
+                </ion-button>
               </ion-item>
             </ion-list>
 
@@ -195,6 +215,34 @@
             </ion-list>
           </ion-card>
         </div>
+      </section>
+
+      <section v-if="hasFutureChannel" class="future-support-jobs">
+        <ion-item lines="none">
+          <ion-label>
+            {{ translate("Pre-order and back-order jobs") }}
+            <p>{{ translate("OMS-wide jobs future channels depend on. They ship paused; activate each from its row.") }}</p>
+          </ion-label>
+        </ion-item>
+        <ion-card>
+          <ion-list lines="full">
+            <ion-item
+              v-for="job in futureSupportJobs"
+              :key="job.name"
+              :button="!!job.job"
+              :detail="!!job.job"
+              @click="openServiceJob(job.job)"
+            >
+              <ion-icon slot="start" :icon="job.icon" />
+              <ion-label class="ion-text-wrap">
+                {{ job.name }}
+                <p>{{ job.lastRun }}</p>
+                <p>{{ job.nextRun }}</p>
+              </ion-label>
+              <ion-badge slot="end" :color="job.badgeColor">{{ job.status }}</ion-badge>
+            </ion-item>
+          </ion-list>
+        </ion-card>
       </section>
 
       <section class="event-feed-settings">
@@ -270,6 +318,29 @@
                 :checked="locationEventFeedPush"
                 :disabled="locationEventFeedToggleDisabled"
                 @click.prevent="requestLocationEventFeedChange($event)"
+              />
+            </ion-item>
+          </ion-list>
+        </ion-card>
+
+        <ion-card v-if="hasFutureChannel || futureEventFeed">
+          <ion-list lines="none">
+            <ion-item>
+              <ion-icon slot="start" :icon="timeOutline" />
+              <ion-label class="ion-text-wrap">
+                {{ translate("Pre-order and back-order events") }}
+                <p>{{ translate("All shops") }}</p>
+              </ion-label>
+              <ion-badge slot="end" :color="futureEventFeedBadgeColor">
+                {{ futureEventFeedStatus }}
+              </ion-badge>
+              <ion-toggle
+                slot="end"
+                :key="`future-feed-${futureEventFeedPush}-${toggleNonce}`"
+                :aria-label="translate('Use real-time push for future inventory events')"
+                :checked="futureEventFeedPush"
+                :disabled="futureEventFeedToggleDisabled"
+                @click.prevent="requestFutureEventFeedChange($event)"
               />
             </ion-item>
           </ion-list>
@@ -596,7 +667,7 @@ import {
   modalController, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
 import {
-  addOutline, checkmarkCircleOutline,
+  addOutline, alertCircleOutline, checkmarkCircleOutline, warningOutline,
   cloudUploadOutline,
   layersOutline, listOutline, locationOutline,
   refreshOutline, sendOutline, storefrontOutline, timeOutline, trashBinOutline, trashOutline,
@@ -617,11 +688,19 @@ import InventoryResetImportResult from "@/components/shopify/InventoryResetImpor
 import InventoryRunDetails from "@/components/shopify/InventoryRunDetails.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
 import { useEffectiveNow } from "@/composables/useEffectiveNow";
-import { useFacilityGroupMutations, useFacilityTypes, useGroupFacilities } from "@/composables/useFacilities";
+import { useFacilities, useFacilityGroupMutations, useFacilityGroups, useFacilityTypes, useGroupFacilities } from "@/composables/useFacilities";
 import { type InventoryEventRow, useInventoryEvents } from "@/composables/useInventoryEvents";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import {
+  CHANNEL_TYPE,
   DISCARD_PENDING_EVENTS_SERVICE,
+  FUTURE_CHANNEL_PARKING,
+  SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID,
+  channelTypeOf,
+  configureFutureChannelParking,
+  updateShopifyFutureInventoryEventFeedType,
+  useProductStoreFacilityPurposes,
+  useShopifyLocations,
   INVENTORY_ADJUSTMENT_MESSAGE_TYPE,
   type InventoryEventDocument,
   PRODUCED_SENDER_SERVICE,
@@ -660,6 +739,7 @@ import {
   summarizeInventoryEvents,
 } from "@/utils/inventoryEvents";
 import { formatAge } from "@/utils/inventoryEventTime";
+import { channelReadiness } from "@/utils/inventoryChannelReadiness";
 import { parameterMap } from "@/utils/serviceJob";
 import { describeRunParameters, describeRunResult } from "@/utils/serviceJobRun";
 
@@ -690,6 +770,21 @@ const PUBLISH_PENDING_SERVICES = [
 const EFFECTIVE_DATE_SERVICE = "co.hotwax.sob.product.InventoryServices.run#ShopifyInventoryEffectiveDateEvents";
 const ABSOLUTE_CHANNEL_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed";
 const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
+
+/**
+ * Jobs a pre-order or back-order channel depends on outside its own publisher. They ship paused (or are
+ * paused again by an upgrade data load), so a new instance shows them here until someone activates them:
+ * expiry delists overdue batches, the OMS consumer and the produced sender move the messages, and the
+ * NetSuite pulls bring the purchase orders and inbound shipments future inventory is built from.
+ */
+const FUTURE_SUPPORT_JOBS = [
+  { jobName: "expire_FutureInventoryItems", label: () => translate("Expire overdue future inventory") },
+  { jobName: "send_AllProducedSystemMessages_frequent", label: () => translate("Send produced system messages") },
+  { jobName: "consume_AllReceivedSystemMessages_oms", label: () => translate("Consume received system messages") },
+  { jobName: "publish_PendingShopifyLocationInventoryAdjustments", label: () => translate("Publish physical batches (all shops)") },
+  { jobName: "pull_NetSuitePurchaseOrders", label: () => translate("Pull NetSuite purchase orders") },
+  { jobName: "pull_NetSuiteInboundShipments", label: () => translate("Pull NetSuite inbound shipments") },
+];
 
 const syncContext = useShopifySyncContext(() => props.id);
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
@@ -732,6 +827,16 @@ const SYNC_PRIORITY = Object.values(INVENTORY_EVENT_DOMAINS);
 const inventoryChannelsEffectiveNow = useEffectiveNow(allInventoryChannels);
 const inventoryChannels = computed(() => allInventoryChannels.value.filter((channel: any) =>
   String(channel.shopId) === String(props.id ?? "") && isEffectiveNow(channel, inventoryChannelsEffectiveNow.value)));
+
+function channelTypeLabel(channel: any): string {
+  const type = channelTypeOf(channel);
+  if(type === CHANNEL_TYPE.preOrder) {return translate("Pre-order");}
+  if(type === CHANNEL_TYPE.backOrder) {return translate("Back-order");}
+
+  return translate("Physical");
+}
+
+const hasFutureChannel = computed(() => inventoryChannels.value.some((channel: any) => FUTURE_CHANNEL_PARKING[channelTypeOf(channel)]));
 
 /**
  * Shops by id, for naming a channel's target and for this connection's own push gate. Cached table,
@@ -795,6 +900,30 @@ const locationEventFeedBadgeColor = computed(() => {
   return locationEventFeedPush.value ? "success" : "warning";
 });
 const locationEventFeedSaving = ref(false);
+
+/**
+ * The future inventory feed, OMS-wide: it records FutureInventoryItemDetail changes for every shop's
+ * pre-order and back-order channels. Shown only when this shop has such a channel; absent on a connector
+ * without future channels, which reads as "Not configured".
+ */
+const futureEventFeed = computed<any>(() => cachedDataFeeds.value.find((feed: any) =>
+  String(feed.dataFeedId) === SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID) ?? null);
+const futureEventFeedPush = computed(() => futureEventFeed.value?.dataFeedTypeEnumId === SHOPIFY_INVENTORY_EVENT_FEED_PUSH);
+const futureEventFeedSaving = ref(false);
+const futureEventFeedToggleDisabled = computed(() => futureEventFeedSaving.value || !dataFeedsHydrated.value ||
+  ![SHOPIFY_INVENTORY_EVENT_FEED_MANUAL, SHOPIFY_INVENTORY_EVENT_FEED_PUSH].includes(String(futureEventFeed.value?.dataFeedTypeEnumId ?? "")));
+const futureEventFeedStatus = computed(() => {
+  if(!dataFeedsHydrated.value) {return translate("Loading");}
+  if(!futureEventFeed.value) {return translate("Not configured");}
+  if(futureEventFeedPush.value) {return translate("Real-time push");}
+
+  return futureEventFeed.value.dataFeedTypeEnumId === SHOPIFY_INVENTORY_EVENT_FEED_MANUAL ? translate("Manual") : translate("Unsupported mode");
+});
+const futureEventFeedBadgeColor = computed(() => {
+  if(!dataFeedsHydrated.value || !futureEventFeed.value) {return "medium";}
+
+  return futureEventFeedPush.value ? "success" : "warning";
+});
 
 /**
  * The PER-SHOP half of real-time inventory, and a different switch from the feed above in every way
@@ -899,6 +1028,7 @@ const locationPublishJob = computed(() => cachedJobs.value.find((job: any) =>
   String(job.jobName ?? "") === "publish_PendingShopifyLocationInventoryAdjustments"));
 
 const watchedJobNames = computed(() => [...new Set([
+  ...(hasFutureChannel.value ? FUTURE_SUPPORT_JOBS.map((job) => job.jobName) : []),
   locationPublishJob.value?.jobName,
   physicalResetJob.value?.jobName,
   ...physicalAtpResetJobs.value.map((job: any) => job.jobName),
@@ -946,16 +1076,16 @@ function channelIdsWithoutJob(jobs: any[]): string[] {
  * seeded template (no channel parameter, no `_<id>` suffix) - reporting the template's paused state
  * under a channel's name would claim that channel publishes when it does not.
  */
-function findChannelPublisherJob(channelId: string) {
+function findChannelPublisherJobs(channelId: string): any[] {
   const targetId = String(channelId);
-
-  return cachedJobs.value.find((job: any) =>
+  const byParameter = cachedJobs.value.filter((job: any) =>
     PUBLISH_PENDING_SERVICES.includes(job.serviceName) &&
-    String(parameterMap(job).inventoryChannelId ?? "") === targetId) ||
-    cachedJobs.value.find((job: any) =>
-      PUBLISH_PENDING_SERVICES.includes(job.serviceName) &&
-      job.jobName === `publish_PendingShopifyInventoryAdjustments_${targetId}`) ||
-    null;
+    String(parameterMap(job).inventoryChannelId ?? "") === targetId);
+  if(byParameter.length) {return byParameter;}
+
+  return cachedJobs.value.filter((job: any) =>
+    PUBLISH_PENDING_SERVICES.includes(job.serviceName) &&
+    job.jobName === `publish_PendingShopifyInventoryAdjustments_${targetId}`);
 }
 
 function findChannelResetJob(channelId: string) {
@@ -1027,7 +1157,7 @@ function describeJob({ name, jobs, icon, setup, targetChannelId, group }: JobDef
   return {
     name,
     ...(group ? { group } : {}),
-    job: nextJob ?? jobs[0] ?? null,
+    job: nextJob ?? jobs.find((job) => job.paused !== "Y") ?? jobs[0] ?? null,
     lastRun: latestRun?.startTime ? translate("Last run {at}", { at: formatDateTime(latestRun.startTime) }) : translate("No cached runs"),
     nextRun: nextRunLine(scheduledJob, latestRun),
     status: missing ? translate("Not configured") : paused ? translate("Paused") : translate("Active"),
@@ -1050,15 +1180,17 @@ function describeJob({ name, jobs, icon, setup, targetChannelId, group }: JobDef
  */
 function jobsForChannel(channel: any) {
   const channelId = String(channel.inventoryChannelId);
-  const publisher = findChannelPublisherJob(channelId);
+  // Every job naming the channel: the connector sends its events when ANY of them is unpaused, so a
+  // paused test clone found first must not make an active channel read as paused.
+  const publishers = findChannelPublisherJobs(channelId);
   const reset = findChannelResetJob(channelId);
 
   return [
     {
       name: translate("Send channel batches"),
-      jobs: publisher ? [publisher] : [],
+      jobs: publishers,
       icon: cloudUploadOutline,
-      setup: publisher ? "" : "publisher",
+      setup: publishers.length ? "" : "publisher",
       targetChannelId: channelId,
     },
     {
@@ -1257,6 +1389,125 @@ const EMPTY_CHANNEL_STATS = { composition: translate("No facilities in this grou
 function channelStats(channel: any) {
   return channelStatsById.value.get(String(channel.inventoryChannelId ?? "")) ?? EMPTY_CHANNEL_STATS;
 }
+
+/**
+ * What each channel still needs before it publishes, from cached rows: its group's type, an active
+ * publisher, and for a pre-order or back-order channel the shop-wide uniqueness and store parking the
+ * connector's order projection requires. See `utils/inventoryChannelReadiness`.
+ */
+const { records: cachedFacilityGroups } = useFacilityGroups();
+const facilityGroupById = computed(() => new Map(cachedFacilityGroups.value.map((group: any) => [String(group.facilityGroupId), group])));
+const { purposes: allStorePurposes } = useProductStoreFacilityPurposes();
+const storePurposesEffectiveNow = useEffectiveNow(allStorePurposes);
+const storePurposes = computed(() => allStorePurposes.value.filter((row: any) =>
+  String(row.productStoreId) === String(currentShop.value?.productStoreId ?? "") &&
+  isEffectiveNow(row, storePurposesEffectiveNow.value)));
+const { locationByFacility } = useShopifyLocations(String(props.id ?? ""));
+const { facilities: cachedFacilities } = useFacilities();
+
+const waitingByChannel = computed(() => channelInventory.events.value.reduce((counts: Record<string, number>, event: any) => {
+  if(event.delivery?.id === "waiting" && event.channelId) {counts[event.channelId] = (counts[event.channelId] ?? 0) + 1;}
+
+  return counts;
+}, {}));
+
+const readinessByChannel = computed(() => new Map(inventoryChannels.value.map((channel: any) => {
+  const channelId = String(channel.inventoryChannelId);
+
+  return [channelId, channelReadiness({
+    channel,
+    facilityGroup: facilityGroupById.value.get(String(channel.facilityGroupId)),
+    publisherJobs: findChannelPublisherJobs(channelId),
+    shopChannels: inventoryChannels.value,
+    storePurposes: storePurposes.value,
+    locationByFacility: locationByFacility.value,
+    waitingEvents: waitingByChannel.value[channelId] ?? 0,
+    parkingPurposeEnumId: FUTURE_CHANNEL_PARKING[channelTypeOf(channel)]?.purposeEnumId,
+  })];
+})));
+
+function readinessFor(channel: any) {
+  return readinessByChannel.value.get(String(channel.inventoryChannelId)) ?? { checks: [], parkingFacilityId: "", ready: true };
+}
+
+function readinessIcon(level: string) {
+  return level === "ok" ? checkmarkCircleOutline : level === "warning" ? warningOutline : alertCircleOutline;
+}
+
+function readinessColor(level: string) {
+  return level === "ok" ? "success" : level === "warning" ? "warning" : "danger";
+}
+
+const savingParkingFor = ref("");
+
+/**
+ * Choose the store's parking facility for a future channel. Candidates are the facilities of the
+ * channel type's parking facility type, plus any facility already holding that purpose; the choice is
+ * mapped to the channel's Shopify location and made the store's only active parking of that type.
+ */
+async function chooseChannelParking(channel: any) {
+  const type = channelTypeOf(channel);
+  const parking = FUTURE_CHANNEL_PARKING[type];
+  if(!parking || savingParkingFor.value) {return;}
+  const current = storePurposes.value.filter((row: any) => row.facilityPurposeEnumId === parking.purposeEnumId);
+  const candidateIds = new Set<string>([
+    ...cachedFacilities.value.filter((facility: any) => facility.facilityTypeId === parking.facilityTypeId).map((facility: any) => String(facility.facilityId)),
+    ...current.map((row: any) => String(row.facilityId)),
+  ]);
+  if(!candidateIds.size) {
+    commonUtil.showToast(translate("No {type} facility exists. Create a parking facility first.", { type: parking.facilityTypeId }));
+
+    return;
+  }
+  const nameOf = (facilityId: string) => cachedFacilities.value.find((facility: any) => facility.facilityId === facilityId)?.facilityName || facilityId;
+  const preselected = current.length === 1 ? String(current[0].facilityId) : "";
+  const alert = await alertController.create({
+    header: translate("Store parking for this channel"),
+    message: translate("The facility is mapped to Shopify location {location} for this shop and becomes the store's only active {purpose} facility.", {
+      location: channel.shopifyLocationId, purpose: parking.purposeEnumId,
+    }),
+    inputs: [...candidateIds].sort().map((facilityId) => ({
+      type: "radio" as const,
+      label: `${nameOf(facilityId)} (${facilityId})`,
+      value: facilityId,
+      checked: facilityId === preselected,
+    })),
+    buttons: [
+      { text: translate("Cancel"), role: "cancel" },
+      { text: translate("Save"), role: "confirm" },
+    ],
+  });
+  await alert.present();
+  const result = await alert.onDidDismiss();
+  const facilityId = String(result.data?.values ?? "");
+  if(result.role !== "confirm" || !facilityId) {return;}
+
+  savingParkingFor.value = String(channel.inventoryChannelId);
+  try {
+    await configureFutureChannelParking({
+      shopId: String(props.id ?? ""),
+      productStoreId: String(currentShop.value?.productStoreId ?? ""),
+      channelTypeEnumId: type,
+      shopifyLocationId: String(channel.shopifyLocationId),
+      facilityId,
+      locationByFacility: locationByFacility.value,
+      activePurposes: storePurposes.value,
+    });
+    commonUtil.showToast(translate("Parking facility saved."));
+  } catch (error: any) {
+    logger.error("Failed to configure future channel parking", error);
+    commonUtil.showToast(error?.message || translate("Failed to save the parking facility."));
+  } finally {
+    savingParkingFor.value = "";
+  }
+}
+
+
+const futureSupportJobs = computed(() => FUTURE_SUPPORT_JOBS.map((definition) => {
+  const job = cachedJobs.value.find((row: any) => row.jobName === definition.jobName);
+
+  return describeJob({ name: definition.label(), jobs: job ? [job] : [], icon: timeOutline, setup: "" });
+}));
 
 const RESULT_SUMMARY_LIMIT = 200;
 
@@ -1590,6 +1841,48 @@ async function requestLocationEventFeedChange(event: Event) {
     commonUtil.showToast(translate("Failed to update the location inventory event feed."));
   } finally {
     locationEventFeedSaving.value = false;
+  }
+}
+
+async function requestFutureEventFeedChange(event: Event) {
+  event.stopImmediatePropagation();
+  if(futureEventFeedToggleDisabled.value) {
+    redrawToggles();
+
+    return;
+  }
+
+  const enablePush = !futureEventFeedPush.value;
+  const alert = await alertController.create({
+    header: enablePush ? translate("Enable real-time future inventory updates?") : translate("Switch future inventory updates to manual?"),
+    message: enablePush
+      ? translate("This affects every shop's pre-order and back-order channels on this OMS. Restart every OMS node after saving so Moqui registers the real-time feed.")
+      : translate("This affects every shop's pre-order and back-order channels on this OMS. Their Shopify locations then change only when a channel reset runs."),
+    buttons: [
+      { text: translate("Cancel"), role: "cancel" },
+      { text: enablePush ? translate("Enable real-time push") : translate("Switch to manual"), role: "confirm" },
+    ],
+  });
+  await alert.present();
+  const result = await alert.onDidDismiss();
+  if(result.role !== "confirm") {
+    redrawToggles();
+
+    return;
+  }
+
+  futureEventFeedSaving.value = true;
+  try {
+    await updateShopifyFutureInventoryEventFeedType(enablePush ? SHOPIFY_INVENTORY_EVENT_FEED_PUSH : SHOPIFY_INVENTORY_EVENT_FEED_MANUAL);
+    commonUtil.showToast(enablePush
+      ? translate("Future inventory events set to real-time push. Restart every OMS node before relying on event capture.")
+      : translate("Future inventory events set to manual."));
+  } catch (error) {
+    logger.error("Failed to update the future inventory event feed", error);
+    commonUtil.showToast(translate("Failed to update the future inventory event feed."));
+  } finally {
+    futureEventFeedSaving.value = false;
+    redrawToggles();
   }
 }
 

@@ -48,7 +48,10 @@ export const companyDb = defineAppDb({
   // v5: re-keyed enumGroupMembers on fromDate, so an expired membership and its re-added
   //     replacement are two rows rather than one.
   // v6: added dataManagerErrorRecords (the DataManager error files ShopifySyncDB used to hold).
-  version: 6,
+  // v7: inventoryChannels gained channelTypeEnumId (physical, pre-order, back-order) and both
+  //     inventory ledgers gained resetInventoryLevel (Y = an absolute quantity, not a delta);
+  //     added productStoreFacilityPurposes (the stores' pre-order and back-order parking).
+  version: 7,
   schema: mergeSchemas(commonSchema.pick([...COMPANY_SEED_TABLES]), companySchema),
 });
 

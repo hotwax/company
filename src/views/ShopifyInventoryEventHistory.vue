@@ -174,8 +174,9 @@
             </ion-item>
 
             <ion-label>
-              <ion-text :color="event.delta > 0 ? 'success' : event.delta < 0 ? 'danger' : undefined">
-                {{ event.change }}
+              <!-- An absolute row sets the level; "= 19" fits the change column, the title and summary say "Set to 19". -->
+              <ion-text :color="event.absolute ? 'primary' : event.delta > 0 ? 'success' : event.delta < 0 ? 'danger' : undefined" :title="event.change">
+                {{ event.absolute ? `= ${event.delta}` : event.change }}
               </ion-text>
               <p class="one-line">
                 {{ event.locationLabel }}
