@@ -40,6 +40,12 @@ const harness = vi.hoisted(() => ({
 vi.mock("@common", () => ({
   commonUtil: {
     showToast: (...args: any[]) => harness.showToast(...args),
+    getErrorMessage: vi.fn((err: any) => err?.message || ""),
+  },
+  logger: {
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
   },
   translate: (key: string, values: Record<string, unknown> = {}) =>
     Object.entries(values).reduce(

@@ -44,6 +44,7 @@ vi.mock("vue-router", () => ({
 vi.mock("@common", () => ({
   commonUtil: {
     showToast: (...args: any[]) => harness.showToast(...args),
+    getErrorMessage: vi.fn((err: any) => err?.message || ""),
   },
   logger: {
     error: vi.fn(),

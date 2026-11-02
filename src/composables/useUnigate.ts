@@ -4,8 +4,8 @@ import { refreshAfterMutation } from "@/db/appDbSync";
 import { onSessionCleared } from "./sessionScope";
 
 const log = {
-  error: (...args: any[]) => logger.error(...args),
-  warn: (...args: any[]) => logger.warn(...args),
+  error: (...args: any[]) => (typeof logger !== "undefined" && logger?.error ? logger.error(...args) : console.error(...args)),
+  warn: (...args: any[]) => (typeof logger !== "undefined" && logger?.warn ? logger.warn(...args) : console.warn(...args)),
 };
 
 const safeApi = async (req: any) => {
