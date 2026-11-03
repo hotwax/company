@@ -227,8 +227,9 @@ async function executeClone() {
     commonUtil.showToast(translate("Product store settings cloned successfully."));
     router.replace(`/product-store-details/${targetStoreId.value}`);
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Cloning failed", error);
-    commonUtil.showToast(translate("Failed to clone product store settings."));
+    commonUtil.showToast(`${translate("Failed to clone product store settings.")} ${serverError}`);
   } finally {
     emitter.emit("dismissLoader");
   }

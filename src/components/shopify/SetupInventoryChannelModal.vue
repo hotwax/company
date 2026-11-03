@@ -338,8 +338,9 @@ async function createChannel() {
       fromDate: Date.now(),
     });
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to create inventory channel", error);
-    commonUtil.showToast(error?.message || translate("Failed to create the inventory channel."));
+    commonUtil.showToast(`${translate("Failed to create the inventory channel.")} ${serverError}`);
     saving.value = false;
     return;
   }

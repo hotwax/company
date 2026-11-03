@@ -1,11 +1,11 @@
 import { computed, reactive, ref, type Ref, unref } from "vue";
-import { api, commonUtil } from "@common";
+import { api, commonUtil, logger } from "@common";
 import { refreshAfterMutation } from "@/db/appDbSync";
 import { onSessionCleared } from "./sessionScope";
 
 const log = {
-  error: (...args: any[]) => console.error(...args),
-  warn: (...args: any[]) => console.warn(...args),
+  error: (...args: any[]) => (typeof logger !== "undefined" && logger?.error ? logger.error(...args) : console.error(...args)),
+  warn: (...args: any[]) => (typeof logger !== "undefined" && logger?.warn ? logger.warn(...args) : console.warn(...args)),
 };
 
 const safeApi = async (req: any) => {
@@ -88,9 +88,9 @@ const unwrapList = (data: any, key?: string): any[] => {
   return [];
 };
 
-function assertUnigateMutation(response: any, fallback: string): void {
+function assertUnigateMutation(response: any): void {
   if (commonUtil.hasError(response)) {
-    throw new Error(commonUtil.getErrorMessage(response) || fallback);
+    throw response;
   }
 }
 
@@ -187,7 +187,7 @@ export async function updateUnigateConnection(payload: {
     method: state.unigateConfig ? "put" : "post",
     data,
   });
-  assertUnigateMutation(response, "Failed to update Unigate connection.");
+  assertUnigateMutation(response);
 
   // Reconcile cache and propagate reconciliation errors
   await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId: "UNIGATE_CONFIG" });
@@ -265,7 +265,7 @@ export async function createShippingGatewayAuth(data: {
       authHeaderName: data.authHeaderName || "Authorization",
     },
   });
-  assertUnigateMutation(response, "Failed to create carrier credentials.");
+  assertUnigateMutation(response);
   await fetchShippingGatewayAuths(true);
 }
 
@@ -278,7 +278,7 @@ export async function updateShippingGatewayAuth(
     method: "put",
     data,
   });
-  assertUnigateMutation(response, "Failed to update carrier credentials.");
+  assertUnigateMutation(response);
   await fetchShippingGatewayAuths(true);
 }
 
@@ -287,7 +287,7 @@ export async function deleteShippingGatewayAuth(shippingGatewayAuthId: string): 
     url: `oms/shipping/gatewayAuths/${shippingGatewayAuthId}`,
     method: "delete",
   });
-  assertUnigateMutation(response, "Failed to delete carrier credentials.");
+  assertUnigateMutation(response);
   await fetchShippingGatewayAuths(true);
 }
 
@@ -322,7 +322,7 @@ export async function saveShippingCarrierConfig(data: ShippingCarrierConfig): Pr
     method: "post",
     data,
   });
-  assertUnigateMutation(response, "Failed to save carrier configuration.");
+  assertUnigateMutation(response);
   await fetchShippingCarrierConfigs(true);
 }
 
@@ -331,7 +331,7 @@ export async function deleteShippingCarrierConfig(carrierConfigId: string): Prom
     url: `oms/shipping/carrierConfigs/${carrierConfigId}`,
     method: "delete",
   });
-  assertUnigateMutation(response, "Failed to delete carrier configuration.");
+  assertUnigateMutation(response);
   await fetchShippingCarrierConfigs(true);
 }
 
@@ -366,7 +366,7 @@ export async function saveShippingCarrierBillingConfig(data: ShippingCarrierBill
     method: "post",
     data,
   });
-  assertUnigateMutation(response, "Failed to save billing configuration.");
+  assertUnigateMutation(response);
   await fetchShippingCarrierBillingConfigs(true);
 }
 
@@ -375,7 +375,7 @@ export async function deleteShippingCarrierBillingConfig(carrierBillingConfigId:
     url: `oms/shipping/carrierBillingConfigs/${carrierBillingConfigId}`,
     method: "delete",
   });
-  assertUnigateMutation(response, "Failed to delete billing configuration.");
+  assertUnigateMutation(response);
   await fetchShippingCarrierBillingConfigs(true);
 }
 

@@ -223,7 +223,7 @@ import {
   modalController,
 } from "@ionic/vue";
 import { closeOutline } from "ionicons/icons";
-import { commonUtil, translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import {
   fetchShippingGatewayAuths,
   saveShippingCarrierConfig,
@@ -311,7 +311,9 @@ async function save() {
     commonUtil.showToast(translate("Carrier mapping saved successfully."));
     dismiss(true);
   } catch (err: any) {
-    commonUtil.showToast(translate(err?.message || "Failed to save carrier mapping."));
+    const serverError = commonUtil.getErrorMessage(err);
+    logger.error(err);
+    commonUtil.showToast(`${translate("Failed to save carrier mapping.")} ${serverError}`);
   } finally {
     isSaving.value = false;
   }

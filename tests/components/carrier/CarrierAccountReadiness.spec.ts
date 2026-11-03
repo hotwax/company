@@ -3,6 +3,11 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@common", () => ({
+  logger: {
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+  },
   translate: (key: string, values: Record<string, unknown> = {}) =>
     Object.entries(values).reduce(
       (message, [name, value]) => message.replace(`{${name}}`, String(value)),

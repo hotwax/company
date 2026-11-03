@@ -17,7 +17,11 @@ vi.mock("@ionic/vue", async (importOriginal) => ({
 }));
 
 vi.mock("@common", () => ({
-  commonUtil: { showToast: harness.showToast },
+  commonUtil: {
+    showToast: harness.showToast,
+    getErrorMessage: (err: any) => err?.message ?? "",
+  },
+  logger: { error: vi.fn() },
   translate: (key: string) => key,
 }));
 
@@ -110,7 +114,7 @@ describe("OrganizationDetails external ID", () => {
 
     expect(harness.updateOrganizationExternalId).toHaveBeenCalledWith("ORG", "99");
     expect(wrapper.find("[data-testid='external-id-input']").exists()).toBe(true);
-    expect(harness.showToast).toHaveBeenCalledWith("Update failed");
+    expect(harness.showToast).toHaveBeenCalledWith("Failed to update external ID. Update failed");
   });
 
   it("shows an unmapped value without edit controls to a read-only user", async () => {

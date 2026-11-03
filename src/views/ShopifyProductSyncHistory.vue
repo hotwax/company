@@ -274,9 +274,10 @@ async function loadHistory() {
     await fetchHistoryPage(loadToken);
   } catch (error: any) {
     if (isStaleHistoryLoad(loadToken)) return;
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
     loadErrorMessage.value = getErrorMessage(error, translate("Failed to load product sync history"));
-    commonUtil.showToast(translate("Failed to load product sync history"));
+    commonUtil.showToast(`${translate("Failed to load product sync history")}. ${serverError}`);
     historyRuns.value = [];
     hasMoreBackendHistory.value = false;
   } finally {
@@ -647,9 +648,10 @@ async function loadMoreHistory(event: CustomEvent) {
     await fetchHistoryPage(loadToken);
   } catch (error: any) {
     if (isStaleHistoryLoad(loadToken)) return;
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
     historyRuns.value = historyRuns.value.slice(0, previousRunCount);
-    commonUtil.showToast(translate("Failed to load product sync history"));
+    commonUtil.showToast(`${translate("Failed to load product sync history")}. ${serverError}`);
     hasMoreBackendHistory.value = false;
   } finally {
     isLoadingMore.value = false;
@@ -680,8 +682,9 @@ async function downloadRawShopifyFile(run: ShopifyProductSyncHistoryRun) {
     downloadTextFile(fileContent, getRawShopifyFileName(downloadableRun));
     commonUtil.showToast(translate("File downloaded successfully"));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(`Failed to download raw Shopify file for message ${run.id}`, error);
-    commonUtil.showToast(translate("Failed to download raw Shopify file"));
+    commonUtil.showToast(`${translate("Failed to download raw Shopify file")}. ${serverError}`);
   }
 }
 
@@ -703,8 +706,9 @@ async function downloadFailedRecordsFile(run: ShopifyProductSyncHistoryRun) {
     downloadTextFile(fileContent, getFailedRecordsFileName(downloadableRun));
     commonUtil.showToast(translate("File downloaded successfully"));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(`Failed to download failed records file for message ${run.id}`, error);
-    commonUtil.showToast(translate("Failed to download failed records file"));
+    commonUtil.showToast(`${translate("Failed to download failed records file")}. ${serverError}`);
   }
 }
 

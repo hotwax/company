@@ -90,8 +90,9 @@ const renameShipmentMethod = async () => {
               commonUtil.showToast(translate("Shipment method renamed successfully."));
               emit("mutation-complete");
             } catch (err) {
+              const serverError = commonUtil.getErrorMessage(err);
               logger.error("Failed to rename shipment method", err);
-              commonUtil.showToast(translate("Failed to rename shipment method."));
+              commonUtil.showToast(`${translate("Failed to rename shipment method.")} ${serverError}`);
             }
           }
         },
@@ -127,8 +128,9 @@ const editDeliveryDays = async () => {
               commonUtil.showToast(translate("Delivery days updated."));
               emit("mutation-complete");
             } catch (err) {
+              const serverError = commonUtil.getErrorMessage(err);
               logger.error("Failed to update delivery days", err);
-              commonUtil.showToast(translate("Failed to update delivery days."));
+              commonUtil.showToast(`${translate("Failed to update delivery days.")} ${serverError}`);
             }
           }
         },
@@ -162,8 +164,9 @@ const editCarrierCode = async () => {
               commonUtil.showToast(translate("Carrier code updated."));
               emit("mutation-complete");
             } catch (err) {
+              const serverError = commonUtil.getErrorMessage(err);
               logger.error("Failed to update carrier code", err);
-              commonUtil.showToast(translate("Failed to update carrier code."));
+              commonUtil.showToast(`${translate("Failed to update carrier code.")} ${serverError}`);
             }
           }
         },
@@ -199,8 +202,9 @@ const removeCarrierShipmentMethod = async () => {
     closePopover();
     emit("mutation-complete");
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error("Failed to remove carrier shipment method", err);
-    commonUtil.showToast(translate("Failed to remove shipment method."));
+    commonUtil.showToast(`${translate("Failed to remove shipment method.")} ${serverError}`);
   }
 };
 </script>

@@ -100,8 +100,9 @@ const createShipmentMethod = async () => {
     commonUtil.showToast(translate("Shipment method created successfully."));
     modalController.dismiss({ created: true, shipmentMethodTypeId });
   } catch (err: any) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error("Failed to create shipment method", err);
-    commonUtil.showToast(translate("Failed to create shipment method."));
+    commonUtil.showToast(`${translate("Failed to create shipment method.")} ${serverError}`);
   } finally {
     saving.value = false;
   }

@@ -298,8 +298,9 @@ async function createPaymentMethod() {
     commonUtil.showToast(translate("Payment method created successfully"));
     showCreatePaymentMethodModal.value = false;
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to create payment method"));
+    commonUtil.showToast(`${translate("Failed to create payment method")}. ${serverError}`);
     return;
   } finally {
     emitter.emit("dismissLoader");
@@ -355,8 +356,9 @@ async function saveMapping(paymentMethodTypeId: string) {
     await shopMutations.refreshTypeMappings();
     editingItemId.value = "";
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update mapping"));
+    commonUtil.showToast(`${translate("Failed to update mapping")}. ${serverError}`);
   }
   emitter.emit("dismissLoader");
 }
@@ -390,8 +392,9 @@ async function saveAllDirtyMappings() {
     await shopMutations.refreshTypeMappings();
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to save some mappings"));
+    commonUtil.showToast(`${translate("Failed to save some mappings")}. ${serverError}`);
   }
   emitter.emit("dismissLoader");
 }
