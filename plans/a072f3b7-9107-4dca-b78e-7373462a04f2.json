@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "id": "a072f3b7-9107-4dca-b78e-7373462a04f2",
+  "repo": "hotwax/company",
+  "actor": "ymaheshwari1",
+  "toolsSha": "535d0999d45950d6c83d80838fb53db454595235",
+  "action": "publish",
+  "environment": "prod",
+  "version": "v2.10.0,v2.9.0",
+  "targetDefault": null,
+  "build": [
+    "v2.10.0",
+    "v2.9.0"
+  ],
+  "added": [
+    "v2.10.0"
+  ],
+  "replaced": [
+    "v2.9.0"
+  ],
+  "removed": [],
+  "retained": [
+    "v2.9.0",
+    "v2.6.0",
+    "v2.2.2",
+    "v2.10.0"
+  ],
+  "previousDefault": "v2.9.0",
+  "nextDefault": "v2.9.0",
+  "rootChanges": false,
+  "confirmation": "PUBLISH TO PRODUCTION",
+  "app": {
+    "id": "company",
+    "repo": "hotwax/company",
+    "name": "company"
+  },
+  "target": {
+    "project": "digital-commerce-71eb8",
+    "site": "hotwax-company",
+    "environment": "prod",
+    "origin": "https://hotwax-company.web.app"
+  },
+  "baseFingerprint": "1dc91ff680dbd95c0367b16716aaf736e3d89d11816fb2aef5d48a1159b849d0",
+  "baseRelease": "sites/hotwax-company/channels/live/releases/1792917822004000",
+  "sources": [
+    {
+      "version": "v2.10.0",
+      "appCommit": "c66903dd73bd2b22dcf2e4f0efff7f290443ee79",
+      "frameworkCommit": "535d0999d45950d6c83d80838fb53db454595235",
+      "frameworkPin": "v1.13.2",
+      "appId": "COMPANY",
+      "config": {
+        "appId": "COMPANY",
+        "environmentTypeId": "AppEnvDev",
+        "buildVersion": ""
+      }
+    },
+    {
+      "version": "v2.9.0",
+      "appCommit": "2132a58898b3dcf672a6674b39d4353ad5f7bb49",
+      "frameworkCommit": "1b7caf1df647fdb229e7aba365a7716a07635ccf",
+      "frameworkPin": "1b7caf1df647fdb229e7aba365a7716a07635ccf",
+      "appId": "COMPANY",
+      "config": {
+        "appId": "COMPANY",
+        "environmentTypeId": "AppEnvDev",
+        "buildVersion": ""
+      }
+    }
+  ],
+  "sourceCommits": [
+    {
+      "version": "v2.10.0",
+      "appCommit": "c66903dd73bd2b22dcf2e4f0efff7f290443ee79",
+      "frameworkCommit": "535d0999d45950d6c83d80838fb53db454595235",
+      "frameworkPin": "v1.13.2",
+      "appId": "COMPANY"
+    },
+    {
+      "version": "v2.9.0",
+      "appCommit": "2132a58898b3dcf672a6674b39d4353ad5f7bb49",
+      "frameworkCommit": "1b7caf1df647fdb229e7aba365a7716a07635ccf",
+      "frameworkPin": "1b7caf1df647fdb229e7aba365a7716a07635ccf",
+      "appId": "COMPANY"
+    }
+  ],
+  "createdAt": "2026-11-03T11:12:56.174Z",
+  "expiresAt": "2026-11-03T12:12:56.174Z",
+  "writable": true,
+  "warnings": [
+    "Already hosted and rebuilt in place: v2.9.0."
+  ]
+}
