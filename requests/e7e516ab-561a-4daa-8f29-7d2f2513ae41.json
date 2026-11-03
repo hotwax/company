@@ -6,8 +6,19 @@
   "action": "publish",
   "version": "v2.10.0",
   "actor": "ymaheshwari1",
-  "status": "running",
+  "status": "failed",
   "createdAt": "2026-11-03T09:45:21.127Z",
-  "steps": [],
-  "runUrl": "https://github.com/hotwax/company/actions/runs/41613521215"
+  "steps": [
+    {
+      "message": "Checking out v2.10.0",
+      "at": "2026-11-03T09:45:27.299Z"
+    },
+    {
+      "message": "Installing pinned dependencies for v2.10.0",
+      "at": "2026-11-03T09:45:29.599Z"
+    }
+  ],
+  "runUrl": "https://github.com/hotwax/company/actions/runs/41613521215",
+  "error": "pnpm failed (1). Inspect the isolated source checkout; no deployment was published.",
+  "finishedAt": "2026-11-03T09:45:30.139Z"
 }
