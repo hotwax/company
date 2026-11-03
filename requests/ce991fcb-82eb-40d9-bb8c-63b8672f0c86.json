@@ -6,8 +6,79 @@
   "action": "publish",
   "version": "v2.10.0",
   "actor": "ymaheshwari1",
-  "status": "running",
+  "status": "completed",
   "createdAt": "2026-11-03T10:26:11.786Z",
   "steps": [],
-  "runUrl": "https://github.com/hotwax/company/actions/runs/41619190264"
+  "runUrl": "https://github.com/hotwax/company/actions/runs/41619190264",
+  "plan": {
+    "schemaVersion": 1,
+    "id": "ce991fcb-82eb-40d9-bb8c-63b8672f0c86",
+    "repo": "hotwax/company",
+    "actor": "ymaheshwari1",
+    "toolsSha": "535d0999d45950d6c83d80838fb53db454595235",
+    "action": "publish",
+    "environment": "prod",
+    "version": "v2.10.0",
+    "targetDefault": null,
+    "build": [
+      "v2.10.0"
+    ],
+    "added": [
+      "v2.10.0"
+    ],
+    "replaced": [],
+    "removed": [],
+    "retained": [
+      "v2.9.0",
+      "v2.6.0",
+      "v2.2.2",
+      "v2.10.0"
+    ],
+    "previousDefault": "v2.9.0",
+    "nextDefault": "v2.9.0",
+    "rootChanges": false,
+    "confirmation": "PUBLISH TO PRODUCTION",
+    "app": {
+      "id": "company",
+      "repo": "hotwax/company",
+      "name": "company"
+    },
+    "target": {
+      "project": "digital-commerce-71eb8",
+      "site": "hotwax-company",
+      "environment": "prod",
+      "origin": "https://hotwax-company.web.app"
+    },
+    "baseFingerprint": "1dc91ff680dbd95c0367b16716aaf736e3d89d11816fb2aef5d48a1159b849d0",
+    "baseRelease": "sites/hotwax-company/channels/live/releases/1792917822004000",
+    "sources": [
+      {
+        "version": "v2.10.0",
+        "appCommit": "c66903dd73bd2b22dcf2e4f0efff7f290443ee79",
+        "frameworkCommit": "535d0999d45950d6c83d80838fb53db454595235",
+        "frameworkPin": "v1.13.2",
+        "appId": "COMPANY",
+        "config": {
+          "appId": "COMPANY",
+          "environmentTypeId": "AppEnvDev",
+          "buildVersion": ""
+        }
+      }
+    ],
+    "sourceCommits": [
+      {
+        "version": "v2.10.0",
+        "appCommit": "c66903dd73bd2b22dcf2e4f0efff7f290443ee79",
+        "frameworkCommit": "535d0999d45950d6c83d80838fb53db454595235",
+        "frameworkPin": "v1.13.2",
+        "appId": "COMPANY"
+      }
+    ],
+    "createdAt": "2026-11-03T10:26:17.440Z",
+    "expiresAt": "2026-11-03T11:26:17.440Z",
+    "writable": true,
+    "warnings": [],
+    "planSha": "889f2efe6556b889815f4d21a2b0624701e8687a"
+  },
+  "finishedAt": "2026-11-03T10:26:20.344Z"
 }
