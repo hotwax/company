@@ -6,8 +6,79 @@
   "action": "default",
   "version": "v2.10.1",
   "actor": "ymaheshwari1",
-  "status": "running",
+  "status": "completed",
   "createdAt": "2026-11-03T13:46:00.471Z",
   "steps": [],
-  "runUrl": "https://github.com/hotwax/company/actions/runs/41647195204"
+  "runUrl": "https://github.com/hotwax/company/actions/runs/41647195204",
+  "plan": {
+    "schemaVersion": 1,
+    "id": "81ea685c-b6ca-41d2-8ef7-4bd5e2cf943f",
+    "repo": "hotwax/company",
+    "actor": "ymaheshwari1",
+    "toolsSha": "2d81ce390bc5d45bf926fcea3a4ff5acbdd1254e",
+    "action": "default",
+    "environment": "prod",
+    "version": "v2.10.1",
+    "targetDefault": null,
+    "build": [
+      "v2.10.1"
+    ],
+    "added": [],
+    "replaced": [],
+    "removed": [],
+    "retained": [
+      "v2.10.1",
+      "v2.9.0",
+      "v2.6.0",
+      "v2.2.2"
+    ],
+    "previousDefault": "v2.9.0",
+    "nextDefault": "v2.10.1",
+    "rootChanges": true,
+    "confirmation": "PUBLISH TO PRODUCTION",
+    "app": {
+      "id": "company",
+      "repo": "hotwax/company",
+      "name": "company"
+    },
+    "target": {
+      "project": "digital-commerce-71eb8",
+      "site": "hotwax-company",
+      "environment": "prod",
+      "origin": "https://hotwax-company.web.app"
+    },
+    "baseFingerprint": "d9dfb30fff0847865079d54df9ae0eb36c8e595e9363e30a8f5ecbe80fc746fd",
+    "baseRelease": "sites/hotwax-company/channels/live/releases/1793713236721000",
+    "sources": [
+      {
+        "version": "v2.10.1",
+        "appCommit": "143de5652be6b7ef02d795c5bede57828ce67763",
+        "frameworkCommit": "2d81ce390bc5d45bf926fcea3a4ff5acbdd1254e",
+        "frameworkPin": "v1.13.3",
+        "appId": "COMPANY",
+        "config": {
+          "appId": "COMPANY",
+          "environmentTypeId": "AppEnvDev",
+          "buildVersion": ""
+        }
+      }
+    ],
+    "sourceCommits": [
+      {
+        "version": "v2.10.1",
+        "appCommit": "143de5652be6b7ef02d795c5bede57828ce67763",
+        "frameworkCommit": "2d81ce390bc5d45bf926fcea3a4ff5acbdd1254e",
+        "frameworkPin": "v1.13.3",
+        "appId": "COMPANY"
+      }
+    ],
+    "createdAt": "2026-11-03T13:46:05.282Z",
+    "expiresAt": "2026-11-03T14:46:05.282Z",
+    "writable": true,
+    "warnings": [
+      "Users of the main URL receive this rebuilt Default. Pinned releases remain hosted."
+    ],
+    "planSha": "08fed6846be2c5d4f9867ab50a6fc56abf976dce"
+  },
+  "finishedAt": "2026-11-03T13:46:08.082Z"
 }
