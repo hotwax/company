@@ -553,6 +553,25 @@ export const companySchema = defineSchema({
     indexes: ["logContentId", "fetchedAt"],
   }),
 
+  /**
+   * The printable documents customers can customize (packing slip, packing slip and label, pick list) —
+   * class C, fetched when the Document Templates screens open and after a publish. One row per document
+   * type: its live template's current version, and the named templates in its library.
+   * `liveVersionName` is what a publish passes as `expectedLiveVersionName`.
+   */
+  documentTemplates: defineEntity({
+    primaryKey: "documentTypeId",
+    fields: {
+      documentTypeId: "text",
+      description: "text",
+      liveVersionName: "text",
+      liveVersionDate: "date",
+      liveUserId: "text",
+      liveTemplateNames: ["text"],
+      templates: [{ templateName: "text", versionName: "text", versionDate: "date", userId: "text", isLive: "structured" }],
+    },
+  }),
+
   // =============================================================================================
   // NetSuite order push — the rule-group export path (co.hotwax.netsuite.OrderServices)
   //

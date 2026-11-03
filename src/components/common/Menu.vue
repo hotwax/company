@@ -63,7 +63,7 @@
           <ion-label>{{ translate("Settings") }}</ion-label>
         </ion-item-divider>
 
-        <ion-menu-toggle v-for="(p, i) in settingsPages" :key="'settings-' + i" :auto-hide="false">
+        <ion-menu-toggle v-for="(p, i) in visibleSettingsPages" :key="'settings-' + i" :auto-hide="false">
           <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedSettingsIndex === i }">
             <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
             <ion-label>{{ translate(p.title) }}</ion-label>
@@ -98,7 +98,7 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, closeCircleOutline, earthOutline, keyOutline, layersOutline, linkOutline, mailOutline, notificationsOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, closeCircleOutline, documentTextOutline, earthOutline, keyOutline, layersOutline, linkOutline, mailOutline, notificationsOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed, onMounted } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import { useMaargConfig } from "@/composables/useSeed";
@@ -284,12 +284,20 @@ const agentPages = [
   }
 ];
 
-const settingsPages = [
+const settingsPages: Array<{ title: string; url: string; childRoutes?: string[]; permission?: string; iosIcon: string; mdIcon: string }> = [
   {
     title: "Rejection Reasons",
     url: "/rejection-reasons",
     iosIcon: closeCircleOutline,
     mdIcon: closeCircleOutline,
+  },
+  {
+    title: "Document Templates",
+    url: "/document-templates",
+    childRoutes: ["/document-templates/"],
+    permission: Actions.APP_DOCUMENT_TEMPLATES_VIEW,
+    iosIcon: documentTextOutline,
+    mdIcon: documentTextOutline,
   },
   {
     title: "App Version",
@@ -304,6 +312,9 @@ const settingsPages = [
     mdIcon: settingsOutline,
   }
 ];
+
+const visibleSettingsPages = computed(() =>
+  settingsPages.filter((screen) => !screen.permission || hasPermission(screen.permission)))
 
 const selectedIndex = computed(() => {
   const path = router.currentRoute.value.path
@@ -338,7 +349,7 @@ const selectedUserIndex = computed(() => {
 const selectedSettingsIndex = computed(() => {
   const path = router.currentRoute.value.path
 
-  return settingsPages.findIndex((screen) => screen.url === path)
+  return visibleSettingsPages.value.findIndex((screen) => screen.url === path || screen.childRoutes?.some((route) => path.startsWith(route)))
 })
 </script>
 
