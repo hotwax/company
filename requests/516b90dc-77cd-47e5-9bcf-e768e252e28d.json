@@ -6,8 +6,31 @@
   "action": "",
   "version": null,
   "actor": "ymaheshwari1",
-  "status": "running",
+  "status": "completed",
   "createdAt": "2026-11-03T13:43:43.526Z",
   "steps": [],
-  "runUrl": "https://github.com/hotwax/company/actions/runs/41646864014"
+  "runUrl": "https://github.com/hotwax/company/actions/runs/41646864014",
+  "hosting": {
+    "available": true,
+    "target": {
+      "project": "digital-commerce-71eb8",
+      "site": "hotwax-company",
+      "environment": "prod",
+      "origin": "https://hotwax-company.web.app"
+    },
+    "versions": [
+      "v2.10.1",
+      "v2.9.0",
+      "v2.6.0",
+      "v2.2.2"
+    ],
+    "defaultVersion": "v2.9.0",
+    "configuredEnvironment": "AppEnvProd",
+    "defaultSource": "Hosting manifest",
+    "checkedAt": "2026-11-03T13:43:46.511Z",
+    "deployedAt": "2026-11-03T13:40:36.721Z",
+    "release": "sites/hotwax-company/channels/live/releases/1793713236721000",
+    "fileCount": 1848
+  },
+  "finishedAt": "2026-11-03T13:43:48.176Z"
 }
