@@ -8,13 +8,14 @@
   },
   "versions": [
     "v2.10.0",
-    "v2.9.0"
+    "v2.9.0",
+    "v2.8.1"
   ],
   "defaultVersion": "v2.10.0",
   "configuredEnvironment": "AppEnvUAT",
-  "defaultSource": "Compiled build metadata",
-  "checkedAt": "2026-11-03T10:52:41.325Z",
-  "deployedAt": "2026-11-03T10:08:33.572Z",
-  "release": "sites/hotwax-company-uat/channels/live/releases/1793700513572000",
-  "fileCount": 987
+  "defaultSource": "Hosting manifest",
+  "checkedAt": "2026-11-03T10:56:26.066Z",
+  "deployedAt": "2026-11-03T10:56:23.639Z",
+  "release": "sites/hotwax-company-uat/channels/live/releases/1793703383639000",
+  "fileCount": 1312
 }
