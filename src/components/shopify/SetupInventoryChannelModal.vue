@@ -16,7 +16,6 @@
       <ion-item lines="none">
         <ion-label>
           {{ translate("Choose a channel type") }}
-          <p>{{ translate("What this Shopify location shows for the group's facilities") }}</p>
         </ion-label>
       </ion-item>
       <ion-radio-group v-model="channelType">
@@ -39,7 +38,6 @@
       <ion-item lines="none">
         <ion-label>
           {{ translate("Choose a facility group") }}
-          <p>{{ translate("Inventory across every facility in this group is aggregated into one Shopify location") }}</p>
         </ion-label>
       </ion-item>
 
@@ -54,33 +52,47 @@
         </ion-label>
       </ion-item>
 
-      <ion-radio-group v-else v-model="selectedGroupId">
-        <ion-item v-for="group in channelGroups" :key="group.facilityGroupId" :disabled="!!group.mappedChannelId">
-          <ion-radio :value="group.facilityGroupId" label-placement="end" justify="start">
-            <ion-label class="ion-text-wrap">
-              {{ group.facilityGroupName || group.facilityGroupId }}
-              <p>{{ group.facilityGroupId }}</p>
-              <p v-if="group.mappedChannelId" class="already-mapped">
-                {{ translate("Already mapped to a Shopify location for this connection") }}
-              </p>
-            </ion-label>
-          </ion-radio>
-          <div slot="end" class="group-stats">
-            <ion-chip outline :color="group.storeCount ? 'primary' : 'medium'">
-              {{ group.storeCount }} {{ group.storeCount === 1 ? translate("store") : translate("stores") }}
-            </ion-chip>
-            <ion-chip outline :color="group.warehouseCount ? 'primary' : 'medium'">
-              {{ group.warehouseCount }} {{ group.warehouseCount === 1 ? translate("warehouse") : translate("warehouses") }}
-            </ion-chip>
-            <ion-chip outline :color="group.configCount ? 'warning' : 'medium'">
-              {{ group.configCount }} {{ translate("config") }}
-            </ion-chip>
-            <ion-chip v-if="group.otherCount" outline color="medium">
-              {{ group.otherCount }} {{ translate("other") }}
-            </ion-chip>
-          </div>
+      <template v-else>
+        <ion-searchbar
+          v-if="channelGroups.length > 3"
+          v-model="groupSearchQuery"
+          :placeholder="translate('Search facility groups')"
+        />
+
+        <ion-item v-if="!filteredChannelGroups.length" lines="none">
+          <ion-label class="ion-text-wrap ion-text-center">
+            <p>{{ translate('No facility groups found for "{query}"', { query: groupSearchQuery }) }}</p>
+          </ion-label>
         </ion-item>
-      </ion-radio-group>
+
+        <ion-radio-group v-else v-model="selectedGroupId">
+          <ion-item v-for="group in filteredChannelGroups" :key="group.facilityGroupId" :disabled="!!group.mappedChannelId">
+            <ion-radio :value="group.facilityGroupId" label-placement="end" justify="start">
+              <ion-label class="ion-text-wrap">
+                {{ group.facilityGroupName || group.facilityGroupId }}
+                <p>{{ group.facilityGroupId }}</p>
+                <p v-if="group.mappedChannelId" class="already-mapped">
+                  {{ translate("Already mapped to a Shopify location for this connection") }}
+                </p>
+              </ion-label>
+            </ion-radio>
+            <div slot="end" class="group-stats">
+              <ion-chip outline :color="group.storeCount ? 'primary' : 'medium'">
+                {{ group.storeCount }} {{ group.storeCount === 1 ? translate("store") : translate("stores") }}
+              </ion-chip>
+              <ion-chip outline :color="group.warehouseCount ? 'primary' : 'medium'">
+                {{ group.warehouseCount }} {{ group.warehouseCount === 1 ? translate("warehouse") : translate("warehouses") }}
+              </ion-chip>
+              <ion-chip outline :color="group.configCount ? 'warning' : 'medium'">
+                {{ group.configCount }} {{ translate("config") }}
+              </ion-chip>
+              <ion-chip v-if="group.otherCount" outline color="medium">
+                {{ group.otherCount }} {{ translate("other") }}
+              </ion-chip>
+            </div>
+          </ion-item>
+        </ion-radio-group>
+      </template>
     </template>
 
     <!-- ---------------------------------------------------------------- step 2 -->
@@ -89,9 +101,8 @@
         <ion-label>
           {{ translate("Choose a Shopify location") }}
           <p>
-            {{ translate("Aggregate inventory for") }}
+            {{ translate("Target location for") }}
             <strong>{{ selectedGroup?.facilityGroupName || selectedGroupId }}</strong>
-            {{ translate("is pushed to this location") }}
           </p>
         </ion-label>
       </ion-item>
@@ -129,29 +140,31 @@
         </ion-radio-group>
 
         <template v-if="parkingSetup && selectedLocationId">
-          <ion-item lines="none">
-            <ion-label class="ion-text-wrap">
-              {{ translate("Store parking facility") }}
-              <p>{{ translate("Orders waiting on this inventory show at this location through the store's {purpose} facility. It is mapped to the location and made the store's only one.", { purpose: parkingSetup.purposeEnumId }) }}</p>
-            </ion-label>
-          </ion-item>
-          <ion-item v-if="!parkingCandidates.length" lines="none">
-            <ion-icon :icon="warningOutline" slot="start" color="warning" />
-            <ion-label class="ion-text-wrap">
-              {{ translate("No {type} facility exists. Create a parking facility first.", { type: parkingSetup.facilityTypeId }) }}
-            </ion-label>
-          </ion-item>
-          <ion-radio-group v-else v-model="selectedParkingFacilityId">
-            <ion-item v-for="facility in parkingCandidates" :key="facility.facilityId">
-              <ion-radio :value="facility.facilityId" label-placement="end" justify="start">
-                <ion-label class="ion-text-wrap">
-                  {{ facility.facilityName || facility.facilityId }}
-                  <p>{{ facility.facilityId }}</p>
-                  <p v-if="facility.current">{{ translate("Current store parking") }}</p>
-                </ion-label>
-              </ion-radio>
+          <div class="parking-setup-section">
+            <ion-item lines="none">
+              <ion-label class="ion-text-wrap">
+                <h3>{{ translate("Store parking facility") }}</h3>
+                <p>{{ translate("Orders route to the selected parking facility") }}</p>
+              </ion-label>
             </ion-item>
-          </ion-radio-group>
+            <ion-item v-if="!parkingCandidates.length" lines="none">
+              <ion-icon :icon="warningOutline" slot="start" color="warning" />
+              <ion-label class="ion-text-wrap">
+                {{ translate("No {type} facility exists. Create a parking facility first.", { type: parkingSetup.facilityTypeId }) }}
+              </ion-label>
+            </ion-item>
+            <ion-radio-group v-else v-model="selectedParkingFacilityId">
+              <ion-item v-for="facility in parkingCandidates" :key="facility.facilityId">
+                <ion-radio :value="facility.facilityId" label-placement="end" justify="start">
+                  <ion-label class="ion-text-wrap">
+                    {{ facility.facilityName || facility.facilityId }}
+                    <p>{{ facility.facilityId }}</p>
+                    <p v-if="facility.current">{{ translate("Current store parking") }}</p>
+                  </ion-label>
+                </ion-radio>
+              </ion-item>
+            </ion-radio-group>
+          </div>
         </template>
 
         <ion-item v-if="excludedByFacility || excludedByChannel" lines="none">
@@ -179,6 +192,13 @@
           {{ translate("Back") }}
         </ion-button>
       </ion-buttons>
+      <ion-note
+        v-if="step === 2 && parkingSetup && selectedLocationId && !selectedParkingFacilityId"
+        color="warning"
+        class="parking-hint"
+      >
+        {{ translate("Select a parking facility") }}
+      </ion-note>
       <ion-buttons slot="end">
         <ion-button
           v-if="step === 0"
@@ -213,7 +233,7 @@
 <script setup lang="ts">
 import {
   IonBadge, IonButton, IonButtons, IonChip, IonContent, IonFooter, IonHeader, IonIcon, IonItem,
-  IonLabel, IonRadio, IonRadioGroup, IonSpinner, IonTitle, IonToolbar, modalController,
+  IonLabel, IonNote, IonRadio, IonRadioGroup, IonSearchbar, IonSpinner, IonTitle, IonToolbar, modalController,
 } from "@ionic/vue";
 import { closeOutline, warningOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
@@ -325,6 +345,16 @@ const channelGroups = computed(() => facilityGroups.value
   })
   .sort((a: any, b: any) => String(a.facilityGroupName || a.facilityGroupId)
     .localeCompare(String(b.facilityGroupName || b.facilityGroupId))));
+
+const groupSearchQuery = ref("");
+const filteredChannelGroups = computed(() => {
+  const query = groupSearchQuery.value.trim().toLowerCase();
+  if(!query) return channelGroups.value;
+  return channelGroups.value.filter((group: any) =>
+    String(group.facilityGroupName || "").toLowerCase().includes(query) ||
+    String(group.facilityGroupId || "").toLowerCase().includes(query)
+  );
+});
 
 const selectedGroup = computed(() =>
   channelGroups.value.find((g: any) => g.facilityGroupId === selectedGroupId.value));
@@ -536,6 +566,7 @@ async function createChannel() {
 }
 
 function closeModal() {
+  groupSearchQuery.value = "";
   modalController.dismiss({ dismissed: true });
 }
 </script>
@@ -550,5 +581,18 @@ function closeModal() {
 
 .already-mapped {
   color: var(--ion-color-medium);
+}
+
+.parking-setup-section {
+  border: 1px solid var(--ion-color-step-150, #e0e0e0);
+  border-radius: 8px;
+  margin: var(--spacer-base) var(--spacer-sm);
+  padding-block: var(--spacer-xs);
+  background: var(--ion-color-step-50, rgba(var(--ion-color-primary-rgb, 56, 128, 255), 0.03));
+}
+
+.parking-hint {
+  font-size: 13px;
+  padding-inline-end: var(--spacer-sm);
 }
 </style>
