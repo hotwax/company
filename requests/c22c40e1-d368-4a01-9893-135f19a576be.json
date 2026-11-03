@@ -6,8 +6,58 @@
   "action": "default",
   "version": "v2.10.1",
   "actor": "ymaheshwari1",
-  "status": "running",
+  "status": "completed",
   "createdAt": "2026-11-03T13:49:06.807Z",
-  "steps": [],
-  "runUrl": "https://github.com/hotwax/company/actions/runs/41647691470"
+  "steps": [
+    {
+      "message": "Checking out v2.10.1 as Default",
+      "at": "2026-11-03T13:49:12.699Z"
+    },
+    {
+      "message": "Installing pinned dependencies for v2.10.1",
+      "at": "2026-11-03T13:49:14.577Z"
+    },
+    {
+      "message": "Building v2.10.1 Default",
+      "at": "2026-11-03T13:49:19.839Z"
+    },
+    {
+      "message": "Uploading 332 built files",
+      "at": "2026-11-03T13:49:56.655Z"
+    },
+    {
+      "message": "Publishing verified Firebase deployment",
+      "at": "2026-11-03T13:51:57.209Z"
+    }
+  ],
+  "runUrl": "https://github.com/hotwax/company/actions/runs/41647691470",
+  "deployment": {
+    "release": "sites/hotwax-company/channels/live/releases/1793713916880000",
+    "version": "sites/hotwax-company/versions/4fd0bec73508c35b",
+    "previousVersion": "sites/hotwax-company/versions/eefdeba5373b1093",
+    "files": 2115
+  },
+  "hosting": {
+    "available": true,
+    "target": {
+      "project": "digital-commerce-71eb8",
+      "site": "hotwax-company",
+      "environment": "prod",
+      "origin": "https://hotwax-company.web.app"
+    },
+    "versions": [
+      "v2.10.1",
+      "v2.9.0",
+      "v2.6.0",
+      "v2.2.2"
+    ],
+    "defaultVersion": "v2.10.1",
+    "configuredEnvironment": "AppEnvProd",
+    "defaultSource": "Hosting manifest",
+    "checkedAt": "2026-11-03T13:51:58.986Z",
+    "deployedAt": "2026-11-03T13:51:56.880Z",
+    "release": "sites/hotwax-company/channels/live/releases/1793713916880000",
+    "fileCount": 2115
+  },
+  "finishedAt": "2026-11-03T13:52:01.044Z"
 }
