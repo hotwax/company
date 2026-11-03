@@ -958,7 +958,7 @@ export const useUserStore = defineStore("user", {
         // Force fetch maarg config information so that the localStorage config gets correctly populated
         useMaargStore().load(true);
       } catch (error: any) {
-        return Promise.reject(new Error(error))
+        return Promise.reject(error)
       }
 
       // Seed the cache HERE, not only from the `isAuthenticated` watcher in App.vue.

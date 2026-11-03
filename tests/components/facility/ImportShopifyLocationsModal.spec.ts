@@ -24,6 +24,7 @@ vi.mock("@common", () => ({
   commonUtil: {
     hasError: harness.hasError,
     showToast: harness.showToast,
+    getErrorMessage: vi.fn((err: any) => err?.message || ""),
   },
   logger: {
     error: harness.loggerError,
@@ -142,7 +143,7 @@ describe("ImportShopifyLocationsModal", () => {
     expect(harness.refreshAfterMutation).not.toHaveBeenCalled();
     expect(harness.addFacility).not.toHaveBeenCalled();
     expect(harness.dismiss).not.toHaveBeenCalled();
-    expect(harness.showToast).toHaveBeenCalledWith("Import failed");
+    expect(harness.showToast).toHaveBeenCalledWith(expect.stringMatching(/^Import failed\./));
   });
 
   it("reports the exact partial association result", async () => {

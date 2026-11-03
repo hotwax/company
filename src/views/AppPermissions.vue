@@ -432,7 +432,10 @@ const saveManageGroups = async () => {
     }
 
     const outcome = await savePermissionGroups(managePermission.value.permissionId, originalGroups, selected)
-    const serverError = outcome.error ? commonUtil.getErrorMessage(outcome.error) : "";
+    const errorData = outcome.error?.response?.data || outcome.error?.data || outcome.error;
+    const serverError = outcome.error
+      ? ((typeof errorData?.error?.message === "string" && errorData.error.message.trim()) || commonUtil.getErrorMessage(outcome.error))
+      : "";
     if(outcome.failed && outcome.succeeded) {
       commonUtil.showToast(`${translate("Some permission assignments were updated, but others failed. The latest state has been reloaded.")} ${serverError}`);
     } else if(outcome.failed) {

@@ -286,7 +286,8 @@ async function createVirtualFacility() {
       throw resp.data;
     }
   } catch (error: any) {
-    const serverError = error?.response?.data?.error?.message || commonUtil.getErrorMessage(error);
+    const data = error?.response?.data || error?.data || error;
+    const serverError = (typeof data?.error?.message === "string" && data.error.message.trim()) || commonUtil.getErrorMessage(error);
     logger.error(error);
     commonUtil.showToast(`${translate('Failed to create parking.')} ${serverError}`);
   }
@@ -313,8 +314,9 @@ async function openVirtualFacilityActionsPopover(event: Event, facility: any) {
         } else {
           throw resp.data;
         }
-      } catch (error) {
-        const serverError = commonUtil.getErrorMessage(error);
+      } catch (error: any) {
+        const data = error?.response?.data || error?.data || error;
+        const serverError = (typeof data?.error?.message === "string" && data.error.message.trim()) || commonUtil.getErrorMessage(error);
         logger.error('Failed to rename parking.', error);
         commonUtil.showToast(`${translate('Failed to rename parking.')} ${serverError}`);
       }
@@ -326,8 +328,9 @@ async function openVirtualFacilityActionsPopover(event: Event, facility: any) {
         } else {
           throw resp.data;
         }
-      } catch (error) {
-        const serverError = commonUtil.getErrorMessage(error);
+      } catch (error: any) {
+        const data = error?.response?.data || error?.data || error;
+        const serverError = (typeof data?.error?.message === "string" && data.error.message.trim()) || commonUtil.getErrorMessage(error);
         logger.error('Failed to archive parking.', error);
         commonUtil.showToast(`${translate('Failed to archive parking.')} ${serverError}`);
       }
@@ -358,8 +361,9 @@ async function unarchiveFacility(archivedFacility: any) {
     } else {
       throw resp.data;
     }
-  } catch (err) {
-    const serverError = commonUtil.getErrorMessage(err);
+  } catch (err: any) {
+    const data = err?.response?.data || err?.data || err;
+    const serverError = (typeof data?.error?.message === "string" && data.error.message.trim()) || commonUtil.getErrorMessage(err);
     logger.error(err);
     commonUtil.showToast(`${translate("Failed to unarchive parking.")} ${serverError}`);
   }

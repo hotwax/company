@@ -10,7 +10,7 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("@common", () => ({
-  commonUtil: { showToast: vi.fn(), hasError: () => false },
+  commonUtil: { showToast: vi.fn(), hasError: () => false, getErrorMessage: vi.fn((err: any) => err?.message || "") },
   emitter: { emit: vi.fn() },
   logger: { error: vi.fn() },
   translate: (key: string) => key,

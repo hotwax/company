@@ -9,10 +9,11 @@ vi.mock("@common", () => ({
   logger: { error: vi.fn() },
   translate: (value: string) => value,
   useDb: () => ({ records: ref([]), hydrated: ref(true) }),
+  useLiveEntity: () => ({ records: ref([]), hydrated: ref(true) }),
 }));
 
 vi.mock("@/db/companyDb", () => ({
-  companyDb: {},
+  companyDb: { tables: {} },
 }));
 
 vi.mock("@/services/appDbSync", () => ({
