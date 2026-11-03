@@ -7,15 +7,14 @@
     "origin": "https://hotwax-company-uat.web.app"
   },
   "versions": [
-    "v2.10.0",
-    "v2.9.0",
-    "v2.8.1"
+    "v2.10.1",
+    "v2.9.0"
   ],
-  "defaultVersion": "v2.10.0",
+  "defaultVersion": "v2.10.1",
   "configuredEnvironment": "AppEnvUAT",
-  "defaultSource": "Hosting manifest",
-  "checkedAt": "2026-11-03T10:56:26.066Z",
-  "deployedAt": "2026-11-03T10:56:23.639Z",
-  "release": "sites/hotwax-company-uat/channels/live/releases/1793703383639000",
-  "fileCount": 1312
+  "defaultSource": "Compiled build metadata",
+  "checkedAt": "2026-11-03T13:33:29.365Z",
+  "deployedAt": "2026-11-03T13:18:41.686Z",
+  "release": "sites/hotwax-company-uat/channels/live/releases/1793711921686000",
+  "fileCount": 987
 }
