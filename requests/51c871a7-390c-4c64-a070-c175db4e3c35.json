@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "51c871a7-390c-4c64-a070-c175db4e3c35",
+  "operation": "plan",
+  "environment": "uat",
+  "action": "publish",
+  "version": "v2.8.1",
+  "actor": "ymaheshwari1",
+  "status": "running",
+  "createdAt": "2026-11-03T10:51:08.055Z",
+  "steps": [],
+  "runUrl": "https://github.com/hotwax/company/actions/runs/41622621857"
+}
