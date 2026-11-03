@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "id": "3d3564da-b647-4a98-9b25-b4dbe445b75f",
+  "repo": "hotwax/company",
+  "actor": "ymaheshwari1",
+  "toolsSha": "2d81ce390bc5d45bf926fcea3a4ff5acbdd1254e",
+  "action": "publish",
+  "environment": "uat",
+  "version": "v2.10.1",
+  "targetDefault": null,
+  "build": [
+    "v2.10.1"
+  ],
+  "added": [],
+  "replaced": [
+    "v2.10.1"
+  ],
+  "removed": [],
+  "retained": [
+    "v2.10.1",
+    "v2.9.0"
+  ],
+  "previousDefault": "v2.10.1",
+  "nextDefault": "v2.10.1",
+  "rootChanges": false,
+  "confirmation": null,
+  "app": {
+    "id": "company",
+    "repo": "hotwax/company",
+    "name": "company"
+  },
+  "target": {
+    "project": "hotwax-digital-commerce-uat",
+    "site": "hotwax-company-uat",
+    "environment": "uat",
+    "origin": "https://hotwax-company-uat.web.app"
+  },
+  "baseFingerprint": "c1108088109f73702367860e47a3301b1116fec9efd1e3fad61ed0e0617fad43",
+  "baseRelease": "sites/hotwax-company-uat/channels/live/releases/1793711921686000",
+  "sources": [
+    {
+      "version": "v2.10.1",
+      "appCommit": "143de5652be6b7ef02d795c5bede57828ce67763",
+      "frameworkCommit": "2d81ce390bc5d45bf926fcea3a4ff5acbdd1254e",
+      "frameworkPin": "v1.13.3",
+      "appId": "COMPANY",
+      "config": {
+        "appId": "COMPANY",
+        "environmentTypeId": "AppEnvDev",
+        "buildVersion": ""
+      }
+    }
+  ],
+  "sourceCommits": [
+    {
+      "version": "v2.10.1",
+      "appCommit": "143de5652be6b7ef02d795c5bede57828ce67763",
+      "frameworkCommit": "2d81ce390bc5d45bf926fcea3a4ff5acbdd1254e",
+      "frameworkPin": "v1.13.3",
+      "appId": "COMPANY"
+    }
+  ],
+  "createdAt": "2026-11-03T13:33:31.299Z",
+  "expiresAt": "2026-11-03T14:33:31.299Z",
+  "writable": true,
+  "warnings": [
+    "Already hosted and rebuilt in place: v2.10.1."
+  ]
+}
