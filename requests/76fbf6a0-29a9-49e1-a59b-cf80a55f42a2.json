@@ -6,8 +6,27 @@
   "action": "publish",
   "version": "v2.10.0",
   "actor": "ymaheshwari1",
-  "status": "running",
+  "status": "failed",
   "createdAt": "2026-11-03T10:28:50.679Z",
-  "steps": [],
-  "runUrl": "https://github.com/hotwax/company/actions/runs/41619547333"
+  "steps": [
+    {
+      "message": "Checking out v2.10.0",
+      "at": "2026-11-03T10:28:56.682Z"
+    },
+    {
+      "message": "Installing pinned dependencies for v2.10.0",
+      "at": "2026-11-03T10:28:57.996Z"
+    },
+    {
+      "message": "Building v2.10.0 version URL",
+      "at": "2026-11-03T10:29:04.463Z"
+    },
+    {
+      "message": "Uploading 332 built files",
+      "at": "2026-11-03T10:30:05.253Z"
+    }
+  ],
+  "runUrl": "https://github.com/hotwax/company/actions/runs/41619547333",
+  "error": "Preserved file changed: /__/firebase/init.js",
+  "finishedAt": "2026-11-03T10:33:00.775Z"
 }
