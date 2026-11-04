@@ -4545,5 +4545,6 @@
   "The product store has {count} active parking facilities for this type; the connector needs exactly one": "The product store has {count} active parking facilities for this type; the connector needs exactly one",
   "Schedule job": "Schedule job",
   "Physical inventory sync jobs": "Physical inventory sync jobs",
-  "Shared maintenance jobs": "Shared maintenance jobs"
+  "Shared maintenance jobs": "Shared maintenance jobs",
+  "Channel publish and reset jobs are created with each inventory channel. Set up a channel first.": "Channel publish and reset jobs are created with each inventory channel. Set up a channel first."
 }

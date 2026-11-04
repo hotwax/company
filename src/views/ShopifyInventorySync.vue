@@ -310,6 +310,15 @@
 
             <!-- STEP 3: SYNC JOBS SCHEDULE -->
             <ion-card-content v-else-if="currentOnboardingStepId === 'jobs'">
+              <ion-item v-if="inventoryChannelsHydrated && !inventoryChannels.length" lines="none" color="light" class="ion-margin-bottom" data-testid="inventory-sync-jobs-no-channel-note">
+                <ion-icon slot="start" :icon="warningOutline" color="warning" />
+                <ion-label class="ion-text-wrap">
+                  <p>{{ translate("Channel publish and reset jobs are created with each inventory channel. Set up a channel first.") }}</p>
+                </ion-label>
+                <ion-button slot="end" fill="outline" size="small" data-testid="inventory-sync-jobs-setup-channel-btn" @click="currentOnboardingStepId = 'channels'">
+                  {{ translate("Set up channel") }}
+                </ion-button>
+              </ion-item>
               <div v-for="section in onboardingJobSections" :key="section.title" class="jobs-queue-section ion-margin-bottom">
                 <ion-item-divider color="light">
                   <ion-label>{{ section.title }}</ion-label>
