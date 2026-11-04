@@ -62,7 +62,10 @@
             </ion-button>
           </ion-item>
           <ion-item>
-            <ion-label>{{ translate('Active') }}</ion-label>
+            <ion-label>
+              {{ translate('Active') }}
+              <p>{{ draftActive ? translate('Job runs on configured schedule') : translate('Job is paused and will not run on schedule') }}</p>
+            </ion-label>
             <ion-toggle slot="end" :checked="draftActive" :disabled="isSaving || !canEdit" @ionChange="draftActive = $event.detail.checked" />
           </ion-item>
         </ion-list>
@@ -77,6 +80,15 @@
               <ion-note slot="end">{{ nextRunLabel }}</ion-note>
             </ion-item>
             <div slot="content">
+              <ion-item v-if="!draftActive" lines="none" color="light">
+                <ion-icon slot="start" :icon="warningOutline" color="warning" />
+                <ion-label class="ion-text-wrap">
+                  <p>{{ translate('Job is paused. Activate it so it runs on this schedule.') }}</p>
+                </ion-label>
+                <ion-button slot="end" fill="outline" size="small" @click="draftActive = true">
+                  {{ translate('Activate') }}
+                </ion-button>
+              </ion-item>
               <!-- Outlined fields sit in padded content, not in an ion-item, whose wrapper clips the outline label. -->
               <div class="ion-padding">
                 <ion-input
@@ -248,7 +260,7 @@ import {
   IonRadio, IonRadioGroup, IonSelect, IonSelectOption, IonSpinner, IonTitle, IonToggle, IonToolbar,
   alertController,
 } from '@ionic/vue';
-import { closeOutline, refreshOutline, saveOutline } from 'ionicons/icons';
+import { closeOutline, refreshOutline, saveOutline, warningOutline } from 'ionicons/icons';
 import cronstrue from 'cronstrue';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { commonUtil, translate } from '@common';

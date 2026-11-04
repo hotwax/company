@@ -143,6 +143,26 @@ describe('job modal content', () => {
   });
 });
 
+describe('job modal paused jobs', () => {
+  it('opens a paused job as paused: no auto-activation, not dirty, nothing to save', async () => {
+    api.detail.mockResolvedValue(job({ paused: 'Y' }));
+    const wrapper = mountModal(); await flushPromises();
+    expect(wrapper.findComponent(IonToggle).props('checked')).toBe(false);
+    expect(dirty(wrapper)).toBe(false);
+    expect(wrapper.findComponent(IonFabButton).props('disabled')).toBe(true);
+  });
+  it('keeps a paused job paused when its schedule is edited, and saves only the schedule', async () => {
+    api.detail.mockResolvedValue(job({ paused: 'Y' }));
+    api.update.mockResolvedValue(undefined);
+    const wrapper = mountModal(); await flushPromises();
+    input(wrapper, 'Quartz cron expression').vm.$emit('update:modelValue', '0 0 0 ? * *'); await flushPromises();
+    expect(wrapper.findComponent(IonToggle).props('checked')).toBe(false);
+    await save(wrapper);
+    expect(api.update).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(api.update.mock.calls[0])).toContain('"paused":"Y"');
+  });
+});
+
 describe('job modal committed writes', () => {
   it('closes a save whose write landed but whose cache refresh failed, without sending it again', async () => {
     api.update.mockRejectedValue(new CacheReconciliationError('serviceJob', { jobName: 'JOB1' }));

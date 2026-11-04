@@ -279,12 +279,12 @@
 
             <ion-card-content v-else-if="currentStep.id === 'products'" class="form-stack">
               <!-- 1. Set shopify primary identifier -->
-              <ion-card>
-                <ion-card-header>
-                  <ion-card-title>{{ translate("Shopify primary identifier") }}</ion-card-title>
-                  <ion-card-subtitle>{{ translate("The identifier controls how Shopify products match HotWax products.") }}</ion-card-subtitle>
-                </ion-card-header>
-                <ion-card-content>
+              <div class="sub-card">
+                <div class="sub-card-header">
+                  <h3>{{ translate("Shopify primary identifier") }}</h3>
+                  <p>{{ translate("The identifier controls how Shopify products match HotWax products.") }}</p>
+                </div>
+                <div class="sub-card-content">
                   <ion-select
                     fill="outline"
                     label-placement="stacked"
@@ -297,15 +297,15 @@
                       {{ identifier.description || identifier.enumId }}
                     </ion-select-option>
                   </ion-select>
-                </ion-card-content>
-              </ion-card>
+                </div>
+              </div>
 
               <!-- 2. List of jobs needed to make sure sync will work for given shop -->
-              <ion-card>
-                <ion-card-header>
-                  <ion-card-title>{{ translate("Product sync jobs") }}</ion-card-title>
-                  <ion-card-subtitle>{{ translate("Review the jobs that move product updates through the sync pipeline") }}</ion-card-subtitle>
-                </ion-card-header>
+              <div class="sub-card">
+                <div class="sub-card-header">
+                  <h3>{{ translate("Product sync jobs") }}</h3>
+                  <p>{{ translate("Review the jobs that move product updates through the sync pipeline") }}</p>
+                </div>
                 <ion-list lines="full">
                   <ion-item button detail :disabled="!syncJobObj" @click="openSyncJobDetails(syncJobObj)">
                     <ion-label>
@@ -329,34 +329,32 @@
                     <ion-icon slot="end" :icon="isBulkOperationPollJobPaused ? pauseCircleOutline : checkmarkCircleOutline" />
                   </ion-item>
                 </ion-list>
-              </ion-card>
+              </div>
 
               <!-- 2.5 Show how many products are in shopify -->
-              <ion-card>
-                <ion-card-content>
+              <div class="sub-card">
+                <div class="sub-card-content">
                   <h1 class="ion-text-center">
                     <AnimatedNumber v-if="shopifyProductCount !== undefined && shopifyProductCount !== null" :value="Number(shopifyProductCount)" />
                     <template v-else>
                       {{ shopifyProductCountLabel }}
                     </template>
                   </h1>
-                </ion-card-content>
+                </div>
                 <ion-item lines="none">
                   <ion-label class="ion-text-center">
                     {{ translate("Products in Shopify") }}
                   </ion-label>
                   <ion-spinner v-if="isShopifyProductCountLoading" slot="end" name="crescent" />
                 </ion-item>
-              </ion-card>
+              </div>
 
               <!-- 3. Product store setting for selecting primary and secondary identifier -->
-              <ion-card>
-                <ion-card-header>
-                  <ion-card-title>{{ translate("Product Identifier") }}</ion-card-title>
-                </ion-card-header>
-                <ion-card-content>
-                  {{ translate("Choosing a product identifier allows you to view products with your preferred identifiers.") }}
-                </ion-card-content>
+              <div class="sub-card">
+                <div class="sub-card-header">
+                  <h3>{{ translate("Product Identifier") }}</h3>
+                  <p>{{ translate("Choosing a product identifier allows you to view products with your preferred identifiers.") }}</p>
+                </div>
                 <ion-item>
                   <ion-select
                     :label="translate('Primary')"
@@ -405,7 +403,7 @@
                     </ion-button>
                   </ion-item>
                 </template>
-              </ion-card>
+              </div>
 
               <div class="actions">
                 <ion-button :disabled="busy.products || !canConfigureProducts" @click="saveProductSetup">
@@ -2821,6 +2819,38 @@ onIonViewDidLeave(() => {
   justify-content: space-between;
   border-top: var(--border-medium);
   padding: var(--spacer-sm);
+}
+
+.sub-card {
+  border: 1px solid var(--ion-color-light-shade, #e0e0e0);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ion-card-background, var(--ion-background-color, #fff));
+}
+
+.sub-card-header {
+  padding: var(--spacer-sm) var(--spacer-sm) var(--spacer-xs);
+}
+
+.sub-card-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--ion-text-color, #000);
+}
+
+.sub-card-header p {
+  margin: 4px 0 0;
+  font-size: 0.875rem;
+  color: var(--ion-color-medium, #666);
+}
+
+.sub-card-content {
+  padding: var(--spacer-sm);
+}
+
+.sub-card ion-list {
+  padding-top: 0;
 }
 
 @media (max-width: 900px) {

@@ -11,12 +11,33 @@
   </ion-header>
 
   <ion-content>
+    <!-- ---------------------------------------------------------------- step 0 -->
+    <template v-if="step === 0">
+      <ion-item lines="none">
+        <ion-label>
+          {{ translate("Choose a channel type") }}
+        </ion-label>
+      </ion-item>
+      <ion-radio-group v-model="channelType">
+        <ion-item v-for="option in channelTypeOptions" :key="option.id" :disabled="!!option.blockedBy">
+          <ion-radio :value="option.id" label-placement="end" justify="start">
+            <ion-label class="ion-text-wrap">
+              {{ option.label }}
+              <p>{{ option.description }}</p>
+              <p v-if="option.blockedBy" class="already-mapped">
+                {{ translate("This shop already has an active channel of this type: {channel}", { channel: option.blockedBy }) }}
+              </p>
+            </ion-label>
+          </ion-radio>
+        </ion-item>
+      </ion-radio-group>
+    </template>
+
     <!-- ---------------------------------------------------------------- step 1 -->
-    <template v-if="step === 1">
+    <template v-else-if="step === 1">
       <ion-item lines="none">
         <ion-label>
           {{ translate("Choose a facility group") }}
-          <p>{{ translate("Inventory across every facility in this group is aggregated into one Shopify location") }}</p>
         </ion-label>
       </ion-item>
 
@@ -31,33 +52,47 @@
         </ion-label>
       </ion-item>
 
-      <ion-radio-group v-else v-model="selectedGroupId">
-        <ion-item v-for="group in channelGroups" :key="group.facilityGroupId" :disabled="!!group.mappedChannelId">
-          <ion-radio :value="group.facilityGroupId" label-placement="end" justify="start">
-            <ion-label class="ion-text-wrap">
-              {{ group.facilityGroupName || group.facilityGroupId }}
-              <p>{{ group.facilityGroupId }}</p>
-              <p v-if="group.mappedChannelId" class="already-mapped">
-                {{ translate("Already mapped to a Shopify location for this connection") }}
-              </p>
-            </ion-label>
-          </ion-radio>
-          <div slot="end" class="group-stats">
-            <ion-chip outline :color="group.storeCount ? 'primary' : 'medium'">
-              {{ group.storeCount }} {{ group.storeCount === 1 ? translate("store") : translate("stores") }}
-            </ion-chip>
-            <ion-chip outline :color="group.warehouseCount ? 'primary' : 'medium'">
-              {{ group.warehouseCount }} {{ group.warehouseCount === 1 ? translate("warehouse") : translate("warehouses") }}
-            </ion-chip>
-            <ion-chip outline :color="group.configCount ? 'warning' : 'medium'">
-              {{ group.configCount }} {{ translate("config") }}
-            </ion-chip>
-            <ion-chip v-if="group.otherCount" outline color="medium">
-              {{ group.otherCount }} {{ translate("other") }}
-            </ion-chip>
-          </div>
+      <template v-else>
+        <ion-searchbar
+          v-if="channelGroups.length > 3"
+          v-model="groupSearchQuery"
+          :placeholder="translate('Search facility groups')"
+        />
+
+        <ion-item v-if="!filteredChannelGroups.length" lines="none">
+          <ion-label class="ion-text-wrap ion-text-center">
+            <p>{{ translate('No facility groups found for "{query}"', { query: groupSearchQuery }) }}</p>
+          </ion-label>
         </ion-item>
-      </ion-radio-group>
+
+        <ion-radio-group v-else v-model="selectedGroupId">
+          <ion-item v-for="group in filteredChannelGroups" :key="group.facilityGroupId" :disabled="!!group.mappedChannelId">
+            <ion-radio :value="group.facilityGroupId" label-placement="end" justify="start">
+              <ion-label class="ion-text-wrap">
+                {{ group.facilityGroupName || group.facilityGroupId }}
+                <p>{{ group.facilityGroupId }}</p>
+                <p v-if="group.mappedChannelId" class="already-mapped">
+                  {{ translate("Already mapped to a Shopify location for this connection") }}
+                </p>
+              </ion-label>
+            </ion-radio>
+            <div slot="end" class="group-stats">
+              <ion-chip outline :color="group.storeCount ? 'primary' : 'medium'">
+                {{ group.storeCount }} {{ group.storeCount === 1 ? translate("store") : translate("stores") }}
+              </ion-chip>
+              <ion-chip outline :color="group.warehouseCount ? 'primary' : 'medium'">
+                {{ group.warehouseCount }} {{ group.warehouseCount === 1 ? translate("warehouse") : translate("warehouses") }}
+              </ion-chip>
+              <ion-chip outline :color="group.configCount ? 'warning' : 'medium'">
+                {{ group.configCount }} {{ translate("config") }}
+              </ion-chip>
+              <ion-chip v-if="group.otherCount" outline color="medium">
+                {{ group.otherCount }} {{ translate("other") }}
+              </ion-chip>
+            </div>
+          </ion-item>
+        </ion-radio-group>
+      </template>
     </template>
 
     <!-- ---------------------------------------------------------------- step 2 -->
@@ -66,9 +101,8 @@
         <ion-label>
           {{ translate("Choose a Shopify location") }}
           <p>
-            {{ translate("Aggregate inventory for") }}
+            {{ translate("Target location for") }}
             <strong>{{ selectedGroup?.facilityGroupName || selectedGroupId }}</strong>
-            {{ translate("is pushed to this location") }}
           </p>
         </ion-label>
       </ion-item>
@@ -105,6 +139,34 @@
           </ion-item>
         </ion-radio-group>
 
+        <template v-if="parkingSetup && selectedLocationId">
+          <ion-list inset>
+            <ion-item lines="none">
+              <ion-label class="ion-text-wrap">
+                <h3>{{ translate("Store parking facility") }}</h3>
+                <p>{{ translate("Orders route to the selected parking facility") }}</p>
+              </ion-label>
+            </ion-item>
+            <ion-item v-if="!parkingCandidates.length" lines="none">
+              <ion-icon :icon="warningOutline" slot="start" color="warning" />
+              <ion-label class="ion-text-wrap">
+                {{ translate("No {type} facility exists. Create a parking facility first.", { type: parkingSetup.facilityTypeId }) }}
+              </ion-label>
+            </ion-item>
+            <ion-radio-group v-else v-model="selectedParkingFacilityId">
+              <ion-item v-for="facility in parkingCandidates" :key="facility.facilityId">
+                <ion-radio :value="facility.facilityId" label-placement="end" justify="start">
+                  <ion-label class="ion-text-wrap">
+                    {{ facility.facilityName || facility.facilityId }}
+                    <p>{{ facility.facilityId }}</p>
+                    <p v-if="facility.current">{{ translate("Current store parking") }}</p>
+                  </ion-label>
+                </ion-radio>
+              </ion-item>
+            </ion-radio-group>
+          </ion-list>
+        </template>
+
         <ion-item v-if="excludedByFacility || excludedByChannel" lines="none">
           <ion-label class="ion-text-wrap">
             <p v-if="excludedByFacility">
@@ -126,13 +188,28 @@
   <ion-footer>
     <ion-toolbar>
       <ion-buttons slot="start">
-        <ion-button v-if="step === 2" @click="step = 1" :disabled="saving">
+        <ion-button v-if="step > 0" @click="step = step === 2 ? 1 : 0" :disabled="saving">
           {{ translate("Back") }}
         </ion-button>
       </ion-buttons>
+      <ion-note
+        v-if="step === 2 && parkingSetup && selectedLocationId && !selectedParkingFacilityId"
+        color="warning"
+        class="parking-hint"
+      >
+        {{ translate("Select a parking facility") }}
+      </ion-note>
       <ion-buttons slot="end">
         <ion-button
-          v-if="step === 1"
+          v-if="step === 0"
+          fill="solid"
+          :disabled="!channelType || !channelDataReady"
+          @click="step = 1"
+        >
+          {{ translate("Next") }}
+        </ion-button>
+        <ion-button
+          v-else-if="step === 1"
           fill="solid"
           :disabled="!selectedGroupId"
           @click="goToLocationStep()"
@@ -142,7 +219,7 @@
         <ion-button
           v-else
           fill="solid"
-          :disabled="!selectedLocationId || saving"
+          :disabled="!selectedLocationId || saving || !channelDataReady || (!!parkingSetup && !selectedParkingFacilityId)"
           @click="createChannel()"
         >
           <ion-spinner v-if="saving" name="crescent" />
@@ -156,13 +233,18 @@
 <script setup lang="ts">
 import {
   IonBadge, IonButton, IonButtons, IonChip, IonContent, IonFooter, IonHeader, IonIcon, IonItem,
-  IonLabel, IonRadio, IonRadioGroup, IonSpinner, IonTitle, IonToolbar, modalController,
+  IonLabel, IonList, IonNote, IonRadio, IonRadioGroup, IonSearchbar, IonSpinner, IonTitle, IonToolbar, modalController,
 } from "@ionic/vue";
 import { closeOutline, warningOutline } from "ionicons/icons";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { commonUtil, logger, translate } from "@common";
-import { useFacilityGroups, useGroupFacilities } from "@/composables/useFacilities";
+import { useEffectiveNow } from "@/composables/useEffectiveNow";
+import { useFacilities, useFacilityGroups, useGroupFacilities } from "@/composables/useFacilities";
 import {
+  CHANNEL_TYPE,
+  FUTURE_CHANNEL_PARKING,
+  channelTypeOf,
+  configureFutureChannelParking,
   createInventoryChannel,
   ensureChannelEventPublisherJob,
   ensureChannelResetJob,
@@ -170,6 +252,8 @@ import {
   fetchLocationsFromShopify,
   fetchShopifyShopLocations,
   useInventoryChannels,
+  useProductStoreFacilityPurposes,
+  useShopifyShop,
   useShopifySyncContext,
 } from "@/composables/useShopify";
 import { isEffectiveNow } from "@common/db";
@@ -187,7 +271,9 @@ const STORE_TYPES = ["RETAIL_STORE", "OUTLET_STORE"];
 const WAREHOUSE_TYPES = ["WAREHOUSE"];
 const CONFIG_TYPES = ["CONFIGURATION"];
 
-const step = ref<1 | 2>(1);
+const step = ref<0 | 1 | 2>(0);
+const channelType = ref<string>(CHANNEL_TYPE.physical);
+const selectedParkingFacilityId = ref("");
 const selectedGroupId = ref("");
 const selectedLocationId = ref("");
 const saving = ref(false);
@@ -198,16 +284,41 @@ const omsMappings = ref<any[]>([]);
 
 const { records: facilityGroups, hydrated: groupsHydrated } = useFacilityGroups();
 const { members: groupMembers, hydrated: membersHydrated } = useGroupFacilities();
-const { channels: inventoryChannels } = useInventoryChannels();
+const { channels: inventoryChannels, hydrated: channelsHydrated } = useInventoryChannels();
 
 const facilityDataReady = computed(() => groupsHydrated.value && membersHydrated.value);
+// The type blocks and the parking write both read these tables: an unhydrated read would show nothing blocked and POST a duplicate purpose.
+const channelDataReady = computed(() => channelsHydrated.value && purposesHydrated.value);
+const { record: shop } = useShopifyShop(() => props.shopId);
+const { purposes, hydrated: purposesHydrated } = useProductStoreFacilityPurposes();
+// Date-effective projections re-evaluate at the next fromDate / thruDate boundary, not on a poll.
+const effectiveNow = useEffectiveNow(() => [...inventoryChannels.value, ...purposes.value, ...groupMembers.value]);
+const { facilities } = useFacilities();
 
-/** Channels already mapped for THIS shop, by facility group. */
+/** A pre-order or back-order channel must be the shop's only active one of its type. */
+const channelTypeOptions = computed(() => [
+  { id: CHANNEL_TYPE.physical, label: translate("Physical"), description: translate("The group's available to promise inventory") },
+  { id: CHANNEL_TYPE.preOrder, label: translate("Pre-order"), description: translate("Pre-order future inventory at the group's facilities") },
+  { id: CHANNEL_TYPE.backOrder, label: translate("Back-order"), description: translate("Back-order future inventory at the group's facilities") },
+].map((option) => {
+  const existing = option.id === CHANNEL_TYPE.physical ? undefined : inventoryChannels.value.find((channel: any) =>
+    String(channel.shopId) === String(props.shopId) && isEffectiveNow(channel, effectiveNow.value) && channelTypeOf(channel) === option.id);
+
+  return { ...option, blockedBy: existing ? String(existing.inventoryChannelId) : "" };
+}));
+
+const parkingSetup = computed(() => FUTURE_CHANNEL_PARKING[channelType.value]);
+const activeStorePurposes = computed(() => purposes.value.filter((row: any) =>
+  String(row.productStoreId) === String(shop.value?.productStoreId ?? "") && isEffectiveNow(row, effectiveNow.value)));
+
+/** Channels of the chosen type already mapped for THIS shop, by facility group. */
 const mappedGroupIds = computed(() => {
   const map: Record<string, string> = {};
   inventoryChannels.value.forEach((channel: any) => {
     if (String(channel.shopId) !== String(props.shopId)) return;
-    if (!isEffectiveNow(channel, Date.now())) return;
+    if (!isEffectiveNow(channel, effectiveNow.value)) return;
+    // Per type: a group's physical channel and its pre-order channel publish different inventory.
+    if (channelTypeOf(channel) !== channelType.value) return;
     map[String(channel.facilityGroupId)] = String(channel.inventoryChannelId);
   });
   return map;
@@ -218,7 +329,7 @@ const channelGroups = computed(() => facilityGroups.value
   .map((group: any) => {
     const members = groupMembers.value.filter((member: any) =>
       String(member.facilityGroupId) === String(group.facilityGroupId) &&
-      isEffectiveNow(member, Date.now()));
+      isEffectiveNow(member, effectiveNow.value));
     const countOf = (types: string[]) =>
       members.filter((m: any) => types.includes(String(m.facilityTypeId))).length;
     const storeCount = countOf(STORE_TYPES);
@@ -240,6 +351,16 @@ const channelGroups = computed(() => facilityGroups.value
   .sort((a: any, b: any) => String(a.facilityGroupName || a.facilityGroupId)
     .localeCompare(String(b.facilityGroupName || b.facilityGroupId))));
 
+const groupSearchQuery = ref("");
+const filteredChannelGroups = computed(() => {
+  const query = groupSearchQuery.value.trim().toLowerCase();
+  if(!query) return channelGroups.value;
+  return channelGroups.value.filter((group: any) =>
+    String(group.facilityGroupName || "").toLowerCase().includes(query) ||
+    String(group.facilityGroupId || "").toLowerCase().includes(query)
+  );
+});
+
 const selectedGroup = computed(() =>
   channelGroups.value.find((g: any) => g.facilityGroupId === selectedGroupId.value));
 
@@ -254,7 +375,7 @@ const mappingByLocation = computed(() => {
 
 /** Shopify locations already claimed by another inventory channel on this shop. */
 const channelLocationIds = computed(() => new Set(inventoryChannels.value
-  .filter((c: any) => String(c.shopId) === String(props.shopId) && isEffectiveNow(c, Date.now()))
+  .filter((c: any) => String(c.shopId) === String(props.shopId) && isEffectiveNow(c, effectiveNow.value))
   .map((c: any) => String(c.shopifyLocationId))));
 
 /**
@@ -262,17 +383,34 @@ const channelLocationIds = computed(() => new Set(inventoryChannels.value
  * against the placeholder facility (or with no mapping at all) are free to become an aggregate
  * target; the one already sitting on the placeholder is the intended choice, so it is suggested.
  */
+const facilityTypeById = computed(() => new Map(facilities.value.map((facility: any) => [String(facility.facilityId), String(facility.facilityTypeId ?? "")])));
+
+/**
+ * A future channel's location is where its parking facility is mapped, so a location backing a facility
+ * of the type's parking facility type is selectable for it, and the store's current parking location is
+ * the suggestion.
+ */
+function isParkingFacility(facilityId: string): boolean {
+  return !!parkingSetup.value && facilityTypeById.value.get(facilityId) === parkingSetup.value.facilityTypeId;
+}
+
+const currentParkingFacilityIds = computed(() => parkingSetup.value
+  ? activeStorePurposes.value.filter((row: any) => row.facilityPurposeEnumId === parkingSetup.value?.purposeEnumId).map((row: any) => String(row.facilityId))
+  : []);
+
 const selectableLocations = computed(() => shopifyLocations.value
   .map((loc: any) => {
     const mappedFacilityId = mappingByLocation.value[loc.shopifyLocationId] ?? "";
     return {
       ...loc,
       mappedFacilityId,
-      suggested: mappedFacilityId === UNASSIGNED_FACILITY_ID,
+      suggested: parkingSetup.value
+        ? currentParkingFacilityIds.value.includes(mappedFacilityId)
+        : mappedFacilityId === UNASSIGNED_FACILITY_ID,
     };
   })
   .filter((loc: any) =>
-    (!loc.mappedFacilityId || loc.mappedFacilityId === UNASSIGNED_FACILITY_ID) &&
+    (!loc.mappedFacilityId || loc.mappedFacilityId === UNASSIGNED_FACILITY_ID || isParkingFacility(loc.mappedFacilityId)) &&
     !channelLocationIds.value.has(loc.shopifyLocationId))
   .sort((a: any, b: any) => (b.suggested ? 1 : 0) - (a.suggested ? 1 : 0) ||
     String(a.name).localeCompare(String(b.name))));
@@ -285,8 +423,38 @@ const selectableLocations = computed(() => shopifyLocations.value
  */
 const excludedByFacility = computed(() => shopifyLocations.value.filter((loc: any) => {
   const facilityId = mappingByLocation.value[loc.shopifyLocationId] ?? "";
-  return facilityId && facilityId !== UNASSIGNED_FACILITY_ID;
+  return facilityId && facilityId !== UNASSIGNED_FACILITY_ID && !isParkingFacility(facilityId);
 }).length);
+
+/** facilityId -> Shopify location, from the same mapping rows. */
+const locationByFacility = computed(() => omsMappings.value.reduce((map: Record<string, string>, row: any) => {
+  if(row?.facilityId) {map[String(row.facilityId)] = String(row.shopifyLocationId ?? "");}
+  return map;
+}, {}));
+
+/** Facilities of the parking facility type, plus any facility already holding the store's parking purpose. */
+const parkingCandidates = computed(() => {
+  if(!parkingSetup.value) return [];
+  const ids = new Set<string>([
+    ...facilities.value.filter((facility: any) => facility.facilityTypeId === parkingSetup.value?.facilityTypeId).map((facility: any) => String(facility.facilityId)),
+    ...currentParkingFacilityIds.value,
+  ]);
+  return [...ids].sort().map((facilityId) => ({
+    facilityId,
+    facilityName: facilities.value.find((facility: any) => facility.facilityId === facilityId)?.facilityName || "",
+    current: currentParkingFacilityIds.value.includes(facilityId),
+  }));
+});
+
+/** Default: the parking facility already at the chosen location, else the store's current one. */
+watch([selectedLocationId, parkingCandidates], () => {
+  if(!parkingSetup.value) return;
+  const atLocation = parkingCandidates.value.find((facility) => locationByFacility.value[facility.facilityId] === selectedLocationId.value);
+  const current = parkingCandidates.value.find((facility) => facility.current);
+  if(!selectedParkingFacilityId.value || !parkingCandidates.value.some((facility) => facility.facilityId === selectedParkingFacilityId.value)) {
+    selectedParkingFacilityId.value = atLocation?.facilityId || current?.facilityId || "";
+  }
+}, { immediate: true });
 
 const excludedByChannel = computed(() => shopifyLocations.value.filter((loc: any) => {
   const facilityId = mappingByLocation.value[loc.shopifyLocationId] ?? "";
@@ -330,11 +498,15 @@ async function createChannel() {
   saving.value = true;
   let inventoryChannelId: string | undefined;
   try {
+    const typeLabel = channelTypeOptions.value.find((option) => option.id === channelType.value)?.label || "";
     inventoryChannelId = await createInventoryChannel({
       shopId: props.shopId,
       facilityGroupId: selectedGroupId.value,
       shopifyLocationId: selectedLocationId.value,
-      description: `${selectedGroup.value?.facilityGroupName || selectedGroupId.value} aggregate inventory`,
+      channelTypeEnumId: channelType.value as any,
+      description: parkingSetup.value
+        ? `${selectedGroup.value?.facilityGroupName || selectedGroupId.value} ${typeLabel.toLowerCase()} inventory`
+        : `${selectedGroup.value?.facilityGroupName || selectedGroupId.value} aggregate inventory`,
       fromDate: Date.now(),
     });
   } catch (error: any) {
@@ -365,6 +537,22 @@ async function createChannel() {
       logger.error("Channel created but its event publisher job was not", error);
       jobFailures.push(translate("event publisher job"));
     }
+    if (parkingSetup.value) {
+      try {
+        await configureFutureChannelParking({
+          shopId: props.shopId,
+          productStoreId: String(shop.value?.productStoreId ?? ""),
+          channelTypeEnumId: channelType.value,
+          shopifyLocationId: selectedLocationId.value,
+          facilityId: selectedParkingFacilityId.value,
+          locationByFacility: locationByFacility.value,
+          activePurposes: activeStorePurposes.value,
+        });
+      } catch (error: any) {
+        logger.error("Channel created but its parking facility was not configured", error);
+        jobFailures.push(translate("store parking facility"));
+      }
+    }
     try {
       const remoteId = String(syncContext.remoteId?.value ?? "");
       if (!remoteId) throw new Error("No Shopify remote resolved for this shop");
@@ -384,6 +572,7 @@ async function createChannel() {
 }
 
 function closeModal() {
+  groupSearchQuery.value = "";
   modalController.dismiss({ dismissed: true });
 }
 </script>
@@ -398,5 +587,9 @@ function closeModal() {
 
 .already-mapped {
   color: var(--ion-color-medium);
+}
+
+.parking-hint {
+  padding-inline-end: var(--spacer-sm);
 }
 </style>

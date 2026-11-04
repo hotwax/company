@@ -168,14 +168,21 @@
                 <p>{{ productSecondaryLine(event) }}</p>
                 <!-- Below 991px only this cell and the status remain, so this line carries the rest. -->
                 <p class="row-summary">
-                  {{ translate("{change} at {location}, {source}", { change: event.change, location: event.locationLabel, source: sourceLine(event) }) }}
+                  {{ event.metafieldOnly
+                    ? translate("{change}, {metafield}, {source}", { change: event.change, metafield: event.metafieldName, source: sourceLine(event) })
+                    : translate("{change} at {location}, {source}", { change: event.change, location: event.locationLabel, source: sourceLine(event) }) }}
                 </p>
               </ion-label>
             </ion-item>
 
             <ion-label>
-              <ion-text :color="event.delta > 0 ? 'success' : event.delta < 0 ? 'danger' : undefined">
-                {{ event.change }}
+              <!-- An absolute row sets the level; "= 19" fits the change column, the title and summary say "Set to 19". -->
+              <!-- A metafield-only event moves no quantity: a dash fits the column, the line below and the title name the metafield. -->
+              <ion-text v-if="event.metafieldOnly" color="medium" :title="event.metafieldName">
+                &ndash;
+              </ion-text>
+              <ion-text v-else :color="event.absolute ? 'primary' : event.delta > 0 ? 'success' : event.delta < 0 ? 'danger' : undefined" :title="event.change">
+                {{ event.absolute ? `= ${event.delta}` : event.change }}
               </ion-text>
               <p class="one-line">
                 {{ event.locationLabel }}

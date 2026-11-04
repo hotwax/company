@@ -13,6 +13,7 @@ import {
   effectiveMessageOf,
   ledgerRetentionOf,
   toInventoryEvent,
+  toMetafieldInventoryEvent,
 } from "@/utils/inventoryEvents";
 import { type InventoryEventSourceRoot, canonicalEventTypeId } from "@/utils/inventoryEventSourceRoots";
 
@@ -68,6 +69,11 @@ function ledgerRowKeyOf(kind: InventoryEventKind, row: Record<string, unknown>):
   return JSON.stringify(companyDb.entities[LEDGER_TABLES[kind]].primaryKeyFields.map((field) => String(row[field] ?? "")));
 }
 
+/** A metafield revision's identity: its header, metafield and revision, in key order. */
+function metafieldRowKeyOf(row: Record<string, unknown>): string {
+  return JSON.stringify([row.shopifyInventoryAdjustmentId, row.metafieldId, row.metafieldDetailSeqId].map((part) => String(part ?? "")));
+}
+
 function inventoryItemKey(shopId: unknown, shopifyInventoryItemId: unknown): string {
   return `${String(shopId ?? "")}|${String(shopifyInventoryItemId ?? "")}`;
 }
@@ -87,7 +93,13 @@ function deliveryLabelOf(event: Pick<InventoryEvent, "delivery">, statusLabel: (
 /** `shopId` is reactive so a reused view follows its route from one shop to another. */
 export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: InventoryEventKind) {
   const scoped = () => ({ scope: { field: "shopId", value: String(toValue(shopId) ?? "") } });
-  const { records: scopedLedgerRows, hydrated } = useLiveEntity<any>(LEDGER_TABLES[kind], scoped);
+  const { records: scopedLedgerRows, hydrated: ledgerHydrated } = useLiveEntity<any>(LEDGER_TABLES[kind], scoped);
+  // Events with a metafield revision and no inventory line belong to the channel ledger only.
+  const { records: metafieldRows, hydrated: metafieldHydrated } = useLiveEntity<any>(
+    companyDb.tables.shopifyMetafieldAdjustments,
+    () => (kind === "channel" ? scoped() : { filter: () => false }),
+  );
+  const hydrated = computed(() => ledgerHydrated.value && metafieldHydrated.value);
   // Newest first. A scoped read comes back in key order, so the order is set here.
   const ledgerRows = computed(() => [...scopedLedgerRows.value]
     .sort((a, b) => (toMillis(b.createdDate) ?? 0) - (toMillis(a.createdDate) ?? 0)));
@@ -154,7 +166,31 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
     return [recordLabel ? translate(recordLabel) : "", reference].filter(Boolean).join(" ");
   }
 
-  const events = computed<InventoryEventRow[]>(() => ledgerRows.value.map((row) => {
+  const metafieldEvents = computed<InventoryEventRow[]>(() => metafieldRows.value.map((row: Record<string, any>) => {
+    const message = effectiveMessageOf(row, row.syncedAt, messagesById.value.get(String(row.systemMessageId ?? "")));
+    const event = toMetafieldInventoryEvent(metafieldRowKeyOf(row), row, message);
+    const item = inventoryItemsByKey.value.get(inventoryItemKey(event.shopId, event.inventoryItemId));
+    const productName = String(item?.productTitle ?? "");
+
+    return {
+      ...event,
+      // No location: the secondary line names the metafield instead.
+      locationLabel: event.metafieldName ?? "",
+      shopifyProductId: String(item?.shopifyProductId ?? ""),
+      shopifyVariantId: String(item?.shopifyVariantId ?? row.shopifyProductId ?? ""),
+      productName,
+      productSku: String(item?.sku ?? ""),
+      productVariant: variantLabelOf(String(item?.variantTitle ?? ""), productName),
+      productImageUrl: String(item?.imageUrl ?? ""),
+      // Short, for the narrow change column: the second line and the detail name the metafield.
+      change: translate("Metafield"),
+      deliveryLabel: deliveryLabelOf(event, statusLabel),
+      deliveryColor: DELIVERY_STATE_COLORS[event.delivery.id],
+      sourceLabel: sourceLabelOf(event),
+    };
+  }));
+
+  const ledgerEvents = computed<InventoryEventRow[]>(() => ledgerRows.value.map((row) => {
     const message = effectiveMessageOf(row, row.syncedAt, messagesById.value.get(String(row.systemMessageId ?? "")));
     const event = toInventoryEvent(kind, ledgerRowKeyOf(kind, row), row, message);
     const item = inventoryItemsByKey.value.get(inventoryItemKey(event.shopId, event.inventoryItemId));
@@ -169,12 +205,17 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
       productSku: String(item?.sku ?? ""),
       productVariant: variantLabelOf(String(item?.variantTitle ?? ""), productName),
       productImageUrl: String(item?.imageUrl ?? ""),
-      change: `${event.delta > 0 ? "+" : ""}${event.delta}`,
+      change: event.absolute
+        ? translate("Set to {quantity}", { quantity: event.delta })
+        : `${event.delta > 0 ? "+" : ""}${event.delta}`,
       deliveryLabel: deliveryLabelOf(event, statusLabel),
       deliveryColor: DELIVERY_STATE_COLORS[event.delivery.id],
       sourceLabel: sourceLabelOf(event),
     };
   }));
+
+  const events = computed<InventoryEventRow[]>(() => [...ledgerEvents.value, ...metafieldEvents.value]
+    .sort((a, b) => b.createdAt - a.createdAt));
 
   const locationOptions = computed(() => {
     const ids = [...new Set(events.value.map((event) => event.locationId).filter(Boolean))];

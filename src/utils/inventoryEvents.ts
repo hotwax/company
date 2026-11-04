@@ -60,6 +60,11 @@ export interface InventoryEvent {
   source: InventoryEventSource;
   inventoryItemId: string;
   delta: number;
+  /**
+   * `resetInventoryLevel = Y`: `delta` is the quantity Shopify is set to, not a change. Future channel
+   * events and resets carry absolute quantities, so a zero here still changes Shopify.
+   */
+  absolute: boolean;
   /** `correction` when the type maps to no Shopify reason, which is what the batcher sends. */
   reason: string;
   reasonMapped: boolean;
@@ -71,9 +76,22 @@ export interface InventoryEvent {
   batchedAt?: number;
   awaitingDelivery: boolean;
   decisionComment: string;
+  /**
+   * A metafield revision with no inventory line (a promise date change, a channel reset's batch metafields):
+   * it moves no quantity, so it has no item or location and adds nothing to a batch's changes.
+   */
+  metafieldOnly?: boolean;
+  /** `namespace.key` of the metafield a metafield-only event writes. */
+  metafieldName?: string;
 }
 
-/** The connector's OMS-wide purge job for each ledger. */
+/**
+ * The connector's combined purge: one job prunes the channel, physical and metafield details together.
+ * It replaces the two per-ledger services below, which the connector upgrade pauses.
+ */
+export const INVENTORY_PURGE_SERVICE = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustments";
+
+/** The pre-upgrade OMS-wide purge job for each ledger. */
 export const INVENTORY_LEDGER_PURGE_SERVICES: Record<InventoryEventKind, string> = {
   channel: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails",
   location: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails",
@@ -81,7 +99,8 @@ export const INVENTORY_LEDGER_PURGE_SERVICES: Record<InventoryEventKind, string>
 
 /** How long the ledger's purge job keeps settled rows; 5 is the service's own `daysToKeep` default. */
 export function ledgerRetentionOf(kind: InventoryEventKind, jobs: readonly ServiceJob[]): { days: number; paused: boolean } | undefined {
-  const job = jobs.find((candidate) => candidate?.serviceName === INVENTORY_LEDGER_PURGE_SERVICES[kind]);
+  const job = jobs.find((candidate) => candidate?.serviceName === INVENTORY_PURGE_SERVICE) ??
+    jobs.find((candidate) => candidate?.serviceName === INVENTORY_LEDGER_PURGE_SERVICES[kind]);
   if(!job) {return undefined;}
   const days = Number(parameterMap(job).daysToKeep);
 
@@ -108,8 +127,8 @@ export function deltaOutcome(delta: number): "noChange" | "publish" | "quarantin
 }
 
 /** Cancelled/rejected are the batcher's markers and nothing retries them; `SmsgError` is retried. */
-export function deliveryStateOf(messageId: string | undefined, delta: number, statusId?: string): DeliveryState {
-  if(!messageId) {return { id: roundDelta(delta) === 0 ? "noChange" : "waiting" };}
+export function deliveryStateOf(messageId: string | undefined, delta: number, statusId?: string, absolute = false): DeliveryState {
+  if(!messageId) {return { id: !absolute && roundDelta(delta) === 0 ? "noChange" : "waiting" };}
   const status = String(statusId ?? "");
   if(isSuccess(status)) {return { id: "sent", statusId: status };}
   if(status === "SmsgCancelled" || status === "SmsgRejected") {return { id: "cancelled", statusId: status };}
@@ -170,7 +189,8 @@ export function toInventoryEvent(
 ): InventoryEvent {
   const delta = roundDelta(raw?.computedInventoryChange);
   const messageId = text(raw?.systemMessageId) || undefined;
-  const delivery = deliveryStateOf(messageId, delta, message?.statusId);
+  const absolute = text(raw?.resetInventoryLevel) === "Y";
+  const delivery = deliveryStateOf(messageId, delta, message?.statusId, absolute);
   const retargetLocationId = kind === "channel" ? text(raw?.publishShopifyLocationId) : "";
   const reason = text(raw?.shopifyReason);
   const eventTypeId = text(raw?.eventTypeId);
@@ -188,6 +208,7 @@ export function toInventoryEvent(
     source: sourceOf(eventTypeId, text(raw?.eventReferenceId)),
     inventoryItemId: text(raw?.shopifyInventoryItemId),
     delta,
+    absolute,
     reason: reason || "correction",
     reasonMapped: !!reason,
     messageId,
@@ -197,6 +218,48 @@ export function toInventoryEvent(
     batchedAt: messageId ? toMillis(message?.initDate) : undefined,
     awaitingDelivery: ["waiting", "inFlight", "error"].includes(delivery.id),
     decisionComment: text(raw?.decisionComment),
+  };
+}
+
+/**
+ * A metafield-only revision as an event of the channel ledger. It is `waiting` until a publish job batches
+ * its header, like an absolute row, and `error` when Shopify rejected this revision outright.
+ */
+export function toMetafieldInventoryEvent(
+  cacheKey: string,
+  raw: Record<string, any>,
+  message: InventoryEventMessage | undefined,
+): InventoryEvent {
+  const messageId = text(raw?.systemMessageId) || undefined;
+  const state = deliveryStateOf(messageId, 0, message?.statusId, true);
+  const delivery: DeliveryState = text(raw?.failed) === "Y" ? { id: "error", statusId: state.statusId } : state;
+  const reason = text(raw?.shopifyReason);
+  const eventTypeId = text(raw?.eventTypeId);
+
+  return {
+    kind: "channel",
+    rowKey: `channel:metafield:${cacheKey}`,
+    shopId: text(raw?.shopId),
+    locationId: "",
+    retarget: false,
+    eventTypeId,
+    eventReferenceId: text(raw?.eventReferenceId),
+    eventTypeLabel: text(raw?.eventTypeDescription) || eventTypeId,
+    source: sourceOf(eventTypeId, text(raw?.eventReferenceId)),
+    inventoryItemId: text(raw?.shopifyInventoryItemId),
+    delta: 0,
+    absolute: false,
+    reason: reason || "correction",
+    reasonMapped: !!reason,
+    messageId,
+    delivery,
+    createdAt: toMillis(raw?.createdDate) ?? 0,
+    sentAt: delivery.id === "sent" ? toMillis(message?.processedDate) : undefined,
+    batchedAt: messageId ? toMillis(message?.initDate) : undefined,
+    awaitingDelivery: ["waiting", "inFlight", "error"].includes(delivery.id),
+    decisionComment: "",
+    metafieldOnly: true,
+    metafieldName: [text(raw?.metafieldNamespace), text(raw?.metafieldKey)].filter(Boolean).join("."),
   };
 }
 
@@ -243,14 +306,24 @@ function groupBy<T>(rows: readonly T[], keyOf: (row: T) => string | undefined): 
   return grouped;
 }
 
-/** What Shopify receives: the batcher sums a batch's rows per (inventory item, location). */
+/**
+ * What Shopify receives: the batcher sums a batch's rows per (inventory item, location). An absolute row
+ * sets the level, so the entry is the latest absolute quantity plus any deltas recorded after it.
+ */
 export function changeEntriesOf<T extends InventoryEvent>(events: readonly T[]) {
-  return [...groupBy(events, (event) => `${event.inventoryItemId}@${event.locationId}`)].map(([key, rows]) => {
-    const delta = sumDelta(rows.map((row) => row.delta));
+  // A metafield-only event has no quantity to sum: it would show as a blank item.
+  const inventoryEvents = events.filter((event) => !event.metafieldOnly);
+
+  return [...groupBy(inventoryEvents, (event) => `${event.inventoryItemId}@${event.locationId}`)].map(([key, rows]) => {
+    const ordered = [...rows].sort((a, b) => a.createdAt - b.createdAt);
+    const lastAbsolute = ordered.map((row) => row.absolute).lastIndexOf(true);
+    const counted = lastAbsolute >= 0 ? ordered.slice(lastAbsolute) : ordered;
+    const delta = sumDelta(counted.map((row) => row.delta));
+    const absolute = lastAbsolute >= 0;
 
     return {
-      key, inventoryItemId: rows[0].inventoryItemId, delta,
-      eventCount: rows.length, outcome: deltaOutcome(delta), sample: rows[0],
+      key, inventoryItemId: rows[0].inventoryItemId, delta, absolute,
+      eventCount: rows.length, outcome: absolute ? "publish" as const : deltaOutcome(delta), sample: rows[0],
     };
   }).sort((a, b) => a.inventoryItemId.localeCompare(b.inventoryItemId));
 }
