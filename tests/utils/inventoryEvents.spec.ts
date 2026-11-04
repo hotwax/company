@@ -203,6 +203,13 @@ describe("ledgerRetentionOf — the purge job's window per ledger", () => {
     expect(ledgerRetentionOf("channel", [job(LOCATION, "3")])).toBeUndefined();
   });
 
+  it("prefers the combined purge for both ledgers, and ignores the paused per-ledger jobs next to it", () => {
+    const COMBINED = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustments";
+    const jobs = [job(LOCATION, "9", "Y"), job(COMBINED, "2")];
+    expect(ledgerRetentionOf("channel", jobs)).toEqual({ days: 2, paused: false });
+    expect(ledgerRetentionOf("location", jobs)).toEqual({ days: 2, paused: false });
+  });
+
   it("falls back to the service's own default of 5 when the parameter is absent or invalid", () => {
     expect(ledgerRetentionOf("location", [job(LOCATION)])?.days).toBe(5);
     expect(ledgerRetentionOf("location", [job(LOCATION, "0")])?.days).toBe(5);

@@ -4546,7 +4546,9 @@
   "Physical inventory sync jobs": "Physical inventory sync jobs",
   "Shared maintenance jobs": "Shared maintenance jobs",
   "Channel jobs are only configured when a channel is set up.": "Channel jobs are only configured when a channel is set up.",
-  "Delivery": "Delivery",
   "Send batches (all shops)": "Send batches (all shops)",
-  "Delivers channel and physical batches.": "Delivers channel and physical batches."
+  "Delivers channel and physical batches.": "Delivers channel and physical batches.",
+  "Shared jobs": "Shared jobs",
+  "Purge old events (all shops)": "Purge old events (all shops)",
+  "Prunes channel, physical and metafield events together.": "Prunes channel, physical and metafield events together."
 }

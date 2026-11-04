@@ -546,7 +546,7 @@
         <ion-list lines="full">
           <ion-item-group>
             <ion-item-divider color="light">
-              <ion-label>{{ translate("Delivery") }}</ion-label>
+              <ion-label>{{ translate("Shared jobs") }}</ion-label>
             </ion-item-divider>
             <ion-item
               v-for="job in deliverySharedJobs"
@@ -1253,6 +1253,7 @@ import { useInventorySyncArea } from "@/composables/useInventorySyncArea";
 import { formatDateTime } from "@/utils";
 import {
   INVENTORY_LEDGER_PURGE_SERVICES,
+  INVENTORY_PURGE_SERVICE,
   type InventoryEventBatch,
   type InventoryEventKind,
   groupInventoryEventBatches,
@@ -1504,6 +1505,9 @@ const effectiveDateJob = computed<any>(() =>
   cachedJobs.value.find((job: any) => job.serviceName === EFFECTIVE_DATE_SERVICE) ?? null);
 
 /** Retention cleanup for the event ledger. Connector-seeded and OMS-wide, so it is not per channel. */
+/** The combined purge job. When it exists it replaces the two per-ledger purge rows below. */
+const combinedPurgeJob = computed<any>(() =>
+  cachedJobs.value.find((job: any) => job.serviceName === INVENTORY_PURGE_SERVICE) ?? null);
 const purgeDetailsJob = computed<any>(() =>
   cachedJobs.value.find((job: any) => job.serviceName === INVENTORY_LEDGER_PURGE_SERVICES.channel) ?? null);
 const purgeLocationDetailsJob = computed<any>(() =>
@@ -1554,6 +1558,7 @@ const watchedJobNames = computed(() => [...new Set([
   physicalResetJob.value?.jobName,
   ...physicalAtpResetJobs.value.map((job: any) => job.jobName),
   effectiveDateJob.value?.jobName,
+  combinedPurgeJob.value?.jobName,
   purgeDetailsJob.value?.jobName,
   purgeLocationDetailsJob.value?.jobName,
   discardEventsJob.value?.jobName,
@@ -1755,15 +1760,18 @@ const sharedJobs = computed(() => {
     });
   }
 
-  // Retention sits right after reset and publish, as it does in the physical list.
-  // Connector-seeded, so its absence is a deploy gap rather than something to create.
-  definitions.push({
-    name: translate("Purge old channel events (all shops)"),
-    jobs: purgeDetailsJob.value ? [purgeDetailsJob.value] : [],
-    icon: trashBinOutline,
-    setup: "",
-    group: "channel",
-  });
+  // Retention sits right after reset and publish, as it does in the physical list. Connector-seeded,
+  // so its absence is a deploy gap rather than something to create. Once the combined purge exists it
+  // is the only purge and is listed with the shared jobs instead of once per ledger.
+  if(!combinedPurgeJob.value) {
+    definitions.push({
+      name: translate("Purge old channel events (all shops)"),
+      jobs: purgeDetailsJob.value ? [purgeDetailsJob.value] : [],
+      icon: trashBinOutline,
+      setup: "",
+      group: "channel",
+    });
+  }
 
   definitions.push(
     {
@@ -1813,14 +1821,26 @@ const sharedJobs = computed(() => {
       setup: discardEventsJob.value ? "" : "discard",
       group: "channel",
     },
-    {
+  );
+
+  if(!combinedPurgeJob.value) {
+    definitions.push({
       name: translate("Purge old physical events (all shops)"),
       jobs: purgeLocationDetailsJob.value ? [purgeLocationDetailsJob.value] : [],
       icon: trashBinOutline,
       setup: "",
       group: "physical",
-    },
-  );
+    });
+  } else {
+    definitions.push({
+      name: translate("Purge old events (all shops)"),
+      jobs: [combinedPurgeJob.value],
+      icon: trashBinOutline,
+      setup: "",
+      group: "shared",
+      hint: translate("Prunes channel, physical and metafield events together."),
+    });
+  }
 
   return definitions.map(describeJob);
 });
@@ -2573,7 +2593,7 @@ const onboardingJobSections = computed(() => {
 
   // One sender delivers channel and physical batches, so it does not wait for a channel.
   sections.push({
-    title: translate("Delivery"),
+    title: translate("Shared jobs"),
     jobs: deliverySharedJobs.value,
   });
 

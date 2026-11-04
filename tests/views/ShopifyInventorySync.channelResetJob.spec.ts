@@ -527,11 +527,38 @@ describe("ShopifyInventorySync - shared jobs location groups", () => {
     expect(physicalJobs.join(" ")).not.toContain("Send batches");
     expect([...channelJobs, ...physicalJobs]).toHaveLength(9);
 
-    // The one sender serves both queues, so it is listed once, in its own Delivery card, with what it delivers.
-    const deliveryCard = cards.find((item) => item.find("ion-item-divider").exists() && item.find("ion-item-divider").text().trim() === "Delivery")!;
-    expect(deliveryCard.findAll("ion-item")).toHaveLength(1);
-    expect(deliveryCard.text()).toContain("Send batches (all shops)");
-    expect(deliveryCard.text()).toContain("Delivers channel and physical batches.");
+    // The one sender serves both queues, so it is listed once, in the Shared jobs card, with what it delivers.
+    const sharedCard = cards.find((item) => item.find("ion-item-divider").exists() && item.find("ion-item-divider").text().trim() === "Shared jobs")!;
+    expect(sharedCard.findAll("ion-item")).toHaveLength(1);
+    expect(sharedCard.text()).toContain("Send batches (all shops)");
+    expect(sharedCard.text()).toContain("Delivers channel and physical batches.");
+    wrapper.unmount();
+  });
+
+  it("lists the combined purge once, under Shared jobs, instead of one purge per queue", async () => {
+    cachedJobs.value = [
+      { jobName: "purge_OldShopifyInventoryAdjustments_hourly", serviceName: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustments", paused: "N", cronExpression: "0 0 * * * ?" },
+      // The upgrade pauses the two per-ledger jobs but leaves them on the OMS; they must not show as extra purges.
+      { jobName: "OLD_CHANNEL_PURGE", serviceName: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails", paused: "Y" },
+      { jobName: "OLD_PHYSICAL_PURGE", serviceName: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails", paused: "Y" },
+    ];
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: { stubs: { IonModal: true, ServiceJobDetailsModal: true, EditInventoryChannelModal: true, SetupInventoryChannelModal: true } },
+    });
+    await flushPromises();
+
+    const cards = wrapper.findAll("ion-card");
+    const sharedCard = cards.find((item) => item.find("ion-item-divider").exists() && item.find("ion-item-divider").text().trim() === "Shared jobs")!;
+    expect(sharedCard.text()).toContain("Purge old events (all shops)");
+    expect(sharedCard.text()).toContain("Prunes channel, physical and metafield events together.");
+    expect(wrapper.text()).not.toContain("Purge old channel events");
+    expect(wrapper.text()).not.toContain("Purge old physical events");
+
+    const row = sharedCard.findAll("ion-item").find((item) => item.text().includes("Purge old events"))!;
+    await row.trigger("click");
+    expect(wrapper.findComponent({ name: "ServiceJobDetailsModal" }).props("jobName")).toBe("purge_OldShopifyInventoryAdjustments_hourly");
     wrapper.unmount();
   });
 });

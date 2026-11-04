@@ -78,7 +78,13 @@ export interface InventoryEvent {
   decisionComment: string;
 }
 
-/** The connector's OMS-wide purge job for each ledger. */
+/**
+ * The connector's combined purge: one job prunes the channel, physical and metafield details together.
+ * It replaces the two per-ledger services below, which the connector upgrade pauses.
+ */
+export const INVENTORY_PURGE_SERVICE = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustments";
+
+/** The pre-upgrade OMS-wide purge job for each ledger. */
 export const INVENTORY_LEDGER_PURGE_SERVICES: Record<InventoryEventKind, string> = {
   channel: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails",
   location: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails",
@@ -86,7 +92,8 @@ export const INVENTORY_LEDGER_PURGE_SERVICES: Record<InventoryEventKind, string>
 
 /** How long the ledger's purge job keeps settled rows; 5 is the service's own `daysToKeep` default. */
 export function ledgerRetentionOf(kind: InventoryEventKind, jobs: readonly ServiceJob[]): { days: number; paused: boolean } | undefined {
-  const job = jobs.find((candidate) => candidate?.serviceName === INVENTORY_LEDGER_PURGE_SERVICES[kind]);
+  const job = jobs.find((candidate) => candidate?.serviceName === INVENTORY_PURGE_SERVICE) ??
+    jobs.find((candidate) => candidate?.serviceName === INVENTORY_LEDGER_PURGE_SERVICES[kind]);
   if(!job) {return undefined;}
   const days = Number(parameterMap(job).daysToKeep);
 
