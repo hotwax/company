@@ -1698,20 +1698,30 @@ const sharedJobs = computed(() => {
 
   if(!inventoryChannels.value.length) {
     definitions.push({
-      name: translate("Publish channel batches"),
-      jobs: pendingPublisherJobs.value,
-      icon: cloudUploadOutline,
-      setup: "",
-      group: "channel",
-    });
-    definitions.push({
       name: translate("Reset channel ATP"),
       jobs: aggregateResetJobs.value,
       icon: refreshOutline,
       setup: "",
       group: "channel",
     });
+    definitions.push({
+      name: translate("Publish channel batches"),
+      jobs: pendingPublisherJobs.value,
+      icon: cloudUploadOutline,
+      setup: "",
+      group: "channel",
+    });
   }
+
+  // Retention sits right after reset and publish, as it does in the physical list.
+  // Connector-seeded, so its absence is a deploy gap rather than something to create.
+  definitions.push({
+    name: translate("Purge old channel events (all shops)"),
+    jobs: purgeDetailsJob.value ? [purgeDetailsJob.value] : [],
+    icon: trashBinOutline,
+    setup: "",
+    group: "channel",
+  });
 
   definitions.push(
     {
@@ -1757,14 +1767,6 @@ const sharedJobs = computed(() => {
       jobs: discardEventsJob.value ? [discardEventsJob.value] : [],
       icon: trashOutline,
       setup: discardEventsJob.value ? "" : "discard",
-      group: "channel",
-    },
-    // Retention. Connector-seeded, so its absence is a deploy gap rather than something to create.
-    {
-      name: translate("Purge old channel events (all shops)"),
-      jobs: purgeDetailsJob.value ? [purgeDetailsJob.value] : [],
-      icon: trashBinOutline,
-      setup: "",
       group: "channel",
     },
     {
