@@ -365,17 +365,11 @@
             <!-- STEP 4: BASELINE INVENTORY SYNC -->
             <ion-card-content v-else-if="currentOnboardingStepId === 'reset'">
               <ion-list lines="full">
-                <ion-item lines="none">
-                  <ion-label class="ion-text-wrap">
-                    <p>{{ translate("Reset ATP to establish initial balance on Shopify") }}</p>
-                  </ion-label>
-                </ion-item>
-
                 <!-- Channel ATP reset -->
                 <ion-item>
                   <ion-icon slot="start" :icon="refreshOutline" />
                   <ion-label class="ion-text-wrap">
-                    <strong>{{ translate("Channel ATP reset runs") }}</strong>
+                    {{ translate("Channel ATP reset runs") }}
                     <p>{{ aggregateResetRuns.length ? translate("Recent runs") : translate("No channel ATP reset runs yet.") }}</p>
                   </ion-label>
                   <ion-button
@@ -412,7 +406,7 @@
                 <ion-item lines="none">
                   <ion-icon slot="start" :icon="refreshOutline" />
                   <ion-label class="ion-text-wrap">
-                    <strong>{{ translate("Physical ATP reset runs") }}</strong>
+                    {{ translate("Physical ATP reset runs") }}
                     <p>{{ physicalAtpResetRuns.length ? translate("Recent runs") : translate("No physical ATP reset runs yet.") }}</p>
                   </ion-label>
                   <ion-button
