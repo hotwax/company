@@ -515,17 +515,23 @@ describe("ShopifyInventorySync - shared jobs location groups", () => {
     expect(physicalCard.findAll("ion-item-group")).toHaveLength(1);
     expect(channelGroup.find("ion-item-divider").text().trim()).toBe("Jobs");
     expect(physicalGroup.find("ion-item-divider").text().trim()).toBe("Jobs");
-    expect(channelJobs).toHaveLength(6);
+    expect(channelJobs).toHaveLength(5);
     expect(physicalJobs).toHaveLength(4);
     expect(channelJobs.join(" ")).toContain("Publish channel batches");
     expect(channelJobs.join(" ")).toContain("Purge old channel events");
     expect(channelJobs.join(" ")).toContain("Apply effective-dated inventory changes");
-    expect(channelJobs.join(" ")).toContain("Send channel batches");
+    expect(channelJobs.join(" ")).not.toContain("Send batches");
     expect(physicalJobs.join(" ")).toContain("Reset physical on-hand");
     expect(physicalJobs.join(" ")).toContain("Purge old physical events");
     expect(channelJobs.join(" ")).not.toContain("Reset physical on-hand");
-    expect(physicalJobs.join(" ")).not.toContain("Send channel batches");
-    expect([...channelJobs, ...physicalJobs]).toHaveLength(10);
+    expect(physicalJobs.join(" ")).not.toContain("Send batches");
+    expect([...channelJobs, ...physicalJobs]).toHaveLength(9);
+
+    // The one sender serves both queues, so it is listed once, in its own Delivery card, with what it delivers.
+    const deliveryCard = cards.find((item) => item.find("ion-item-divider").exists() && item.find("ion-item-divider").text().trim() === "Delivery")!;
+    expect(deliveryCard.findAll("ion-item")).toHaveLength(1);
+    expect(deliveryCard.text()).toContain("Send batches (all shops)");
+    expect(deliveryCard.text()).toContain("Delivers channel and physical batches.");
     wrapper.unmount();
   });
 });
@@ -815,6 +821,54 @@ describe("ShopifyInventorySync - skipping the setup wizard", () => {
     await flushPromises();
 
     expect(wrapper.find(".onboarding-layout").exists()).toBe(false);
+    wrapper.unmount();
+  });
+});
+
+describe("ShopifyInventorySync - first-time vs returning in auto mode", () => {
+  const mountPage = async () => {
+    harness.mode = "auto";
+    cachedChannels.value = [];
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: {
+        stubs: {
+          IonModal: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    return wrapper;
+  };
+
+  afterEach(() => {
+    harness.mode = "returning";
+    cachedJobs.value = [];
+  });
+
+  it("shows the wizard when there is no channel and no push job is enabled", async () => {
+    cachedJobs.value = [{ jobName: "publish_PendingShopifyLocationInventoryAdjustments", serviceName: "svc#PublishLocation", paused: "Y" }];
+    const wrapper = await mountPage();
+    expect(wrapper.find(".onboarding-layout").exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("shows the returning view when a push job is enabled, even with no channel", async () => {
+    cachedJobs.value = [{ jobName: "publish_PendingShopifyLocationInventoryAdjustments", serviceName: "svc#PublishLocation", paused: "N" }];
+    const wrapper = await mountPage();
+    expect(wrapper.find(".onboarding-layout").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("does not count an enabled upkeep job such as the purge as a push", async () => {
+    cachedJobs.value = [{ jobName: "purge_OldShopifyInventoryAdjustmentDetails_hourly", serviceName: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails", paused: "N" }];
+    const wrapper = await mountPage();
+    expect(wrapper.find(".onboarding-layout").exists()).toBe(true);
     wrapper.unmount();
   });
 });

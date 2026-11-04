@@ -327,6 +327,7 @@
                       {{ job.name }}
                       <p>{{ job.lastRun }}</p>
                       <p>{{ job.nextRun }}</p>
+                      <p v-if="job.hint">{{ job.hint }}</p>
                     </ion-label>
                     <ion-button
                       v-if="job.setup"
@@ -539,6 +540,44 @@
           </ion-list>
         </ion-card>
       </section>
+
+      <!-- One sender delivers both queues, so it is listed once here rather than under either. -->
+      <ion-card>
+        <ion-list lines="full">
+          <ion-item-group>
+            <ion-item-divider color="light">
+              <ion-label>{{ translate("Delivery") }}</ion-label>
+            </ion-item-divider>
+            <ion-item
+              v-for="job in deliverySharedJobs"
+              :key="job.name"
+              :button="!!job.job"
+              :detail="!!job.job"
+              @click="openServiceJob(job.job)"
+            >
+              <ion-icon slot="start" :icon="job.icon" />
+              <ion-label class="ion-text-wrap">
+                {{ job.name }}
+                <p>{{ job.lastRun }}</p>
+                <p>{{ job.nextRun }}</p>
+                <p v-if="job.hint">{{ job.hint }}</p>
+              </ion-label>
+              <ion-button
+                v-if="job.setup"
+                slot="end"
+                fill="outline"
+                size="small"
+                :disabled="!!provisioningJobKind"
+                @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
+              >
+                <ion-spinner v-if="provisioningJobKind === job.setup" name="crescent" />
+                <template v-else>{{ translate("Set up") }}</template>
+              </ion-button>
+              <ion-badge slot="end" :color="job.badgeColor">{{ job.status }}</ion-badge>
+            </ion-item>
+          </ion-item-group>
+        </ion-list>
+      </ion-card>
 
       <ion-card>
         <ion-list lines="none">
@@ -1536,7 +1575,7 @@ function nextExecutionFor(jobs: any[]): any | null {
 }
 
 type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset" | "physicalAtpReset" | "discard" | "sender";
-type SharedJobLocationGroup = "channel" | "physical";
+type SharedJobLocationGroup = "channel" | "physical" | "shared";
 
 /**
  * The channels a per-channel job list does NOT cover yet. Setup must know WHICH channels are
@@ -1593,6 +1632,8 @@ type JobDefinition = {
   setup: JobSetupKind | "";
   targetChannelId?: string;
   group?: SharedJobLocationGroup;
+  /** One line under the row, for a job whose reach is not obvious from its name. */
+  hint?: string;
 };
 
 type SharedJobDefinition = JobDefinition & { group: SharedJobLocationGroup };
@@ -1627,7 +1668,7 @@ function nextRunLine(nextJob: any, latestRun: any): string {
   return translate("Next run {until}, {at}", { until: formatUntil(nextMs), at: formatDateTime(nextJob.nextExecutionDateTime) });
 }
 
-function describeJob({ name, jobs, icon, setup, targetChannelId, group }: JobDefinition) {
+function describeJob({ name, jobs, icon, setup, targetChannelId, group, hint }: JobDefinition) {
   const latestRun = latestRunFor(jobs);
   const nextJob = nextExecutionFor(jobs);
   const missing = !jobs.length;
@@ -1639,6 +1680,7 @@ function describeJob({ name, jobs, icon, setup, targetChannelId, group }: JobDef
   return {
     name,
     ...(group ? { group } : {}),
+    ...(hint ? { hint } : {}),
     job: nextJob ?? jobs.find((job) => job.paused !== "Y") ?? jobs[0] ?? null,
     lastRun: latestRun?.startTime ? translate("Last run {at}", { at: formatDateTime(latestRun.startTime) }) : translate("No cached runs"),
     nextRun: nextRunLine(scheduledJob, latestRun),
@@ -1755,11 +1797,13 @@ const sharedJobs = computed(() => {
     // Delivery. Batches are left at SmsgProduced on purpose and a scheduled sender moves them, so a
     // paused sender stalls the whole flow while every other row still reads healthy. OMS-wide.
     {
-      name: translate("Send channel batches (all shops)"),
+      name: translate("Send batches (all shops)"),
       jobs: inventoryAdjustmentSenderJobs.value,
       icon: sendOutline,
       setup: dedicatedSenderJob.value ? "" : "sender",
-      group: "channel",
+      // Channel and physical batches are the same ShopifyInventoryAdjustment message, so one sender serves both.
+      group: "shared",
+      hint: translate("Delivers channel and physical batches."),
     },
     // Manual tool, not a schedule: it only ever runs from Run now.
     {
@@ -1783,6 +1827,7 @@ const sharedJobs = computed(() => {
 
 const channelSharedJobs = computed(() => sharedJobs.value.filter((job) => job.group === "channel"));
 const physicalSharedJobs = computed(() => sharedJobs.value.filter((job) => job.group === "physical"));
+const deliverySharedJobs = computed(() => sharedJobs.value.filter((job) => job.group === "shared"));
 
 /**
  * Facility types read for display. The group's members carry a facilityTypeId but no description, and
@@ -2526,7 +2571,13 @@ const onboardingJobSections = computed(() => {
     jobs: physicalSharedJobs.value,
   });
 
-  // Every job in this group (publish, reset, send, discard, purge, effective-dated changes) only acts on
+  // One sender delivers channel and physical batches, so it does not wait for a channel.
+  sections.push({
+    title: translate("Delivery"),
+    jobs: deliverySharedJobs.value,
+  });
+
+  // Every job in this group (publish, reset, discard, purge, effective-dated changes) only acts on
   // channel events, so without a channel the jobs step shows a note instead of listing them.
   if(inventoryChannels.value.length) {
     sections.push({
@@ -2793,12 +2844,23 @@ function stepStatusPresentation(status: "not-started" | "in-progress" | "complet
   }[status];
 }
 
+// Jobs that push inventory to Shopify. Purge, discard and effective-dated changes are upkeep, not a push.
+const enabledPushJobs = computed(() => [
+  ...pendingPublisherJobs.value,
+  ...aggregateResetJobs.value,
+  ...physicalAtpResetJobs.value,
+  ...(locationPublishJob.value ? [locationPublishJob.value] : []),
+  ...(physicalResetJob.value ? [physicalResetJob.value] : []),
+  ...(dedicatedSenderJob.value ? [dedicatedSenderJob.value] : []),
+].filter((job: any) => job.paused !== "Y"));
+
+// A shop is past first-time setup once it has a channel or any inventory push job switched on.
 const isSetupComplete = computed(() => {
-  return inventoryChannels.value.length > 0;
+  return inventoryChannels.value.length > 0 || enabledPushJobs.value.length > 0;
 });
 
 // In auto mode the view depends on the cached channels: until they are read, "no channels" is not known.
-const experienceResolved = computed(() => experienceMode.value !== "auto" || inventoryChannelsHydrated.value);
+const experienceResolved = computed(() => experienceMode.value !== "auto" || (inventoryChannelsHydrated.value && jobsHydrated.value));
 
 const activeExperienceMode = computed<"first-time" | "returning">(() => {
   if(experienceMode.value === "first-time") {return "first-time";}
