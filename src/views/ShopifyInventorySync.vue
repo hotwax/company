@@ -2522,15 +2522,14 @@ const onboardingJobSections = computed(() => {
     jobs: physicalSharedJobs.value,
   });
 
-  // Publish / reset jobs are created per channel, so without a channel they have nothing to show; the
-  // jobs step says so in a note instead of listing them as unconfigured.
-  const perChannelJobNames = [translate("Publish channel batches"), translate("Reset channel ATP")];
-  sections.push({
-    title: translate("Shared maintenance jobs"),
-    jobs: inventoryChannels.value.length
-      ? channelSharedJobs.value
-      : channelSharedJobs.value.filter((job) => !perChannelJobNames.includes(job.name)),
-  });
+  // Every job in this group (publish, reset, send, discard, purge, effective-dated changes) only acts on
+  // channel events, so without a channel the jobs step shows a note instead of listing them.
+  if(inventoryChannels.value.length) {
+    sections.push({
+      title: translate("Shared maintenance jobs"),
+      jobs: channelSharedJobs.value,
+    });
+  }
 
   return sections;
 });
