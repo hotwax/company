@@ -72,8 +72,9 @@ async function removeCalendarFromFacility() {
       throw resp.data;
     }
   } catch (err) {
-    commonUtil.showToast(translate("Failed to revoke calendar associativity with the facility."));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error(err);
+    commonUtil.showToast(`${translate("Failed to revoke calendar associativity with the facility.")} ${serverError}`);
   }
   popoverController.dismiss();
   emitter.emit('dismissLoader');

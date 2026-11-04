@@ -93,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { commonUtil, translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import {
   IonButton,
   IonButtons,
@@ -165,9 +165,9 @@ async function handleRefresh() {
     await refreshCarriers();
     commonUtil.showToast(translate("Carrier catalog refreshed."));
   } catch (err: any) {
-    commonUtil.showToast(
-      translateReferenceDataError(err?.message || "Failed to refresh carriers."),
-    );
+    logger.error("Failed to refresh carriers", err);
+    const serverError = commonUtil.getErrorMessage(err);
+    commonUtil.showToast(`${translate("Failed to refresh carriers.")} ${serverError}`);
   } finally {
     refreshing.value = false;
   }

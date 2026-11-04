@@ -8,6 +8,13 @@ vi.mock("@common", () => ({
   api: (args: any) => apiMock(args),
   commonUtil: {
     hasError: (res: any) => Boolean(res?.data?.error),
+    showToast: vi.fn(),
+    getErrorMessage: vi.fn((err: any) => err?.message || ""),
+  },
+  logger: {
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
   },
   showToast: vi.fn(),
   translate: (k: string) => k,

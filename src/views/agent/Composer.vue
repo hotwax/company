@@ -219,7 +219,7 @@ import {
   onIonViewWillEnter
 } from "@ionic/vue";
 import { addOutline, checkmarkOutline, closeOutline, removeCircleOutline, rocketOutline, saveOutline, sparklesOutline } from "ionicons/icons";
-import { translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import { computed, ref } from "vue";
 import ChatContainer from "@/components/chat/ChatContainer.vue";
 import { useComposerStore } from "@/store/composer";
@@ -297,8 +297,10 @@ async function save() {
   try {
     await composer.saveDraft();
     showToast(translate("Draft saved"));
-  } catch {
-    showToast(translate("Failed to save agent"));
+  } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
+    showToast(`${translate("Failed to save agent")}. ${serverError}`);
   }
 }
 
@@ -308,8 +310,10 @@ async function activate() {
     await composer.activate();
     showToast(translate("Agent activated. Find it in the Workforce."));
     composer.clearComposerState();
-  } catch {
-    showToast(translate("Failed to activate agent"));
+  } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
+    showToast(`${translate("Failed to activate agent")}. ${serverError}`);
   }
 }
 
@@ -328,8 +332,10 @@ async function enhance() {
   try {
     await composer.enhanceInstructions();
     showToast(translate("Instructions enhanced"));
-  } catch {
-    showToast(translate("Failed to enhance instructions"));
+  } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
+    showToast(`${translate("Failed to enhance instructions")}. ${serverError}`);
   }
 }
 
@@ -340,8 +346,10 @@ async function sendPreview(content: string) {
   }
   try {
     await composer.sendPreviewMessage(content);
-  } catch {
-    showToast(translate("Preview failed"));
+  } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
+    showToast(`${translate("Preview failed")}. ${serverError}`);
   }
 }
 </script>

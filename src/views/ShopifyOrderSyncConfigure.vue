@@ -851,10 +851,11 @@ async function loadConfiguration(target: string | Event = activeShopId.value, sh
     if (!isCurrentShopContext(targetShopId) || requestToken !== localLoadToken.value) return false;
     syncScheduleDraft(targetShopId);
     return true;
-  } catch (_error) {
-    logger.error("Failed to load Shopify Order Sync configuration");
+  } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to load Shopify Order Sync configuration", error);
     if (showRefreshFailure && isCurrentRouteShop(targetShopId)) {
-      commonUtil.showToast(translate("Order sync setup could not be refreshed."));
+      commonUtil.showToast(`${translate("Order sync setup could not be refreshed.")} ${serverError}`);
     }
     return false;
   } finally {
@@ -914,9 +915,10 @@ async function configureJob() {
     syncScheduleDraft(targetShopId);
     commonUtil.showToast(translate("Paused Order Sync job created."));
   } catch (error) {
-    logger.error("Failed to configure Shopify Order Sync job");
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to configure Shopify Order Sync job", error);
     if (isCurrentRouteShop(targetShopId)) {
-      commonUtil.showToast(getErrorMessage(error, translate("Order Sync job could not be created.")));
+      commonUtil.showToast(`${translate("Order Sync job could not be created.")} ${serverError}`);
     }
   } finally {
     localMutation.value = "";
@@ -940,9 +942,10 @@ async function saveSchedule() {
     draftCronExpression.value = cronExpression;
     commonUtil.showToast(translate("Order Sync schedule saved."));
   } catch (error) {
-    logger.error("Failed to save Shopify Order Sync schedule");
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to save Shopify Order Sync schedule", error);
     if (isCurrentRouteShop(targetShopId)) {
-      commonUtil.showToast(getErrorMessage(error, translate("Order Sync schedule could not be saved.")));
+      commonUtil.showToast(`${translate("Order Sync schedule could not be saved.")} ${serverError}`);
     }
   } finally {
     localMutation.value = "";
@@ -1005,10 +1008,11 @@ async function activateJob() {
     commonUtil.showToast(translate("Order Sync activated."));
     await router.replace(`/shopify-connection-details/${encodeURIComponent(target.shopId)}/order-sync`);
   } catch (error) {
-    logger.error("Failed to activate Shopify Order Sync job");
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to activate Shopify Order Sync job", error);
     allowRouteLeave.value = false;
     if (isCurrentRouteShop(target.shopId)) {
-      commonUtil.showToast(getErrorMessage(error, translate("Order Sync job could not be activated.")));
+      commonUtil.showToast(`${translate("Order Sync job could not be activated.")} ${serverError}`);
     }
   } finally {
     localMutation.value = "";

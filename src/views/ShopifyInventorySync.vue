@@ -2212,7 +2212,9 @@ async function requestDocumentFeedAttachChange(doc: InventoryEventDocument, data
       ? translate("Event source enabled for {feed} events. It can take a few minutes to take effect.", copy)
       : translate("Event source disabled for {feed} events. Events already recorded are unaffected.", copy));
   } catch (error: any) {
-    commonUtil.showToast(error?.message || translate("Failed to update the event source."));
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to update the event source:", error);
+    commonUtil.showToast(`${translate("Failed to update the event source.")} ${serverError}`);
   } finally {
     savingDocumentKey.value = "";
     // The list was re-read above on success and left untouched on failure, so a redraw shows what is
@@ -2258,8 +2260,9 @@ async function requestInventoryEventFeedChange(event: Event) {
       ? translate("Inventory events set to real-time push. Restart every OMS node before relying on event capture.")
       : translate("Inventory events set to manual. Cached routing may take up to 15 minutes to expire."));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to update Shopify inventory event feed", error);
-    commonUtil.showToast(translate("Failed to update the inventory event feed."));
+    commonUtil.showToast(`${translate("Failed to update the inventory event feed.")} ${serverError}`);
   } finally {
     inventoryEventFeedSaving.value = false;
   }
@@ -2300,8 +2303,9 @@ async function requestLocationEventFeedChange(event: Event) {
       ? translate("Location events set to real-time push. Restart every OMS node before relying on event capture.")
       : translate("Location events set to manual. Cached routing may take up to 15 minutes to expire."));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to update Shopify location inventory event feed", error);
-    commonUtil.showToast(translate("Failed to update the location inventory event feed."));
+    commonUtil.showToast(`${translate("Failed to update the location inventory event feed.")} ${serverError}`);
   } finally {
     locationEventFeedSaving.value = false;
   }
@@ -2396,8 +2400,9 @@ async function requestShopInventoryPushChange(event: Event) {
       ? translate("Real-time inventory push enabled for this connection. Run a physical location QOH reset if stock moved while it was off.")
       : translate("Real-time inventory push disabled for this connection. Quantities already in Shopify are unaffected."));
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to update real-time inventory push for shop", shopId, error);
-    commonUtil.showToast(error?.message || translate("Failed to update real-time inventory push for this connection."));
+    commonUtil.showToast(`${translate("Failed to update real-time inventory push for this connection.")} ${serverError}`);
   } finally {
     shopInventoryPushSaving.value = false;
     // The shop row was re-read above on success and left untouched on failure, so a redraw shows what
@@ -2803,11 +2808,18 @@ async function openChannelFacilities(channel: any) {
       fromDate: facility.fromDate,
       thruDate: now,
     }));
-    const { failed } = await useFacilityGroupMutations(facilityGroupId).saveMembers(additions, expirations);
-    commonUtil.showToast(failed ? translate("Failed to update some facilities") : translate("Facilities updated"));
+    const { failed, results } = await useFacilityGroupMutations(facilityGroupId).saveMembers(additions, expirations);
+    if (failed) {
+      const failedResult: any = results?.find((r: any) => r.status === "rejected" || commonUtil.hasError(r?.value));
+      const serverError = failedResult ? commonUtil.getErrorMessage(failedResult.reason || failedResult.value) : "";
+      commonUtil.showToast(`${translate("Failed to update some facilities")}. ${serverError}`);
+    } else {
+      commonUtil.showToast(translate("Facilities updated"));
+    }
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to update Shopify inventory channel facilities", facilityGroupId, error);
-    commonUtil.showToast(translate("Failed to update some facilities"));
+    commonUtil.showToast(`${translate("Failed to update some facilities")}. ${serverError}`);
   } finally {
     savingGroupMembershipFor.value = "";
   }
@@ -2940,9 +2952,10 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
         ? translate("{job} created, paused. Open the row to set its schedule and activate it.", { job: created[0] })
         : translate("{count} jobs created, paused. Open each row entry to schedule and activate them.", { count: created.length }));
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to set up inventory sync job", kind, error);
     jobSetupError.value = error?.message || translate("The job could not be created.");
-    commonUtil.showToast(jobSetupError.value);
+    commonUtil.showToast(`${translate("The job could not be created.")} ${serverError}`);
   } finally {
     provisioningJobKind.value = "";
   }

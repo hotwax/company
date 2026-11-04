@@ -18,6 +18,7 @@ vi.mock("@common", () => ({
   commonUtil: {
     hasError: mocks.hasError,
     showToast: mocks.showToast,
+    getErrorMessage: vi.fn(() => ""),
   },
   logger: mocks.logger,
 }))
@@ -144,7 +145,7 @@ describe("ProductCalendarMappingsCard", () => {
 
     await pickFor(wrapper, "releaseDate", "calendar:launch")
 
-    expect(mocks.showToast).toHaveBeenCalledWith("Failed to update mapping")
+    expect(mocks.showToast).toHaveBeenCalledWith("Failed to update mapping. ")
     expect(picker(wrapper).props("field")).toMatchObject({ key: "releaseDate" })
     expect(row(wrapper, "releaseDate").text()).toContain("calendar:release_date")
   })

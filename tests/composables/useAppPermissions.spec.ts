@@ -280,7 +280,11 @@ describe("useAppPermissions — savePermissionGroups", () => {
       [{ groupId: "GROUP_1" }],
     );
 
-    expect(outcome).toEqual({ failed: 1, succeeded: 1 });
+    expect(outcome).toEqual({
+      failed: 1,
+      succeeded: 1,
+      error: { error: true, data: "nope" },
+    });
   });
 
   it("refuses a removal whose original fromDate cannot be parsed", async () => {

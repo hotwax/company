@@ -69,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import { commonUtil, translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import {
   IonButton,
   IonButtons,
@@ -90,7 +90,6 @@ import {
   createOrganization,
   suggestOrganizationId,
 } from "@/composables/useOrganizations";
-import { getResponseErrorMessage } from "@/utils";
 
 const props = defineProps<{ isOpen: boolean; organizations: Organization[] }>();
 const emit = defineEmits<{ dismiss: []; created: [partyId: string] }>();
@@ -127,7 +126,9 @@ async function save() {
     });
     emit("created", createdPartyId);
   } catch (error) {
-    await commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to create organization.")));
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
+    await commonUtil.showToast(`${translate("Failed to create organization.")} ${serverError}`);
   } finally {
     saving.value = false;
   }
