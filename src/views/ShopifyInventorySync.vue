@@ -2811,6 +2811,10 @@ const activeExperienceModeLabel = computed(() => {
 
 function handleExperienceModeChange(mode: string | number | undefined) {
   if(typeof mode !== "string" || !INVENTORY_SYNC_EXPERIENCE_MODES.includes(mode)) {return;}
+  if(!showModeModal.value) {
+    experienceMode.value = mode as InventorySyncExperienceMode;
+    return;
+  }
   pendingExperienceMode.value = mode as InventorySyncExperienceMode;
   showModeModal.value = false;
 }

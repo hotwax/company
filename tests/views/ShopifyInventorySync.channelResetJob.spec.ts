@@ -20,6 +20,7 @@ const syncReady = ref(true);
 const syncError = ref<string | null>(null);
 
 const harness = vi.hoisted(() => ({
+  mode: "returning",
   ensureChannelResetJob: vi.fn(),
   ensureChannelEventPublisherJob: vi.fn(),
   ensureChannelEventDiscardJob: vi.fn(),
@@ -35,7 +36,7 @@ vi.mock("vue-router", () => ({
   useRouter: () => ({
     push: harness.push,
     // These specs exercise the returning view; with no channels cached, auto mode would show the first-time wizard.
-    currentRoute: { value: { query: { mode: "returning" } } },
+    currentRoute: { get value() { return { query: { mode: harness.mode } }; } },
   }),
   useRoute: () => ({
     params: { id: "100002" },
@@ -782,6 +783,38 @@ describe("ShopifyInventorySync - channels crossing a date boundary while open", 
     await vi.advanceTimersByTimeAsync(60_000);
     await flushPromises();
     expect(cardNames()).toEqual(["future"]);
+    wrapper.unmount();
+  });
+});
+
+describe("ShopifyInventorySync - skipping the setup wizard", () => {
+  afterEach(() => {
+    harness.mode = "returning";
+  });
+
+  it("leaves the wizard for the returning view when 'Skip setup process' is clicked", async () => {
+    harness.mode = "first-time";
+    cachedChannels.value = [];
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: {
+        stubs: {
+          IonModal: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+    expect(wrapper.find(".onboarding-layout").exists()).toBe(true);
+
+    const skip = wrapper.findAll("ion-button").find((button) => button.text().includes("Skip setup process"))!;
+    await skip.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".onboarding-layout").exists()).toBe(false);
     wrapper.unmount();
   });
 });
