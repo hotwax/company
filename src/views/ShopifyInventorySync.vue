@@ -313,7 +313,7 @@
               <ion-item v-if="inventoryChannelsHydrated && !inventoryChannels.length" lines="none" color="light" class="ion-margin-bottom" data-testid="inventory-sync-jobs-no-channel-note">
                 <ion-icon slot="start" :icon="warningOutline" color="warning" />
                 <ion-label class="ion-text-wrap">
-                  <p>{{ translate("Channel publish and reset jobs are created with each inventory channel. Set up a channel first.") }}</p>
+                  <p>{{ translate("Channel jobs are only configured when a channel is set up.") }}</p>
                 </ion-label>
                 <ion-button slot="end" fill="outline" size="small" data-testid="inventory-sync-jobs-setup-channel-btn" @click="currentOnboardingStepId = 'channels'">
                   {{ translate("Set up channel") }}
@@ -2522,9 +2522,14 @@ const onboardingJobSections = computed(() => {
     jobs: physicalSharedJobs.value,
   });
 
+  // Publish / reset jobs are created per channel, so without a channel they have nothing to show; the
+  // jobs step says so in a note instead of listing them as unconfigured.
+  const perChannelJobNames = [translate("Publish channel batches"), translate("Reset channel ATP")];
   sections.push({
     title: translate("Shared maintenance jobs"),
-    jobs: channelSharedJobs.value,
+    jobs: inventoryChannels.value.length
+      ? channelSharedJobs.value
+      : channelSharedJobs.value.filter((job) => !perChannelJobNames.includes(job.name)),
   });
 
   return sections;
