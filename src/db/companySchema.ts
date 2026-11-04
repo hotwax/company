@@ -768,6 +768,42 @@ export const companySchema = defineSchema({
   }),
 
   /**
+   * One metafield revision of an inventory event that has no channel or location detail: a pre-order
+   * promise date change, or a channel reset's batch metafields. The aggregate ledger above cannot hold
+   * it, because it has no inventory line, so `useInventoryEvents` reads it beside the ledger and shows
+   * it as an event with no quantity. PK is the header plus the revision. The row carries the header's
+   * event type and its message's delivery columns, as a ledger row does; `failed` is Shopify's explicit
+   * rejection of this revision. `shopifyInventoryItemId` names the variant's product like a ledger row.
+   */
+  shopifyMetafieldAdjustments: defineEntity({
+    primaryKey: "shopifyInventoryAdjustmentId,metafieldId,metafieldDetailSeqId",
+    fields: {
+      shopifyInventoryAdjustmentId: "text",
+      metafieldId: "text",
+      // A number on the wire; stored as text so the key reads the same everywhere.
+      metafieldDetailSeqId: "text",
+      eventTypeId: "text",
+      eventReferenceId: "text",
+      eventTypeDescription: "text",
+      shopifyReason: "text",
+      shopId: "text",
+      shopifyProductId: "text",
+      shopifyInventoryItemId: "text",
+      metafieldNamespace: "text",
+      metafieldKey: "text",
+      failed: "text",
+      systemMessageId: "text",
+      systemMessageStatusId: "text",
+      systemMessageInitDate: "date",
+      systemMessageProcessedDate: "date",
+      createdDate: "date",
+      detailLastUpdatedStamp: "date",
+      systemMessageLastUpdatedStamp: "date",
+    },
+    indexes: ["shopId", "systemMessageId", "createdDate", "[shopId+createdDate]"],
+  }),
+
+  /**
    * CarrierFacility — a date-effective carrier role at one facility. `carrierFacilityProjection`'s
    * `buildKey` joins partyId + facilityId + roleTypeId + fromDate, tolerating a missing `fromDate`
    * (`?? ""`); treated here as a required key member (OFBiz date-effective PKs are non-null

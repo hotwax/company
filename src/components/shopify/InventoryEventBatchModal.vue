@@ -15,14 +15,16 @@
         <ion-item>
           <ion-label class="ion-text-wrap">
             {{ translate("Shopify target") }}
-            <p>{{ targetLabel }}</p>
+            <p v-if="targetLabel">
+              {{ targetLabel }}
+            </p>
           </ion-label>
           <!-- Every row of one batch shares its delivery. -->
           <ion-badge slot="end" :color="batch.events[0]?.deliveryColor">
             {{ batch.events[0]?.deliveryLabel }}
           </ion-badge>
         </ion-item>
-        <ion-item>
+        <ion-item v-if="!metafieldOnlyBatch">
           <ion-label class="ion-text-wrap">
             {{ translate("Publishes under") }}
             <p>{{ batch.reason }}</p>
@@ -33,7 +35,7 @@
         </ion-item>
 
         <!-- The events below, summed per (inventory item, location). -->
-        <ion-list-header>
+        <ion-list-header v-if="batch.entries.length">
           <ion-label>{{ translate("Change entries") }}</ion-label>
         </ion-list-header>
         <ion-item v-for="entry in batch.entries" :key="entry.key">
@@ -90,7 +92,12 @@
           <ion-label class="ion-text-wrap">
             {{ event.eventTypeLabel }}
             <p>{{ event.sourceLabel }}</p>
-            <p>{{ translate("Item {id} at {location}", { id: event.inventoryItemId, location: event.locationLabel }) }}</p>
+            <p v-if="event.metafieldOnly">
+              {{ translate("Metafield {name}", { name: event.metafieldName }) }}
+            </p>
+            <p v-else>
+              {{ translate("Item {id} at {location}", { id: event.inventoryItemId, location: event.locationLabel }) }}
+            </p>
           </ion-label>
           <ion-note slot="end">
             {{ event.change }}
@@ -157,7 +164,10 @@ const resending = ref(false);
 const resentId = ref("");
 const messageText = computed(() => String(message.value?.messageText ?? ""));
 
-const targetLabel = computed(() => [...new Set(props.batch?.events.map((event) => event.locationLabel))].join(", "));
+const targetLabel = computed(() => [...new Set(props.batch?.events.filter((event) => !event.metafieldOnly).map((event) => event.locationLabel))].join(", "));
+
+/** Nothing in it moves a quantity: no Shopify reason applies and there are no change entries. */
+const metafieldOnlyBatch = computed(() => !!props.batch?.events.length && props.batch.events.every((event) => event.metafieldOnly));
 
 const payload = computed(() => {
   if(!messageText.value) {return translate("The message payload has not loaded.");}

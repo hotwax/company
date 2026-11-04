@@ -76,6 +76,13 @@ export interface InventoryEvent {
   batchedAt?: number;
   awaitingDelivery: boolean;
   decisionComment: string;
+  /**
+   * A metafield revision with no inventory line (a promise date change, a channel reset's batch metafields):
+   * it moves no quantity, so it has no item or location and adds nothing to a batch's changes.
+   */
+  metafieldOnly?: boolean;
+  /** `namespace.key` of the metafield a metafield-only event writes. */
+  metafieldName?: string;
 }
 
 /**
@@ -214,6 +221,48 @@ export function toInventoryEvent(
   };
 }
 
+/**
+ * A metafield-only revision as an event of the channel ledger. It is `waiting` until a publish job batches
+ * its header, like an absolute row, and `error` when Shopify rejected this revision outright.
+ */
+export function toMetafieldInventoryEvent(
+  cacheKey: string,
+  raw: Record<string, any>,
+  message: InventoryEventMessage | undefined,
+): InventoryEvent {
+  const messageId = text(raw?.systemMessageId) || undefined;
+  const state = deliveryStateOf(messageId, 0, message?.statusId, true);
+  const delivery: DeliveryState = text(raw?.failed) === "Y" ? { id: "error", statusId: state.statusId } : state;
+  const reason = text(raw?.shopifyReason);
+  const eventTypeId = text(raw?.eventTypeId);
+
+  return {
+    kind: "channel",
+    rowKey: `channel:metafield:${cacheKey}`,
+    shopId: text(raw?.shopId),
+    locationId: "",
+    retarget: false,
+    eventTypeId,
+    eventReferenceId: text(raw?.eventReferenceId),
+    eventTypeLabel: text(raw?.eventTypeDescription) || eventTypeId,
+    source: sourceOf(eventTypeId, text(raw?.eventReferenceId)),
+    inventoryItemId: text(raw?.shopifyInventoryItemId),
+    delta: 0,
+    absolute: false,
+    reason: reason || "correction",
+    reasonMapped: !!reason,
+    messageId,
+    delivery,
+    createdAt: toMillis(raw?.createdDate) ?? 0,
+    sentAt: delivery.id === "sent" ? toMillis(message?.processedDate) : undefined,
+    batchedAt: messageId ? toMillis(message?.initDate) : undefined,
+    awaitingDelivery: ["waiting", "inFlight", "error"].includes(delivery.id),
+    decisionComment: "",
+    metafieldOnly: true,
+    metafieldName: [text(raw?.metafieldNamespace), text(raw?.metafieldKey)].filter(Boolean).join("."),
+  };
+}
+
 /** Median, not mean: one row stuck through an outage would drag a mean where no row actually was. */
 export function summarizeInventoryEvents(events: readonly InventoryEvent[]) {
   let waiting = 0;
@@ -262,7 +311,10 @@ function groupBy<T>(rows: readonly T[], keyOf: (row: T) => string | undefined): 
  * sets the level, so the entry is the latest absolute quantity plus any deltas recorded after it.
  */
 export function changeEntriesOf<T extends InventoryEvent>(events: readonly T[]) {
-  return [...groupBy(events, (event) => `${event.inventoryItemId}@${event.locationId}`)].map(([key, rows]) => {
+  // A metafield-only event has no quantity to sum: it would show as a blank item.
+  const inventoryEvents = events.filter((event) => !event.metafieldOnly);
+
+  return [...groupBy(inventoryEvents, (event) => `${event.inventoryItemId}@${event.locationId}`)].map(([key, rows]) => {
     const ordered = [...rows].sort((a, b) => a.createdAt - b.createdAt);
     const lastAbsolute = ordered.map((row) => row.absolute).lastIndexOf(true);
     const counted = lastAbsolute >= 0 ? ordered.slice(lastAbsolute) : ordered;

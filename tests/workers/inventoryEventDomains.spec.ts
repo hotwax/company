@@ -25,6 +25,7 @@ vi.mock("@/db/companyDb", async (importOriginal) => {
     systemMessages: "systemMessages",
     shopifyInventoryItems: "shopifyInventoryItems",
     inventoryLedgerBounds: "bounds",
+    shopifyMetafieldAdjustments: "metafield",
   };
 
   /** The `EntityClient` surface the domains use, over a Map, projecting through the real schema. */
@@ -499,5 +500,79 @@ describe("the product resolver", () => {
 
     await domain.sync(ctx, { shopId: "100002" });
     expect(state.posts).toHaveLength(2);
+  });
+});
+
+describe("the metafield-only events poller", () => {
+  const ENDPOINT = "sob/shopify/metafieldOnlyAdjustments";
+  const revision = (over: Record<string, any> = {}) => ({
+    shopifyInventoryAdjustmentId: "M100918", metafieldId: "MF_1", metafieldDetailSeqId: 28, shopId: "100002",
+    eventTypeId: "SIE_FI_SUPPLY_UPDATE", eventReferenceId: "M100306:06", shopifyInventoryItemId: "ITEM_1",
+    metafieldNamespace: "hotwax", metafieldKey: "preorder_batches", failed: "N",
+    systemMessageId: "M103767", systemMessageStatusId: "SmsgSent",
+    createdDate: 5_000, detailLastUpdatedStamp: 5_000, systemMessageLastUpdatedStamp: 6_000,
+    confirmedDigest: "secret-digest", ...over,
+  });
+  const key = (raw: any) => joinKey(raw.shopifyInventoryAdjustmentId, raw.metafieldId, raw.metafieldDetailSeqId);
+
+  it("reads the shop's newest window and stores each revision under a text sequence, without the digest", async () => {
+    const domain = await load("shopifyMetafieldOnlyAdjustment");
+    state.responses[ENDPOINT] = () => [revision()];
+
+    await domain.sync(ctx, { shopId: "100002" });
+
+    expect(state.gets).toEqual([{ url: ENDPOINT, params: { shopId: "100002", orderByField: "-createdDate", pageSize: 200, pageIndex: 0 } }]);
+    const stored = state.tables.metafield.get(key(revision()));
+    expect(stored).toMatchObject({ metafieldDetailSeqId: "28", systemMessageStatusId: "SmsgSent", eventReferenceId: "M100306:06" });
+    expect(stored).not.toHaveProperty("confirmedDigest");
+  });
+
+  it("reads nothing without a shop, so a Refresh from Settings never pulls every shop's events", async () => {
+    const domain = await load("shopifyMetafieldOnlyAdjustment");
+
+    await expect(domain.sync(ctx, {})).resolves.toBe(0);
+    expect(state.gets).toEqual([]);
+  });
+
+  it("rewrites a revision only when its delivery moved", async () => {
+    const domain = await load("shopifyMetafieldOnlyAdjustment");
+    state.responses[ENDPOINT] = () => [revision()];
+    await domain.sync(ctx, { shopId: "100002" });
+
+    await expect(domain.sync(ctx, { shopId: "100002" })).resolves.toBe(0);
+
+    state.responses[ENDPOINT] = () => [revision({ systemMessageStatusId: "SmsgError", systemMessageLastUpdatedStamp: 7_000 })];
+    await expect(domain.sync(ctx, { shopId: "100002" })).resolves.toBe(1);
+    expect(state.tables.metafield.get(key(revision())).systemMessageStatusId).toBe("SmsgError");
+  });
+
+  it("drops a cached revision the server purged, and keeps another shop's", async () => {
+    const domain = await load("shopifyMetafieldOnlyAdjustment");
+    const purged = revision({ shopifyInventoryAdjustmentId: "M1", createdDate: 1_000 });
+    const otherShop = revision({ shopifyInventoryAdjustmentId: "M2", shopId: "999", createdDate: 1_000 });
+    state.responses[ENDPOINT] = () => [purged, otherShop];
+    await domain.sync(ctx, { shopId: "100002" });
+    state.tables.metafield.set(key(otherShop), { ...otherShop, metafieldDetailSeqId: "28" });
+
+    state.responses[ENDPOINT] = () => [revision({ shopifyInventoryAdjustmentId: "M3", createdDate: 9_000 })];
+    await domain.sync(ctx, { shopId: "100002" });
+
+    expect(state.tables.metafield.has(key(purged))).toBe(false);
+    expect(state.tables.metafield.has(key(otherShop))).toBe(true);
+    expect(state.tables.metafield.has(key(revision({ shopifyInventoryAdjustmentId: "M3" })))).toBe(true);
+  });
+
+  it("treats a connector without the resource as having none", async () => {
+    const domain = await load("shopifyMetafieldOnlyAdjustment");
+    state.responses[ENDPOINT] = () => { throw { status: 404 }; };
+
+    await expect(domain.sync(ctx, { shopId: "100002" })).resolves.toBe(0);
+  });
+
+  it("fails the pass on any other error", async () => {
+    const domain = await load("shopifyMetafieldOnlyAdjustment");
+    state.responses[ENDPOINT] = () => { throw { status: 500 }; };
+
+    await expect(domain.sync(ctx, { shopId: "100002" })).rejects.toMatchObject({ status: 500 });
   });
 });

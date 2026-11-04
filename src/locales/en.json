@@ -4550,5 +4550,7 @@
   "Delivers channel and physical batches.": "Delivers channel and physical batches.",
   "Shared jobs": "Shared jobs",
   "Purge old events (all shops)": "Purge old events (all shops)",
-  "Prunes channel, physical and metafield events together.": "Prunes channel, physical and metafield events together."
+  "Prunes channel, physical and metafield events together.": "Prunes channel, physical and metafield events together.",
+  "Metafield {name}": "Metafield {name}",
+  "{change}, {metafield}, {source}": "{change}, {metafield}, {source}"
 }

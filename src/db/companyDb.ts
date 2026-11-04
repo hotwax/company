@@ -51,7 +51,8 @@ export const companyDb = defineAppDb({
   // v7: inventoryChannels gained channelTypeEnumId (physical, pre-order, back-order) and both
   //     inventory ledgers gained resetInventoryLevel (Y = an absolute quantity, not a delta);
   //     added productStoreFacilityPurposes (the stores' pre-order and back-order parking).
-  version: 7,
+  // v8: added shopifyMetafieldAdjustments (inventory events that carry only a metafield revision).
+  version: 8,
   schema: mergeSchemas(commonSchema.pick([...COMPANY_SEED_TABLES]), companySchema),
 });
 
