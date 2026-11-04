@@ -94,7 +94,7 @@
             </ion-item>
           </ion-list>
           <ion-button fill="outline" expand="block" class="ion-margin-top" @click="handleExperienceModeChange('returning')">
-            {{ translate("Go to returning user view") }}
+            {{ translate("Skip setup process") }}
           </ion-button>
         </aside>
 
