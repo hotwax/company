@@ -21,7 +21,7 @@
         </ion-buttons>
       </ion-toolbar>
       <ion-progress-bar
-        v-if="activeExperienceMode === 'first-time'"
+        v-if="experienceResolved && activeExperienceMode === 'first-time'"
         :value="setupProgressValue"
         role="progressbar"
         :aria-label="translate('Setup progress')"
@@ -29,7 +29,7 @@
         :aria-valuemax="totalStepCount"
         :aria-valuenow="completedCount"
       />
-      <ion-toolbar v-if="activeExperienceMode === 'returning'">
+      <ion-toolbar v-if="experienceResolved && activeExperienceMode === 'returning'">
         <ion-segment :value="selectedSegment" @ionChange="selectedSegment = $event.detail.value as any">
           <ion-segment-button value="channels">
             <ion-label>{{ translate("Channels & Jobs") }}</ion-label>
@@ -50,7 +50,10 @@
       </ion-item>
 
       <!-- FIRST-TIME USER ONBOARDING EXPERIENCE -->
-      <main v-if="activeExperienceMode === 'first-time'" class="onboarding-layout">
+      <div v-if="!experienceResolved" class="ion-text-center ion-padding" data-testid="inventory-sync-loading">
+        <ion-spinner name="crescent" />
+      </div>
+      <main v-else-if="activeExperienceMode === 'first-time'" class="onboarding-layout">
         <aside class="desktop-steps" :aria-label="translate('Setup progress')">
           <ion-list lines="none">
             <ion-list-header>
@@ -211,7 +214,7 @@
             <!-- STEP 2: CHANNELS & PARKING -->
             <ion-card-content v-else-if="currentOnboardingStepId === 'channels'">
               <div v-if="!inventoryChannels.length" class="empty-step-state ion-text-center ion-padding">
-                <ion-icon :icon="layersOutline" class="empty-step-icon" />
+                <ion-icon :icon="layersOutline" class="empty-step-icon" size="large" color="medium" />
                 <h3>{{ translate("No inventory channels configured yet.") }}</h3>
                 <p class="ion-margin-bottom">
                   {{ translate("Map facility groups and parking to Shopify locations") }}
@@ -1116,7 +1119,7 @@
       :active-mode="activeExperienceMode"
       :active-mode-label="activeExperienceModeLabel"
       @update:mode="handleExperienceModeChange"
-      @close="showModeModal = false"
+      @close="closeModeModal()"
     />
   </ion-page>
 </template>
@@ -1126,7 +1129,7 @@ import { commonUtil, logger, translate } from "@common";
 import { isEffectiveNow, serviceState } from "@common/db";
 import {
   IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
-  IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent,
+  IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent,
   IonHeader, IonIcon, IonItem, IonItemDivider, IonItemGroup, IonLabel, IonList, IonListHeader, IonModal, IonNote,
   IonPage, IonProgressBar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSpinner, IonTitle, IonToggle, IonToolbar,
   alertController,
@@ -2130,6 +2133,48 @@ const { documents: inventoryEventDocuments, hydrated: documentsHydrated } = useI
 const documentsError = ref("");
 const savingDocumentKey = ref("");
 const documentsLoading = computed(() => !documentsHydrated.value);
+const facilityGroupMemberFeedNotice = computed(() => {
+  const title = translate("Shopify group-member updates");
+  if(!documentsHydrated.value || !dataFeedsHydrated.value) {
+    return {
+      title,
+      message: translate("Checking the group-member event feed configuration."),
+      color: "medium",
+    };
+  }
+
+  const document = inventoryEventDocuments.value.find((item) =>
+    item.dataDocumentId === "ShopifyFacilityGroupMemberEvent");
+  if(!document || document.missing) {
+    return {
+      title,
+      message: translate("The group-member data document is not loaded on this OMS, so membership changes cannot be captured for Shopify."),
+      color: "warning",
+    };
+  }
+
+  if(!document.channelAttached) {
+    return {
+      title,
+      message: translate("Facility group changes are not being captured for Shopify. Enable Shopify Facility Group Member Event under Event sources before expecting Shopify inventory to update."),
+      color: "warning",
+    };
+  }
+
+  if(!inventoryEventFeed.value || !inventoryEventFeedTypeSupported.value || !inventoryEventFeedPush.value) {
+    return {
+      title,
+      message: translate("Facility group changes are captured, but the channel event feed is not set to real-time push. Changes will not reach Shopify immediately."),
+      color: "warning",
+    };
+  }
+
+  return {
+    title,
+    message: translate("Facility group changes are captured and the channel event feed is set to real-time push. Restart every OMS node after changing this feed setting before relying on event capture."),
+    color: "success",
+  };
+});
 
 /** Re-snapshot the domain. The read path is the cache, so "retry" means refill it, not re-fetch here. */
 async function resyncEventDocuments() {
@@ -2346,7 +2391,7 @@ async function requestFutureEventFeedChange(event: Event) {
       : translate("Future inventory events set to manual."));
   } catch (error) {
     logger.error("Failed to update the future inventory event feed", error);
-    commonUtil.showToast(translate("Failed to update the future inventory event feed."));
+    commonUtil.showToast(`${translate("Failed to update the future inventory event feed.")} ${commonUtil.getErrorMessage(error)}`);
   } finally {
     futureEventFeedSaving.value = false;
     redrawToggles();
@@ -2458,7 +2503,7 @@ const onboardingJobSections = computed(() => {
   for(const channel of inventoryChannels.value) {
     const channelName = channel.facilityGroupName || channel.description || channel.inventoryChannelId;
     sections.push({
-      title: `${channelName} (${channelTypeDescription(channel)})`,
+      title: `${channelName} (${channelTypeLabel(channel)})`,
       jobs: jobsForChannel(channel),
     });
   }
@@ -2598,9 +2643,14 @@ const channelFilterOptions = computed<ParameterOption[]>(() => {
 const INVENTORY_SYNC_EXPERIENCE_MODES: readonly string[] = ["first-time", "returning", "auto"];
 type InventorySyncExperienceMode = "first-time" | "returning" | "auto";
 
+const requestedMode = router?.currentRoute?.value?.query?.mode;
 const experienceMode = ref<InventorySyncExperienceMode>(
-  (router?.currentRoute?.value?.query?.mode as InventorySyncExperienceMode) || "auto"
+  typeof requestedMode === "string" && INVENTORY_SYNC_EXPERIENCE_MODES.includes(requestedMode)
+    ? requestedMode as InventorySyncExperienceMode
+    : "auto"
 );
+// Applied once the mode modal has finished closing, so the page does not re-layout behind it.
+const pendingExperienceMode = ref<InventorySyncExperienceMode | null>(null);
 const showModeModal = ref(false);
 
 type InventorySyncStepId = "feeds" | "channels" | "jobs" | "reset";
@@ -2730,6 +2780,9 @@ const isSetupComplete = computed(() => {
   return inventoryChannels.value.length > 0;
 });
 
+// In auto mode the view depends on the cached channels: until they are read, "no channels" is not known.
+const experienceResolved = computed(() => experienceMode.value !== "auto" || inventoryChannelsHydrated.value);
+
 const activeExperienceMode = computed<"first-time" | "returning">(() => {
   if(experienceMode.value === "first-time") {return "first-time";}
   if(experienceMode.value === "returning") {return "returning";}
@@ -2743,10 +2796,16 @@ const activeExperienceModeLabel = computed(() => {
 
 function handleExperienceModeChange(mode: string | number | undefined) {
   if(typeof mode !== "string" || !INVENTORY_SYNC_EXPERIENCE_MODES.includes(mode)) {return;}
+  pendingExperienceMode.value = mode as InventorySyncExperienceMode;
   showModeModal.value = false;
-  setTimeout(() => {
-    experienceMode.value = mode as InventorySyncExperienceMode;
-  }, 250);
+}
+
+function closeModeModal() {
+  showModeModal.value = false;
+  if(pendingExperienceMode.value) {
+    experienceMode.value = pendingExperienceMode.value;
+    pendingExperienceMode.value = null;
+  }
 }
 
 async function openChannelSetup() {
@@ -2783,6 +2842,9 @@ async function openChannelFacilities(channel: any) {
     component: SelectFacilityModal,
     componentProps: {
       selectedFacilities: currentMembers,
+      bannerTitle: facilityGroupMemberFeedNotice.value.title,
+      bannerMessage: facilityGroupMemberFeedNotice.value.message,
+      bannerColor: facilityGroupMemberFeedNotice.value.color,
     },
   });
   await modal.present();
@@ -2876,7 +2938,6 @@ function openJobRuns(job: any, title: string) {
 }
 
 function refreshServiceJobData() {
-  void resyncDomain("serviceJob");
   if(isViewActive.value) {void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);}
 }
 
@@ -3052,8 +3113,6 @@ function formatUntil(timestamp: number): string {
   align-items: center;
   gap: 4px;
   margin: 0;
-  font-size: 13px;
-  color: var(--ion-color-medium);
 }
 
 .channel-readiness-list,
@@ -3063,10 +3122,6 @@ function formatUntil(timestamp: number): string {
 
 .channel-readiness-list ion-list-header,
 .channel-jobs-list ion-list-header {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
   min-height: 28px;
   padding-inline-start: var(--spacer-sm);
   margin-top: var(--spacer-xs);
@@ -3204,8 +3259,6 @@ function formatUntil(timestamp: number): string {
 }
 
 .empty-step-icon {
-  font-size: 3rem;
-  color: var(--ion-color-medium);
   margin-bottom: var(--spacer-sm);
 }
 

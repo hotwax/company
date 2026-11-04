@@ -34,6 +34,8 @@ const harness = vi.hoisted(() => ({
 vi.mock("vue-router", () => ({
   useRouter: () => ({
     push: harness.push,
+    // These specs exercise the returning view; with no channels cached, auto mode would show the first-time wizard.
+    currentRoute: { value: { query: { mode: "returning" } } },
   }),
   useRoute: () => ({
     params: { id: "100002" },
@@ -97,6 +99,7 @@ vi.mock("@/composables/useFacilities", () => ({
   useFacilityTypes: () => ({ facilityTypes: ref([]) }),
   useFacilities: () => ({ facilities: ref([]), hydrated: ref(true) }),
   useGroupFacilities: () => ({ records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated }),
+  useFacilityGroups: () => ({ records: ref([]), hydrated: ref(true) }),
   useFacilityGroupMutations: (facilityGroupId: string) => ({
     saveMembers: (...args: any[]) => harness.saveFacilityGroupMembers(facilityGroupId, ...args),
   }),
@@ -143,6 +146,17 @@ vi.mock("@/composables/useShopify", () => ({
     resolve: vi.fn(),
     sourceKeyOf: (eventTypeId: string, eventReferenceId: string) => `${eventTypeId}|${eventReferenceId}`,
   }),
+  CHANNEL_TYPE: { physical: "SICT_PHYSICAL", preOrder: "SICT_PRE_ORDER", backOrder: "SICT_BACK_ORDER" },
+  FUTURE_CHANNEL_PARKING: {
+    SICT_PRE_ORDER: { purposeEnumId: "FP_PRE_ORDER_PARK", facilityTypeId: "PRE_ORDER" },
+    SICT_BACK_ORDER: { purposeEnumId: "FP_BACKORDER_PARK", facilityTypeId: "BACKORDER" },
+  },
+  SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID: "ShopifyFutureInventoryEventFeed",
+  channelTypeOf: (channel: any) => channel?.channelTypeEnumId || "SICT_PHYSICAL",
+  configureFutureChannelParking: vi.fn(),
+  updateShopifyFutureInventoryEventFeedType: vi.fn(),
+  useProductStoreFacilityPurposes: () => ({ purposes: ref([]), hydrated: ref(true) }),
+  useShopifyLocations: () => ({ locationByFacility: ref({}) }),
   SHOPIFY_INVENTORY_EVENT_FEED_ID: "ShopifyInventoryEventFeed",
   SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID: "ShopifyLocationInventoryEventFeed",
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL: "manual",
@@ -704,6 +718,9 @@ describe("ShopifyInventorySync - monitor batch carousels", () => {
         },
       },
     });
+    await flushPromises();
+    // The batch carousels live under the History segment.
+    (wrapper.vm as any).selectedSegment = "history";
     await flushPromises();
 
     const titles = wrapper.find(`.run-carousel[aria-label="${label}"]`)

@@ -36,6 +36,8 @@ vi.mock("@/composables/useServiceJobs", () => ({
 
 vi.mock("@/composables/useShopify", () => ({
   ABSOLUTE_CHANNEL_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
+  CHANNEL_TYPE: { physical: "SICT_PHYSICAL", preOrder: "SICT_PRE_ORDER", backOrder: "SICT_BACK_ORDER" },
+  channelTypeOf: (channel: any) => channel?.channelTypeEnumId || "SICT_PHYSICAL",
   ensureChannelResetJob: (...args: any[]) => harness.ensureChannelResetJob(...args),
   fetchLocationsFromShopify: (...args: any[]) => harness.fetchLocationsFromShopify(...args),
   fetchShopifyShopLocations: (...args: any[]) => harness.fetchShopifyShopLocations(...args),

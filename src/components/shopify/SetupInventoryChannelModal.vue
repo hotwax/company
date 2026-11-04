@@ -140,7 +140,7 @@
         </ion-radio-group>
 
         <template v-if="parkingSetup && selectedLocationId">
-          <div class="parking-setup-section">
+          <ion-list inset>
             <ion-item lines="none">
               <ion-label class="ion-text-wrap">
                 <h3>{{ translate("Store parking facility") }}</h3>
@@ -164,7 +164,7 @@
                 </ion-radio>
               </ion-item>
             </ion-radio-group>
-          </div>
+          </ion-list>
         </template>
 
         <ion-item v-if="excludedByFacility || excludedByChannel" lines="none">
@@ -203,7 +203,7 @@
         <ion-button
           v-if="step === 0"
           fill="solid"
-          :disabled="!channelType"
+          :disabled="!channelType || !channelDataReady"
           @click="step = 1"
         >
           {{ translate("Next") }}
@@ -219,7 +219,7 @@
         <ion-button
           v-else
           fill="solid"
-          :disabled="!selectedLocationId || saving || (!!parkingSetup && !selectedParkingFacilityId)"
+          :disabled="!selectedLocationId || saving || !channelDataReady || (!!parkingSetup && !selectedParkingFacilityId)"
           @click="createChannel()"
         >
           <ion-spinner v-if="saving" name="crescent" />
@@ -233,11 +233,12 @@
 <script setup lang="ts">
 import {
   IonBadge, IonButton, IonButtons, IonChip, IonContent, IonFooter, IonHeader, IonIcon, IonItem,
-  IonLabel, IonNote, IonRadio, IonRadioGroup, IonSearchbar, IonSpinner, IonTitle, IonToolbar, modalController,
+  IonLabel, IonList, IonNote, IonRadio, IonRadioGroup, IonSearchbar, IonSpinner, IonTitle, IonToolbar, modalController,
 } from "@ionic/vue";
 import { closeOutline, warningOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import { commonUtil, logger, translate } from "@common";
+import { useEffectiveNow } from "@/composables/useEffectiveNow";
 import { useFacilities, useFacilityGroups, useGroupFacilities } from "@/composables/useFacilities";
 import {
   CHANNEL_TYPE,
@@ -283,11 +284,15 @@ const omsMappings = ref<any[]>([]);
 
 const { records: facilityGroups, hydrated: groupsHydrated } = useFacilityGroups();
 const { members: groupMembers, hydrated: membersHydrated } = useGroupFacilities();
-const { channels: inventoryChannels } = useInventoryChannels();
+const { channels: inventoryChannels, hydrated: channelsHydrated } = useInventoryChannels();
 
 const facilityDataReady = computed(() => groupsHydrated.value && membersHydrated.value);
+// The type blocks and the parking write both read these tables: an unhydrated read would show nothing blocked and POST a duplicate purpose.
+const channelDataReady = computed(() => channelsHydrated.value && purposesHydrated.value);
 const { record: shop } = useShopifyShop(() => props.shopId);
-const { purposes } = useProductStoreFacilityPurposes();
+const { purposes, hydrated: purposesHydrated } = useProductStoreFacilityPurposes();
+// Date-effective projections re-evaluate at the next fromDate / thruDate boundary, not on a poll.
+const effectiveNow = useEffectiveNow(() => [...inventoryChannels.value, ...purposes.value, ...groupMembers.value]);
 const { facilities } = useFacilities();
 
 /** A pre-order or back-order channel must be the shop's only active one of its type. */
@@ -297,21 +302,21 @@ const channelTypeOptions = computed(() => [
   { id: CHANNEL_TYPE.backOrder, label: translate("Back-order"), description: translate("Back-order future inventory at the group's facilities") },
 ].map((option) => {
   const existing = option.id === CHANNEL_TYPE.physical ? undefined : inventoryChannels.value.find((channel: any) =>
-    String(channel.shopId) === String(props.shopId) && isEffectiveNow(channel, Date.now()) && channelTypeOf(channel) === option.id);
+    String(channel.shopId) === String(props.shopId) && isEffectiveNow(channel, effectiveNow.value) && channelTypeOf(channel) === option.id);
 
   return { ...option, blockedBy: existing ? String(existing.inventoryChannelId) : "" };
 }));
 
 const parkingSetup = computed(() => FUTURE_CHANNEL_PARKING[channelType.value]);
 const activeStorePurposes = computed(() => purposes.value.filter((row: any) =>
-  String(row.productStoreId) === String(shop.value?.productStoreId ?? "") && isEffectiveNow(row, Date.now())));
+  String(row.productStoreId) === String(shop.value?.productStoreId ?? "") && isEffectiveNow(row, effectiveNow.value)));
 
 /** Channels of the chosen type already mapped for THIS shop, by facility group. */
 const mappedGroupIds = computed(() => {
   const map: Record<string, string> = {};
   inventoryChannels.value.forEach((channel: any) => {
     if (String(channel.shopId) !== String(props.shopId)) return;
-    if (!isEffectiveNow(channel, Date.now())) return;
+    if (!isEffectiveNow(channel, effectiveNow.value)) return;
     // Per type: a group's physical channel and its pre-order channel publish different inventory.
     if (channelTypeOf(channel) !== channelType.value) return;
     map[String(channel.facilityGroupId)] = String(channel.inventoryChannelId);
@@ -324,7 +329,7 @@ const channelGroups = computed(() => facilityGroups.value
   .map((group: any) => {
     const members = groupMembers.value.filter((member: any) =>
       String(member.facilityGroupId) === String(group.facilityGroupId) &&
-      isEffectiveNow(member, Date.now()));
+      isEffectiveNow(member, effectiveNow.value));
     const countOf = (types: string[]) =>
       members.filter((m: any) => types.includes(String(m.facilityTypeId))).length;
     const storeCount = countOf(STORE_TYPES);
@@ -370,7 +375,7 @@ const mappingByLocation = computed(() => {
 
 /** Shopify locations already claimed by another inventory channel on this shop. */
 const channelLocationIds = computed(() => new Set(inventoryChannels.value
-  .filter((c: any) => String(c.shopId) === String(props.shopId) && isEffectiveNow(c, Date.now()))
+  .filter((c: any) => String(c.shopId) === String(props.shopId) && isEffectiveNow(c, effectiveNow.value))
   .map((c: any) => String(c.shopifyLocationId))));
 
 /**
@@ -584,16 +589,7 @@ function closeModal() {
   color: var(--ion-color-medium);
 }
 
-.parking-setup-section {
-  border: 1px solid var(--ion-color-step-150, #e0e0e0);
-  border-radius: 8px;
-  margin: var(--spacer-base) var(--spacer-sm);
-  padding-block: var(--spacer-xs);
-  background: var(--ion-color-step-50, rgba(var(--ion-color-primary-rgb, 56, 128, 255), 0.03));
-}
-
 .parking-hint {
-  font-size: 13px;
   padding-inline-end: var(--spacer-sm);
 }
 </style>

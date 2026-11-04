@@ -42,6 +42,11 @@ async function fetchInventoryEventFeed(ctx: SyncContext, feedId: string = SHOPIF
   return response?.dataFeedId ? response : null;
 }
 
+/** Only a missing feed reads as "not configured"; an auth, network or server failure must fail the pass. */
+function isNotFound(error: any): boolean {
+  return Number(error?.status ?? error?.statusCode ?? error?.errorCode ?? error?.response?.status) === 404;
+}
+
 export const shopifyInventoryEventFeedDomain = defineSyncDomain({
   name: "shopifyInventoryEventFeed",
   table: "dataFeeds",
@@ -51,7 +56,7 @@ export const shopifyInventoryEventFeedDomain = defineSyncDomain({
     if (!options?.force && await companyClient.syncedThisLogin("shopifyInventoryEventFeed")) return 0;
     // A connector without future channels has no future feed: that is "not configured", not a failed sync.
     const feeds = (await Promise.all(INVENTORY_EVENT_FEED_IDS.map((feedId) => feedId === SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID
-      ? fetchInventoryEventFeed(ctx, feedId).catch(() => null)
+      ? fetchInventoryEventFeed(ctx, feedId).catch((error) => { if(isNotFound(error)) return null; throw error; })
       : fetchInventoryEventFeed(ctx, feedId))))
       .filter(Boolean);
     const result = await dataFeedEntity.snapshotReplace(feeds);

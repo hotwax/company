@@ -216,6 +216,11 @@ export async function updateShopifyLocationInventoryEventFeedType(dataFeedTypeEn
  */
 export const SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID = "ShopifyFutureInventoryEventFeed";
 
+/** A failure message followed by what the OMS said, when it said anything. */
+function withServerMessage(message: string, response: unknown): string {
+  return [message, commonUtil.getErrorMessage(response)].filter(Boolean).join(" ");
+}
+
 export async function updateShopifyFutureInventoryEventFeedType(dataFeedTypeEnumId: string): Promise<void> {
   if(![SHOPIFY_INVENTORY_EVENT_FEED_MANUAL, SHOPIFY_INVENTORY_EVENT_FEED_PUSH].includes(dataFeedTypeEnumId)) {
     throw new Error(`Unsupported future inventory event feed type: ${dataFeedTypeEnumId}`);
@@ -226,7 +231,7 @@ export async function updateShopifyFutureInventoryEventFeedType(dataFeedTypeEnum
     data: { dataFeedId: SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID, dataFeedTypeEnumId },
   });
   if(commonUtil.hasError(resp)) {
-    throw new Error("The OMS rejected the future inventory event feed update.");
+    throw new Error(withServerMessage("The OMS rejected the future inventory event feed update.", resp));
   }
   await refreshAfterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID });
 }
@@ -396,7 +401,7 @@ export async function configureFutureChannelParking(params: {
       facilityId: params.facilityId,
       shopifyLocationId: String(params.shopifyLocationId),
     });
-    if(commonUtil.hasError(resp)) {throw new Error(translate("The OMS rejected mapping the parking facility to the Shopify location."));}
+    if(commonUtil.hasError(resp)) {throw new Error(withServerMessage(translate("The OMS rejected mapping the parking facility to the Shopify location."), resp));}
   }
   await setStoreParkingFacility({
     productStoreId: params.productStoreId,
@@ -452,26 +457,39 @@ export async function setStoreParkingFacility(params: {
     row.productStoreId === productStoreId && row.facilityPurposeEnumId === purposeEnumId);
   if(current.length === 1 && current[0].facilityId === facilityId) {return;}
   const now = Date.now();
-  if(!current.some((row: any) => row.facilityId === facilityId)) {
-    const created: any = await api({
-      url: "oms/productStoreFacilityPurposes",
-      method: "post",
-      data: { productStoreId, facilityId, facilityPurposeEnumId: purposeEnumId, fromDate: now },
-    });
-    if(commonUtil.hasError(created)) {throw new Error(translate("The OMS rejected the parking facility."));}
+  let writeError: unknown;
+  try {
+    if(!current.some((row: any) => row.facilityId === facilityId)) {
+      const created: any = await api({
+        url: "oms/productStoreFacilityPurposes",
+        method: "post",
+        data: { productStoreId, facilityId, facilityPurposeEnumId: purposeEnumId, fromDate: now },
+      });
+      if(commonUtil.hasError(created)) {throw new Error(withServerMessage(translate("The OMS rejected the parking facility."), created));}
+    }
+    for(const row of current.filter((row: any) => row.facilityId !== facilityId)) {
+      const ended: any = await api({
+        url: "oms/productStoreFacilityPurposes",
+        method: "put",
+        data: {
+          productStoreId, facilityId: row.facilityId, facilityPurposeEnumId: purposeEnumId,
+          fromDate: row.fromDate, thruDate: now,
+        },
+      });
+      if(commonUtil.hasError(ended)) {throw new Error(withServerMessage(translate("The new parking facility was added, but the previous one could not be ended."), ended));}
+    }
+  } catch(error) {
+    writeError = error;
   }
-  for(const row of current.filter((row: any) => row.facilityId !== facilityId)) {
-    const ended: any = await api({
-      url: "oms/productStoreFacilityPurposes",
-      method: "put",
-      data: {
-        productStoreId, facilityId: row.facilityId, facilityPurposeEnumId: purposeEnumId,
-        fromDate: row.fromDate, thruDate: now,
-      },
-    });
-    if(commonUtil.hasError(ended)) {throw new Error(translate("The new parking facility was added, but the previous one could not be ended."));}
+
+  // A created row is committed even when ending the previous one fails, so the cache is reconciled on
+  // every path; a retry then sees the new row and never POSTs it again.
+  try {
+    await refreshAfterMutation("productStoreFacilityPurpose", { productStoreId });
+  } catch(reconcileError) {
+    if(!writeError) {throw reconcileError;}
   }
-  await refreshAfterMutation("productStoreFacilityPurpose", { productStoreId });
+  if(writeError) {throw writeError;}
 }
 
 /**

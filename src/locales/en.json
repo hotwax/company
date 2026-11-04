@@ -4464,7 +4464,6 @@
   "Future inventory events set to manual.": "Future inventory events set to manual.",
   "Future inventory events set to real-time push. Restart every OMS node before relying on event capture.": "Future inventory events set to real-time push. Restart every OMS node before relying on event capture.",
   "Its publish job is paused, so its events are not sent": "Its publish job is paused, so its events are not sent",
-  "More than one store parking facility maps to this location": "More than one store parking facility maps to this location",
   "No publish job names this channel, so its events are not sent": "No publish job names this channel, so its events are not sent",
   "No {type} facility exists. Create a parking facility first.": "No {type} facility exists. Create a parking facility first.",
   "OMS-wide jobs future channels depend on. They ship paused; activate each from its row.": "OMS-wide jobs future channels depend on. They ship paused; activate each from its row.",
@@ -4539,5 +4538,12 @@
   "No inventory channels configured yet.": "No inventory channels configured yet.",
   "Add channel": "Add channel",
   "Configured channels": "Configured channels",
-  "No channel ATP reset runs yet.": "No channel ATP reset runs yet."
+  "No channel ATP reset runs yet.": "No channel ATP reset runs yet.",
+  "Job runs on configured schedule": "Job runs on configured schedule",
+  "Job is paused and will not run on schedule": "Job is paused and will not run on schedule",
+  "Job is paused. Activate it so it runs on this schedule.": "Job is paused. Activate it so it runs on this schedule.",
+  "The product store has {count} active parking facilities for this type; the connector needs exactly one": "The product store has {count} active parking facilities for this type; the connector needs exactly one",
+  "Schedule job": "Schedule job",
+  "Physical inventory sync jobs": "Physical inventory sync jobs",
+  "Shared maintenance jobs": "Shared maintenance jobs"
 }

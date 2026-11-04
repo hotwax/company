@@ -66,7 +66,7 @@
               {{ translate('Active') }}
               <p>{{ draftActive ? translate('Job runs on configured schedule') : translate('Job is paused and will not run on schedule') }}</p>
             </ion-label>
-            <ion-toggle slot="end" :checked="draftActive" :disabled="isSaving || !canEdit" @ionChange="handleActiveToggle($event.detail.checked)" />
+            <ion-toggle slot="end" :checked="draftActive" :disabled="isSaving || !canEdit" @ionChange="draftActive = $event.detail.checked" />
           </ion-item>
         </ion-list>
 
@@ -85,7 +85,7 @@
                 <ion-label class="ion-text-wrap">
                   <p>{{ translate('Job is paused. Activate it so it runs on this schedule.') }}</p>
                 </ion-label>
-                <ion-button slot="end" fill="outline" size="small" @click="handleActiveToggle(true)">
+                <ion-button slot="end" fill="outline" size="small" @click="draftActive = true">
                   {{ translate('Activate') }}
                 </ion-button>
               </ion-item>
@@ -325,13 +325,7 @@ const auditHistory = ref<any[]>([]);
 const usernames = ref<Record<string, string>>({});
 const draftCronExpression = ref('');
 const draftActive = ref(false);
-const userExplicitlyToggledActive = ref(false);
 const draftParameters = ref<Record<string, string>>({});
-
-function handleActiveToggle(checked: boolean) {
-  userExplicitlyToggledActive.value = true;
-  draftActive.value = checked;
-}
 
 const modalTitle = computed(() => props.jobName || translate("Sync job details"));
 const originalCronExpression = computed(() => String(jobDetails.value.cronExpression || ''));
@@ -426,16 +420,7 @@ const selectedPreset = computed(() =>
 function choosePreset(expression: unknown) {
   if(typeof expression !== "string" || !expression) {return;}
   draftCronExpression.value = cronKey(expression) === cronKey(originalCronExpression.value) ? originalCronExpression.value : expression;
-  if(!userExplicitlyToggledActive.value) {
-    draftActive.value = true;
-  }
 }
-
-watch(draftCronExpression, () => {
-  if(isScheduleValid.value && !userExplicitlyToggledActive.value && !draftActive.value) {
-    draftActive.value = true;
-  }
-});
 const parameterIsAllowed = (parameter: any) => !props.allowedParameterNames.length || props.allowedParameterNames.includes(String(parameter?.parameterName || parameter?.name || ''));
 
 /** The service's signature per parameter name, e.g. "Integer, default 5, required". */
@@ -532,7 +517,6 @@ async function load() {
 }
 
 function resetDraft() {
-  userExplicitlyToggledActive.value = false;
   draftCronExpression.value = originalCronExpression.value;
   draftActive.value = originalActive.value;
   draftParameters.value = { ...originalParameters.value };
@@ -572,9 +556,6 @@ async function runJobNow() {
 async function save() {
   if(!canSave.value) {return;}
   isSaving.value = true;
-  if(scheduleChanged.value && isScheduleValid.value && !userExplicitlyToggledActive.value) {
-    draftActive.value = true;
-  }
   const paused = !draftActive.value;
   const schedule = { cronExpression: draftCronExpression.value, paused: paused ? "Y" : "N" };
   const parameterChanges = changedParameters.value;

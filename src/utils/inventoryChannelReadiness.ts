@@ -83,19 +83,23 @@ export function channelReadiness(input: ChannelReadinessInput): ChannelReadiness
     const parking = input.storePurposes.filter((row) => row.facilityPurposeEnumId === input.parkingPurposeEnumId);
     const atLocation = parking.filter((row) =>
       !!input.channel.shopifyLocationId && input.locationByFacility[row.facilityId] === String(input.channel.shopifyLocationId));
-    if(atLocation.length === 1) {
+    if(parking.length === 1 && atLocation.length === 1) {
       parkingFacilityId = atLocation[0].facilityId;
       checks.push({ id: "parking", level: "ok", label: translate("Store parking {facility} maps to this location", { facility: parkingFacilityId }) });
     } else if(!parking.length) {
       checks.push({ id: "parking", level: "error", label: translate("The product store has no active parking facility for this type") });
-    } else if(!atLocation.length) {
+    } else if(parking.length > 1) {
       checks.push({
         id: "parking",
         level: "error",
-        label: translate("Store parking {facility} is not mapped to this Shopify location", { facility: parking.map((row) => row.facilityId).join(", ") }),
+        label: translate("The product store has {count} active parking facilities for this type; the connector needs exactly one", { count: parking.length }),
       });
     } else {
-      checks.push({ id: "parking", level: "error", label: translate("More than one store parking facility maps to this location") });
+      checks.push({
+        id: "parking",
+        level: "error",
+        label: translate("Store parking {facility} is not mapped to this Shopify location", { facility: parking[0].facilityId }),
+      });
     }
   }
 

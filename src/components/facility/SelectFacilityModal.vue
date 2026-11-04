@@ -14,6 +14,13 @@
   </ion-header>
 
   <ion-content>
+    <ion-item v-if="bannerMessage" class="context-banner" :color="bannerColor" lines="none" role="status">
+      <ion-label class="ion-text-wrap">
+        <strong v-if="bannerTitle">{{ bannerTitle }}</strong>
+        <p>{{ bannerMessage }}</p>
+      </ion-label>
+    </ion-item>
+
     <template v-if="filteredFacilities.length">
       <ion-list v-if="!isFacilityLogin">
         <ion-item v-for="facility in filteredFacilities" :key="facility.facilityId">
@@ -69,7 +76,10 @@ const props = defineProps({
   isFacilityLogin: {
     type: Boolean,
     default: false
-  }
+  },
+  bannerTitle: { type: String, default: "" },
+  bannerMessage: { type: String, default: "" },
+  bannerColor: { type: String, default: "medium" },
 });
 
 
@@ -125,5 +135,9 @@ const updateSelectedFacility = (event: CustomEvent) => {
 <style scoped>
 ion-content {
   --padding-bottom: 80px;
+}
+
+.context-banner {
+  margin: var(--spacer-sm);
 }
 </style>

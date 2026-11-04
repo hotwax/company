@@ -59,6 +59,11 @@ describe("channelReadiness", () => {
       storePurposes: [...ready.storePurposes, { facilityId: "PARK_2", facilityPurposeEnumId: "FP_PRE_ORDER_PARK" }],
       locationByFacility: { PRE_ORDER_PARKING: "999", PARK_2: "999" },
     }).parking).toBe("error");
+    // Two active purposes are an error even when one of them maps to the location: the connector needs exactly one.
+    expect(levels({
+      ...ready,
+      storePurposes: [...ready.storePurposes, { facilityId: "PARK_2", facilityPurposeEnumId: "FP_PRE_ORDER_PARK" }],
+    }).parking).toBe("error");
     // A back-order purpose does not satisfy a pre-order channel.
     expect(levels({ ...ready, storePurposes: [{ facilityId: "PRE_ORDER_PARKING", facilityPurposeEnumId: "FP_BACKORDER_PARK" }] }).parking).toBe("error");
   });
