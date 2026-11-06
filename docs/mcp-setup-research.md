@@ -35,7 +35,7 @@ The guide remains available on instances without MCP so users can find prerequis
 
 ## Inline JWT generation
 
-The Generate token action uses the authenticated route `POST /rest/s1/admin/refreshToken`, which calls the existing `co.hotwax.auth.AuthServices.generate#JwtToken` service. The shared API client sends the existing session token as `Authorization: Bearer <token>`. It sends a flat JSON body:
+The Generate token action uses the authenticated route `POST /rest/s1/admin/user/token`, which calls the existing `co.hotwax.auth.AuthServices.generate#JwtToken` service. The shared API client sends the existing session token as `Authorization: Bearer <token>`. It sends a flat JSON body:
 
 ```json
 { "username": "SIGNED_IN_USERNAME", "purpose": "MCP", "expireDays": 30 }
@@ -51,6 +51,8 @@ The initial implementation called the service through `/rpc/json`. The user then
 
 The source explains this route difference: `oms/data/SetupData.xml` grants the application groups inheritable authorization under `component://oms/screen/Oms.xml`; `ofbiz-oms-usl/data/SetupData.xml` grants the same groups inheritable authorization under `/admin`. `ServiceCallSyncImpl` separately authorizes the service unless it inherits authorization. The generic RPC entry point does not supply either application grant. `allow-remote="true"` exposes the service but does not grant permission. The earlier unauthenticated, missing-parameter probe only proved service resolution and validation, not authenticated authorization; it was insufficient acceptance evidence.
 
-The previously proposed companion maarg-util change added an authenticated `admin/user/jwtToken` route reusing the original service. Company now uses `admin/refreshToken`, so that companion route is no longer required. The previously proposed `admin/jwtTokens` onboarding API has a different contract and is not used.
+The released companion maarg-util change exposes the authenticated `admin/user/token` route and reuses the original service. It adds no anonymous access, role grants, or authorization bypass. The earlier `admin/user/jwtToken` path is not exposed by that change. The previously proposed `admin/jwtTokens` onboarding API has a different contract and is not used.
 
-The instance must expose `admin/refreshToken` for inline generation. The OMS settings link appears only after a token-generation error, including the backend-update message on older instances. It is hidden initially, while retrying, and after success. Company does not fall back to generic RPC or automatically retry. No backend change was deployed and no token was minted by the agent during this investigation. Unit tests verify the REST request/response contract, errors, and transient credential lifecycle; authenticated issuance through `admin/refreshToken` remains a deployment validation step.
+The instance must expose `admin/user/token` for inline generation. The OMS settings link appears only after a token-generation error, including the backend-update message on older instances. It is hidden initially, while retrying, and after success. Company does not fall back to generic RPC or automatically retry. Unit tests verify the REST request/response contract, errors, and transient credential lifecycle. Authenticated issuance and read-only use of the issued token must also be checked against the target instance before rollout.
+
+On November 6, 2026, the updated Company PR was run locally against Malbon production release `v6.6.2` (`maarg-util v4.6.1`). The Generate token action returned HTTP 200 from `admin/user/token` for a one-day MCP token. A subsequent `list_ai_models` MCP call using that issued token returned HTTP 200 without a protocol or tool error. The token remained masked and was cleared after verification; no Company release or backend deployment was performed.

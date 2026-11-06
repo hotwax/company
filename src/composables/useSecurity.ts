@@ -194,7 +194,7 @@ export function useUserToken(expectedBackend: () => string) {
 
   const unconfirmed = "Token generation could not be confirmed. Open JWT token settings in OMS for help.";
   function failure(status?: number) {
-    // Instances without the refreshToken route may return 404 or 405.
+    // Instances without the user/token route may return 404 or 405.
     if (status === 404 || status === 405) return "This instance needs a backend update to generate tokens from Company. Use JWT token settings in OMS for now.";
     if (status === 401) return "Your session has expired. Sign in again before generating a token.";
     if (status === 403) return "OMS did not authorize token generation through Company. You may still be able to generate a token in JWT token settings in OMS.";
@@ -220,7 +220,7 @@ export function useUserToken(expectedBackend: () => string) {
     try {
       const response = await api({
         baseURL,
-        url: "admin/refreshToken",
+        url: "admin/user/token",
         method: "post",
         data: { username: owner, purpose: purpose.trim(), expireDays },
       });
