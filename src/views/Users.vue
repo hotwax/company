@@ -84,7 +84,7 @@
         <div v-for="(user, index) in users" :key="index" class="list-item" @click="viewUserDetails(user)">
           <ion-item lines="none">
             <ion-label>
-              {{ (user.firstName || user.lastName) ? `${user.firstName} ${user.lastName ?? ''}`.trim() : "" }}
+              {{ `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() }}
               <p>{{ user.username }}</p>
               <p>{{ user.emailAddress }}</p>
             </ion-label>
