@@ -162,10 +162,8 @@ import router from '@/router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle, documentTextOutline } from "ionicons/icons"
 
 import { getCurrentTime } from "../utils"
-import { catalogFrom, useDbStatus } from "@common/db";
-import { companyDb } from "@/db/companyDb";
-import { resyncDomain, resyncReferenceData } from "@/db/appDbSync";
 import { useMaargConfig } from "@/composables/useSeed";
+import { useCacheStatus } from "@/composables/useCacheStatus";
 import Actions from "@/authorization/actions";
 const userStore = useUserStore();
 const { isAuthenticated } = useAuth();
@@ -181,33 +179,10 @@ const currentTimeZoneId = computed(() => userProfile.value.timeZone)
 const userFetchStatus = computed(() => userStore.fetchStatus)
 
 
-// Live IndexedDB state: per-domain row counts + last sync, and the force-refresh actions.
 const {
-  domains, refreshing, totalRows, oldestSyncedAt, lastSyncedAt, refreshDomain, refreshAll,
-} = useDbStatus(
-  companyDb.client(),
-  // The domains the worker registers, read from the same list rather than asked of the worker: on a
-  // reload here, or after sync failed to start, there is no worker to answer, and this card's
-  // per-domain Refresh is the way back. Imported on demand to keep the domain code out of startup.
-  async () => catalogFrom((await import("@/workers/appSyncDomains")).appSyncDomains),
-  {
-    resyncDomain,
-    resyncAll: resyncReferenceData,
-  },
-);
-
-const formatSyncTime = (millis: number) =>
-  DateTime.fromMillis(millis).toLocaleString(DateTime.DATETIME_MED);
-
-const cacheSubtitle = computed(() => {
-  if (!lastSyncedAt.value) return translate("Cache not synced yet");
-  const parts = [`${translate("Last sync:")} ${formatSyncTime(lastSyncedAt.value)}`];
-  // Reference data syncs once per login, so the oldest snapshot bounds how stale the cache can be.
-  if (oldestSyncedAt.value && oldestSyncedAt.value !== lastSyncedAt.value) {
-    parts.push(`${translate("oldest:")} ${formatSyncTime(oldestSyncedAt.value)}`);
-  }
-  return parts.join(", ");
-});
+  domains, refreshing, totalRows, refreshDomain, refreshAll,
+  cacheSubtitle, formatSyncTime
+} = useCacheStatus();
 
 // Session-scoped data (auth/profile) is NOT in the local cache, so it keeps its store-based status.
 const sessionFetchStatus = computed(() => [
