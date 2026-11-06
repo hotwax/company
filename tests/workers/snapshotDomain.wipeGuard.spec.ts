@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defineEntity } from "@common/db/model/defineEntity";
+import { defineEntity } from "@common/db/schema/defineEntity";
 
 /**
  * An automatic snapshot must never empty a populated table on the strength of a zero-row fetch.
