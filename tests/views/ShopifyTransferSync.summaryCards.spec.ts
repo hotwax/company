@@ -97,6 +97,7 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     load: vi.fn(),
     loadMore: vi.fn(),
   }),
+  useShopifyTransferSyncEnrichment: () => ({ enrichment: ref({}), load: vi.fn(), }),
   useShopifyTransferSyncJobs: () => ({
     cards: ref([
       {
@@ -108,6 +109,10 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
       },
     ]),
     ensure: vi.fn(),
+  }),
+  useShopifyTransferSyncEnrichment: () => ({
+    enrichment: ref({}),
+    load: vi.fn(),
   }),
   useShopifyWebhookReconciliation: () => ({
     rows: ref([]),
@@ -128,12 +133,6 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
   }),
 }));
 
-vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
-  useShopifyTransferSyncEnrichment: () => ({
-    enrichment: ref({}),
-    load: vi.fn(),
-  }),
-}));
 
 // Only the readiness gate is stubbed; the rest of the module (including the admin-link builder the
 // row headers use) stays real so the view exercises it.

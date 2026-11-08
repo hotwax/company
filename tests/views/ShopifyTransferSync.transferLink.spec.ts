@@ -64,7 +64,13 @@ vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobs: () => ({ jobs: ref([]), paused: ref([]), active: ref([]), records: ref([]), hydrated: ref(true) }),
 }));
 
-vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
+
+vi.mock("@/utils/shopifyTransferSync", async () => ({
+  ...(await vi.importActual<typeof import("@/utils/shopifyTransferSync")>("@/utils/shopifyTransferSync")),
+  isTransferSyncMonitoringLoaded: () => true,
+}));
+
+vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyTransferSyncEnrichment: () => ({
     enrichment: ref({
       ordersById: { "128253": { orderName: "TO128253" } },
@@ -76,14 +82,6 @@ vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
     }),
     load: vi.fn(),
   }),
-}));
-
-vi.mock("@/utils/shopifyTransferSync", async () => ({
-  ...(await vi.importActual<typeof import("@/utils/shopifyTransferSync")>("@/utils/shopifyTransferSync")),
-  isTransferSyncMonitoringLoaded: () => true,
-}));
-
-vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyPendingCounts: () => ({
     counts: ref({ create: 0 }), orderCounts: ref({}), creationOrderCount: ref(0), total: ref(0), hydrated: ref(true),
   }),
@@ -108,6 +106,7 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     loading: ref(false), error: ref(""), refresh: vi.fn(),
   }),
   registerMissingTransferWebhook: vi.fn(),
+  useShopifyTransferSyncEnrichment: () => ({ enrichment: ref({}), load: vi.fn() }),
 }));
 
 async function mountView() {

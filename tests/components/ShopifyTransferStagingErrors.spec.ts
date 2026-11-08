@@ -11,9 +11,9 @@ vi.mock("@common", () => ({
 vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobRunsByJob: () => ({ runsFor: (name: string) => state.runs[name] ?? [], hydrated: ref(true) }),
 }));
-vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
+vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyTransferSyncEnrichment: () => ({
-    enrichment: ref({ ordersById: { "128255": { orderName: "TO10261" } } }),
+    enrichment: ref({ ordersById: { "128255": { orderName: "TO128255" } } }),
     load: vi.fn(),
   }),
 }));
@@ -45,7 +45,7 @@ describe("transfer staging errors list", () => {
     } }];
     const wrapper = await render();
     expect(wrapper.findAll("[button=\"true\"]")).toHaveLength(1);
-    expect(wrapper.text()).toContain("TO10261");
+    expect(wrapper.text()).toContain("TO128255");
     expect(wrapper.text()).toContain("Multiple Shopify variants mapped to one product");
     await wrapper.find("[button=\"true\"]").trigger("click");
     expect(wrapper.emitted("openTransfer")?.[0]).toEqual(["128255"]);
