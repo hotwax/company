@@ -78,6 +78,7 @@ let cached: { counts: any; orderCounts: any };
 let nativeSync: any;
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
+  useShopifyTransferDelivery: () => ({ logsFor: () => [] }),
   useShopifyPendingCounts: () => {
     cached = { counts: ref({ create: 120, shipment: 4 }), orderCounts: ref({ create: 10, shipment: 2 }) };
 

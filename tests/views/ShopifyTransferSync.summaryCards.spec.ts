@@ -64,6 +64,7 @@ vi.mock("@/composables/useServiceJobs", () => ({
 }));
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
+  useShopifyTransferDelivery: () => ({ logsFor: () => [] }),
   useShopifyPendingCounts: () => ({
     counts: ref({ create: 3, shipment: 2 }),
     orderCounts: ref({ create: 3, shipment: 1 }),

@@ -71,6 +71,7 @@ vi.mock("@/utils/shopifyTransferSync", async () => ({
 }));
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
+  useShopifyTransferDelivery: () => ({ logsFor: () => [] }),
   useShopifyTransferSyncEnrichment: () => ({
     enrichment: ref({
       ordersById: { "128253": { orderName: "TO128253" } },

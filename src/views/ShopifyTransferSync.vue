@@ -689,6 +689,8 @@ import {
   useShopifyTransferSyncJobs,
   useShopifyTransferSyncLaunch,
   useShopifyWebhookReconciliation,
+  useShopifyTransferDelivery,
+  useShopifyTransferSyncEnrichment
 } from "@/composables/useShopifyTransferSync";
 import { formatDateTime } from "@/utils";
 import { transferDeliveryState } from "@/utils/shopifyTransferDelivery";
