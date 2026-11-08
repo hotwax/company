@@ -4,7 +4,7 @@ const state = vi.hoisted(() => ({ api: vi.fn(), choices: vi.fn(), snapshot: vi.f
 vi.mock("@common", () => ({ api: state.api, commonUtil: { hasError: (response: any) => Boolean(response.error) } }));
 vi.mock("@/composables/useShopify", () => ({ useTransferMappingResolution: () => ({ fetchChoices: state.choices }) }));
 vi.mock("@/composables/useShopifyTransferSync", async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = await importOriginal<typeof import("@/composables/useShopifyTransferSync")>();
   return {
     ...actual,
     fetchCurrentShopifyTransfer: state.snapshot

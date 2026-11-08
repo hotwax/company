@@ -110,7 +110,6 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     refresh: vi.fn(),
   }),
   registerMissingTransferWebhook: vi.fn(),
-  useShopifyTransferSyncEnrichment: () => ({ enrichment: ref({}), load: vi.fn() }),
   useShopifyNativeTransferSync: () => ({
     enabled: ref(true), loading: ref(false), saving: ref(false), loadFailed: ref(false), load: vi.fn(), save: vi.fn(),
   }),

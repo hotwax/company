@@ -107,7 +107,6 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     loading: ref(false), error: ref(""), refresh: vi.fn(),
   }),
   registerMissingTransferWebhook: vi.fn(),
-  useShopifyTransferSyncEnrichment: () => ({ enrichment: ref({}), load: vi.fn() }),
 }));
 
 async function mountView() {
