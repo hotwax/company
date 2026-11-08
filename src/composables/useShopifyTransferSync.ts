@@ -1,4 +1,18 @@
 import { api, commonUtil, useLiveEntity } from "@common";
+import { getResponseErrorMessage } from "@/utils";
+import { type TRANSFER_DELIVERY_CONFIGS, transferDeliveryLogs } from "@/utils/shopifyTransferDelivery";
+import { useTransferMappingResolution } from "./useShopify";
+import {
+  emptyTransferSyncEnrichment,
+  enrichTransferSyncRows,
+  type TransferSyncEnrichmentClient,
+} from "@/utils/shopifyTransferSyncEnrichment";
+import type {
+  TransferSyncEnrichment,
+  TransferSyncOrder,
+  TransferSyncReceipt,
+} from "@/utils/shopifyTransferSyncPresentation";
+
 import { companyDb } from "@/db/companyDb";
 import { computed, ref } from "vue";
 import { refreshAfterMutation } from "@/db/appDbSync";
@@ -715,4 +729,279 @@ export async function registerMissingTransferWebhook(shopId: string, topic: stri
   } catch {
     return {status: 'uncertain' as const};
   }
+}
+
+// === Consolidated from useShopifyTransferDelivery ===
+
+export function useShopifyTransferDelivery(shopId: () => string) {
+  const { records: logs } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, () => ({ scope: { field: "transferShopId", value: shopId() } }));
+
+  return {
+    logsFor: (stage: keyof typeof TRANSFER_DELIVERY_CONFIGS, orderId?: string) => transferDeliveryLogs(logs.value, shopId(), stage, orderId),
+  };
+}
+
+// === Consolidated from useShopifyTransferDetach ===
+
+const BASE = "sob/shopify/transferSync";
+const PAGE_SIZE = 100;
+/** Locale key for a detach that failed with no reason from the server. */
+export const DETACH_FAILED = "The transfer could not be detached.";
+
+export interface TransferOwner {
+  shopId: string;
+  orderId: string;
+  shopifyInventoryTransferId?: string;
+}
+
+export interface TransferDetachResult {
+  deletedLineCount: number;
+  replayedEventCount: number;
+  createdDetailCount: number;
+  existingDetailCount: number;
+}
+
+function readable(response: any, message: string): any {
+  if(commonUtil.hasError(response)) {throw new Error(message);}
+
+  return response?.data ?? response;
+}
+
+async function listAll(url: string, params: Record<string, any>, message: string): Promise<any[]> {
+  const rows: any[] = [];
+  for(let pageIndex = 0; ; pageIndex++) {
+    const page = readable(await api({ url, method: "GET", params: { ...params, pageIndex, pageSize: PAGE_SIZE } }), message);
+    const pageRows = Array.isArray(page) ? page : [];
+    rows.push(...pageRows);
+    if(pageRows.length < PAGE_SIZE) {return rows;}
+  }
+}
+
+/** The native sync owner row for this order, if any. */
+async function fetchOwner(shopId: string, orderId: string): Promise<TransferOwner | undefined> {
+  const rows = await listAll(`${BASE}/owners`, { shopId, orderId }, "Native sync ownership could not be loaded.");
+
+  return rows.find(row => String(row.shopId) === shopId && String(row.orderId) === orderId);
+}
+
+/**
+ * Detaches the order in one server call: the connector deletes its transfer lines and owner row and,
+ * with publishEvents, records the receipts and reservations native sync suppressed, all in one
+ * transaction. It refuses an order that already exists in Shopify, or one now owned by another shop.
+ */
+async function detach(shopId: string, orderId: string, publishEvents: boolean): Promise<TransferDetachResult> {
+  let response: any;
+  try {
+    response = await api({ url: `${BASE}/detach`, method: "post", data: { orderId, shopId, publishEvents } });
+  } catch (err: any) {
+    throw new Error(getResponseErrorMessage(err, DETACH_FAILED), { cause: err });
+  }
+  if(commonUtil.hasError(response)) {throw new Error(getResponseErrorMessage(response, DETACH_FAILED));}
+
+  const data = response?.data ?? response;
+
+  return {
+    deletedLineCount: Number(data?.deletedLineCount ?? 0),
+    replayedEventCount: Number(data?.replayedEventCount ?? 0),
+    createdDetailCount: Number(data?.createdDetailCount ?? 0),
+    existingDetailCount: Number(data?.existingDetailCount ?? 0),
+  };
+}
+
+/** Detaching a transfer order from native Shopify transfer sync. */
+export function useShopifyTransferDetach() {
+  return { fetchOwner, detach };
+}
+
+// === Consolidated from useShopifyTransferUpdateCheck ===
+
+async function read(url: string, params: Record<string, unknown>) {
+  const response: any = await api({ url, method: "GET", params });
+  if(commonUtil.hasError(response)) {throw new Error("Transfer comparison could not be read.");}
+
+  return response?.data ?? response;
+}
+
+/** Exact shipment item identity, not the coincidentally equal OMS order item sequence. */
+export function useShopifyTransferUpdateCheck() {
+  return { check: async function checkTransferUpdateItem(shopId: string, orderId: string, shipmentId: string, shipmentItemSeqId: string) {
+    const [creation, shipments] = await Promise.all([
+      read("sob/shopify/transferSync/syncedCreate", { shopId, orderId, pageSize: 100 }),
+      read("poorti/shipments", { shipmentId, orderId, orderTypeId: "TRANSFER_ORDER", pageSize: 1 }),
+    ]);
+    if(!Array.isArray(creation) || creation.some(row => String(row.shopId) !== shopId || String(row.orderId) !== orderId)) {
+      throw new Error("Transfer ownership could not be verified.");
+    }
+    const ids = [...new Set(creation.map(row => String(row.shopifyInventoryTransferId || "")).filter(Boolean))];
+    if(ids.length !== 1) {throw new Error("The Shopify transfer identity could not be verified.");}
+    const shipment = shipments?.shipments?.find((row: any) => String(row.shipmentId) === shipmentId);
+    const item = shipment?.items?.find((row: any) => String(row.shipmentItemSeqId) === shipmentItemSeqId && String(row.orderId) === orderId);
+    if(!item?.productId) {throw new Error("The affected shipment item could not be verified.");}
+    const [choices, snapshot] = await Promise.all([
+      useTransferMappingResolution().fetchChoices(shopId, String(item.productId)),
+      fetchCurrentShopifyTransfer(shopId, ids[0]),
+    ]);
+    const matches = choices.length === 1 && choices[0].available
+      ? snapshot.lines.filter((line: any) => line.inventoryItem?.id === `gid://shopify/InventoryItem/${choices[0].inventoryItemId}`) : [];
+
+    return { item, choices, snapshot, transferId: ids[0], matches, checkedAt: new Date().toISOString() };
+  } };
+}
+
+export type TransferUpdateCheck = Awaited<ReturnType<ReturnType<typeof useShopifyTransferUpdateCheck>["check"]>>;
+
+// === Consolidated from useShopifyTransferSyncEnrichment ===
+
+
+
+// Poorti caps this resource at 50 rows even when a larger page is requested. Matching the real
+// server limit is what lets a full 50-row response mean "there may be another page" instead of
+// being mistaken for the final page on large transfer receipts.
+const RECEIPT_PAGE_SIZE = 50;
+const SHIPMENT_MAPPING_PAGE_SIZE = 100;
+
+function responseData(response: any): any {
+  return response?.data ?? response;
+}
+
+function assertReadable(response: any, message: string): any {
+  if(commonUtil.hasError(response)) {throw new Error(message);}
+  return responseData(response);
+}
+
+/** Dates and the confirmed Shopify identity for the explicitly opened TO. */
+export async function fetchTransferSyncSummary(shopId: string, orderId: string) {
+  const [datesResponse, mappingsResponse]: any[] = await Promise.all([
+    api({ url: "oms/transferOrders", method: "GET", params: { orderId, fieldsToSelect: "orderId,orderDate,entryDate", limit: 1 } }),
+    api({ url: "sob/shopify/transferSync/syncedCreate", method: "GET", params: { shopId, orderId, pageSize: 100 } }),
+  ]);
+  const dates = assertReadable(datesResponse, "Transfer dates could not be loaded.")?.orders?.[0];
+  const mappings = assertReadable(mappingsResponse, "The Shopify transfer identity could not be loaded.");
+  if(!Array.isArray(mappings) || mappings.some(row => String(row.shopId) !== shopId || String(row.orderId) !== orderId)) {
+    throw new Error("Transfer ownership could not be verified.");
+  }
+  const ids = [...new Set<string>(mappings.map(row => String(row.shopifyInventoryTransferId || "")).filter(Boolean))];
+  if(ids.length > 1) {throw new Error("The Shopify transfer identity could not be verified.");}
+  return { orderDate: dates?.orderDate, entryDate: dates?.entryDate, transferId: ids[0] };
+}
+
+/** Adapter over the existing OMS/Poorti endpoints; no transfer-sync API payload is widened. */
+export function createTransferSyncEnrichmentClient(): TransferSyncEnrichmentClient {
+  return {
+    async fetchOrder(orderId: string): Promise<TransferSyncOrder | undefined> {
+      const response: any = await api({
+        url: `oms/transferOrders/${encodeURIComponent(orderId)}`,
+        method: "GET",
+      });
+      return assertReadable(response, "The OMS could not load this transfer's detail.")?.order;
+    },
+    async fetchCreationTime(orderId: string): Promise<string | undefined> {
+      const response: any = await api({
+        url: "oms/transferOrders",
+        method: "GET",
+        params: {
+          orderId,
+          fieldsToSelect: "orderId,entryDate",
+          limit: 1,
+        },
+      });
+      const orders = assertReadable(response, "The OMS could not load this transfer's creation time.")?.orders;
+      const entryDate = Array.isArray(orders) ? orders[0]?.entryDate : undefined;
+      if(entryDate === undefined || entryDate === null || entryDate === "") {return undefined;}
+      const entryDateMillis = Number(entryDate);
+      return Number.isFinite(entryDateMillis) ? new Date(entryDateMillis).toISOString() : String(entryDate);
+    },
+    async fetchReceipts(orderId: string): Promise<TransferSyncReceipt[]> {
+      const receipts: TransferSyncReceipt[] = [];
+      for(let pageIndex = 0; ; pageIndex++) {
+        const response: any = await api({
+          url: `poorti/transferOrders/${encodeURIComponent(orderId)}/receipts`,
+          method: "GET",
+          params: { pageIndex, pageSize: RECEIPT_PAGE_SIZE },
+        });
+        const page = assertReadable(response, "The OMS could not load this transfer's receipts.");
+        const rows: TransferSyncReceipt[] = Array.isArray(page) ? page : [];
+        receipts.push(...rows);
+        if(rows.length < RECEIPT_PAGE_SIZE) {return receipts;}
+      }
+    },
+    async fetchReceiverNames(userLoginIds: string[]): Promise<Record<string, string>> {
+      if(!userLoginIds.length) {return {};}
+      const response: any = await api({
+        url: "oms/users",
+        method: "GET",
+        params: {
+          userLoginId: userLoginIds,
+          userLoginId_op: "in",
+          fieldsToSelect: ["userLoginId", "firstName", "middleName", "lastName", "groupName"],
+          pageSize: userLoginIds.length,
+        },
+      });
+      const users = assertReadable(response, "The OMS could not load receiver names.");
+      return (Array.isArray(users) ? users : []).reduce((names, user) => {
+        const userLoginId = String(user?.userLoginId ?? "");
+        const name = [user?.firstName, user?.middleName, user?.lastName, user?.groupName]
+          .map((part) => String(part ?? "").trim()).filter(Boolean).join(" ");
+        if(userLoginId && name) {names[userLoginId] = name;}
+        return names;
+      }, {} as Record<string, string>);
+    },
+    async fetchShopifyShipmentIds(shopId: string, shipmentIds: string[]): Promise<Record<string, string[]>> {
+      if(!shopId || !shipmentIds.length) {return {};}
+      const idsByShipment: Record<string, string[]> = {};
+      for(let pageIndex = 0; ; pageIndex++) {
+        const response: any = await api({
+          url: "sob/shopify/transferShipmentMappings",
+          method: "GET",
+          params: {
+            shopId,
+            shipmentId: shipmentIds,
+            shipmentId_op: "in",
+            pageIndex,
+            pageSize: SHIPMENT_MAPPING_PAGE_SIZE,
+          },
+        });
+        const page = assertReadable(response, "The OMS could not load Shopify shipment identifiers.");
+        const mappings = Array.isArray(page) ? page : [];
+        for(const mapping of mappings) {
+          const shipmentId = String(mapping?.shipmentId ?? "");
+          const shopifyShipmentId = String(mapping?.shopifyInventoryShipmentId ?? "");
+          if(!shipmentId || !shopifyShipmentId) {continue;}
+          const existing = idsByShipment[shipmentId] ?? [];
+          if(!existing.includes(shopifyShipmentId)) {existing.push(shopifyShipmentId);}
+          idsByShipment[shipmentId] = existing;
+        }
+        if(mappings.length < SHIPMENT_MAPPING_PAGE_SIZE) {return idsByShipment;}
+      }
+    },
+  };
+}
+
+/**
+ * Screen-local enrichment. It is intentionally separate from the 15-second worker snapshot so
+ * opening this page never causes per-transfer detail reads in the background.
+ */
+export function useShopifyTransferSyncEnrichment() {
+  const enrichment = ref<TransferSyncEnrichment>(emptyTransferSyncEnrichment());
+  const loading = ref(false);
+  const error = ref("");
+  const client = createTransferSyncEnrichmentClient();
+  let latestRequest = 0;
+
+  async function load(rows: Record<string, unknown>[], options: { refresh?: boolean } = {}) {
+    const request = ++latestRequest;
+    if(!rows.length) {return;}
+    loading.value = true;
+    error.value = "";
+    try {
+      const loaded = await enrichTransferSyncRows(rows, options.refresh ? emptyTransferSyncEnrichment() : enrichment.value, client);
+      if(request === latestRequest) {enrichment.value = loaded;}
+    } catch (err: any) {
+      if(request === latestRequest) {error.value = err?.message || "Transfer details could not be loaded.";}
+    } finally {
+      if(request === latestRequest) {loading.value = false;}
+    }
+  }
+
+  return { enrichment, loading, error, load };
 }
