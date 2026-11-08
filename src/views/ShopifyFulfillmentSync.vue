@@ -400,7 +400,6 @@ import AnimatedNumber from "@/components/common/AnimatedNumber.vue";
 import type {
   FulfillmentOrderItem, FulfillmentShipmentRow, FulfillmentShipmentState,
 } from "@/components/shopify-fulfillment/FulfillmentShipmentCard.types";
-import { sendPendingFulfillment, getFulfillmentSendOutcome } from "@/composables/useFulfillmentSend";
 import cronstrue from "cronstrue";
 import FulfillmentSendResult from "@/components/shopify-fulfillment/FulfillmentSendResult.vue";
 import FulfillmentDiagnosis from "@/components/shopify-fulfillment/FulfillmentDiagnosis.vue";
@@ -417,6 +416,7 @@ import {
   useFulfillmentSyncHealth, useShopifySyncContext, useOmsShipmentContext, usePendingFulfillments,
   useQueuedFulfillments, useShopifyFulfillmentDetails, useSyncedFulfillments,
 } from "@/composables/useShopify";
+import { sendPendingFulfillment, getFulfillmentSendOutcome } from "@/composables/useShopifyFulfillment";
 import {
   type OmsShipmentContext, type QueuedFulfillmentRow, type SyncedFulfillmentRow,
 } from "@/composables/useShopify";
