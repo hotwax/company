@@ -657,6 +657,17 @@
 </template>
 
 <script setup lang="ts">
+import {
+  registerMissingTransferWebhook,
+  useShopifyNativeTransferSync,
+  useShopifyPendingCounts,
+  useShopifyPendingSegment,
+  useShopifySyncedSegment,
+  useShopifyTransferDelivery,
+  useShopifyTransferSyncJobs,
+  useShopifyTransferSyncLaunch,
+  useShopifyWebhookReconciliation
+} from "@/composables/useShopifyTransferSync";
 import { commonUtil, logger, translate } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader,
@@ -680,17 +691,6 @@ import ShopifyTransferStagingErrors from "@/components/shopify/ShopifyTransferSt
 import { useFacilities } from "@/composables/useFacilities";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
-import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
-import {
-  registerMissingTransferWebhook,
-  useShopifyNativeTransferSync,
-  useShopifyPendingCounts,
-  useShopifyPendingSegment,
-  useShopifySyncedSegment,
-  useShopifyTransferSyncJobs,
-  useShopifyTransferSyncLaunch,
-  useShopifyWebhookReconciliation,
-} from "@/composables/useShopifyTransferSync";
 import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import { formatDateTime } from "@/utils";
 import { transferDeliveryState } from "@/utils/shopifyTransferDelivery";
