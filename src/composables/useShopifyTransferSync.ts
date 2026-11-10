@@ -2,12 +2,11 @@ import { api, commonUtil, useLiveEntity } from "@common";
 import { companyDb } from "@/db/companyDb";
 import { computed, ref } from "vue";
 import { refreshAfterMutation } from "@/db/appDbSync";
-import { PENDING_SEGMENT_ENDPOINTS, type PendingSegment, SYNCED_SEGMENT_ENDPOINTS } from "@/workers/domains/shopifyTransferSyncDomain";
-import {
-  type ReconciliationSummary,
-  type WebhookReconciliationRow,
-  reconcileWebhookTopics,
-} from "@/utils/shopifyWebhookReconciliation";
+import { PENDING_SEGMENT_ENDPOINTS, SYNCED_SEGMENT_ENDPOINTS, type PendingSegment } from "@/workers/domains/shopifyTransferSyncDomain";
+import { reconcileWebhookTopics, type ReconciliationSummary, type WebhookReconciliationRow } from "@/utils/shopifyWebhookReconciliation";
+import { transferDeliveryLogs, type TRANSFER_DELIVERY_CONFIGS } from "@/utils/shopifyTransferDelivery";
+import { getResponseErrorMessage } from "@/utils";
+import { useTransferMappingResolution } from "./useShopify";
 
 /**
  * Shopify transfer sync — order-scoped inventory transfer monitoring.
@@ -335,8 +334,6 @@ export function useShopifySyncedSegment() {
   };
 }
 
-
-
 /**
  * Webhook reconciliation for one shop: what Shopify has subscribed, which OMS SystemMessageType
  * consumes each topic, and how many messages of that type are still in received status.
@@ -647,7 +644,6 @@ export function useShopifyTransferSyncJobs(shopId: () => string | undefined, cac
   return { cards, ensure };
 }
 
-
 /** Reconciliation state for one shop, refreshed on demand by the view. */
 export function useShopifyWebhookReconciliation(
   shopId: () => string | undefined,
@@ -716,3 +712,116 @@ export async function registerMissingTransferWebhook(shopId: string, topic: stri
     return {status: 'uncertain' as const};
   }
 }
+
+export function useShopifyTransferDelivery(shopId: () => string) {
+  const { records: logs } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, () => ({ scope: { field: "transferShopId", value: shopId() } }));
+
+  return {
+    logsFor: (stage: keyof typeof TRANSFER_DELIVERY_CONFIGS, orderId?: string) => transferDeliveryLogs(logs.value, shopId(), stage, orderId),
+  };
+}
+
+const BASE = "sob/shopify/transferSync";
+const PAGE_SIZE = 100;
+/** Locale key for a detach that failed with no reason from the server. */
+export const DETACH_FAILED = "The transfer could not be detached.";
+
+export interface TransferOwner {
+  shopId: string;
+  orderId: string;
+  shopifyInventoryTransferId?: string;
+}
+
+export interface TransferDetachResult {
+  deletedLineCount: number;
+  replayedEventCount: number;
+  createdDetailCount: number;
+  existingDetailCount: number;
+}
+
+function readable(response: any, message: string): any {
+  if(commonUtil.hasError(response)) {throw new Error(message);}
+
+  return response?.data ?? response;
+}
+
+async function listAll(url: string, params: Record<string, any>, message: string): Promise<any[]> {
+  const rows: any[] = [];
+  for(let pageIndex = 0; ; pageIndex++) {
+    const page = readable(await api({ url, method: "GET", params: { ...params, pageIndex, pageSize: PAGE_SIZE } }), message);
+    const pageRows = Array.isArray(page) ? page : [];
+    rows.push(...pageRows);
+    if(pageRows.length < PAGE_SIZE) {return rows;}
+  }
+}
+
+/** The native sync owner row for this order, if any. */
+async function fetchOwner(shopId: string, orderId: string): Promise<TransferOwner | undefined> {
+  const rows = await listAll(`${BASE}/owners`, { shopId, orderId }, "Native sync ownership could not be loaded.");
+
+  return rows.find(row => String(row.shopId) === shopId && String(row.orderId) === orderId);
+}
+
+/**
+ * Detaches the order in one server call: the connector deletes its transfer lines and owner row and,
+ * with publishEvents, records the receipts and reservations native sync suppressed, all in one
+ * transaction. It refuses an order that already exists in Shopify, or one now owned by another shop.
+ */
+async function detach(shopId: string, orderId: string, publishEvents: boolean): Promise<TransferDetachResult> {
+  let response: any;
+  try {
+    response = await api({ url: `${BASE}/detach`, method: "post", data: { orderId, shopId, publishEvents } });
+  } catch (err: any) {
+    throw new Error(getResponseErrorMessage(err, DETACH_FAILED), { cause: err });
+  }
+  if(commonUtil.hasError(response)) {throw new Error(getResponseErrorMessage(response, DETACH_FAILED));}
+
+  const data = response?.data ?? response;
+
+  return {
+    deletedLineCount: Number(data?.deletedLineCount ?? 0),
+    replayedEventCount: Number(data?.replayedEventCount ?? 0),
+    createdDetailCount: Number(data?.createdDetailCount ?? 0),
+    existingDetailCount: Number(data?.existingDetailCount ?? 0),
+  };
+}
+
+/** Detaching a transfer order from native Shopify transfer sync. */
+export function useShopifyTransferDetach() {
+  return { fetchOwner, detach };
+}
+
+async function read(url: string, params: Record<string, unknown>) {
+  const response: any = await api({ url, method: "GET", params });
+  if(commonUtil.hasError(response)) {throw new Error("Transfer comparison could not be read.");}
+
+  return response?.data ?? response;
+}
+
+/** Exact shipment item identity, not the coincidentally equal OMS order item sequence. */
+export function useShopifyTransferUpdateCheck() {
+  return { check: async function checkTransferUpdateItem(shopId: string, orderId: string, shipmentId: string, shipmentItemSeqId: string) {
+    const [creation, shipments] = await Promise.all([
+      read("sob/shopify/transferSync/syncedCreate", { shopId, orderId, pageSize: 100 }),
+      read("poorti/shipments", { shipmentId, orderId, orderTypeId: "TRANSFER_ORDER", pageSize: 1 }),
+    ]);
+    if(!Array.isArray(creation) || creation.some(row => String(row.shopId) !== shopId || String(row.orderId) !== orderId)) {
+      throw new Error("Transfer ownership could not be verified.");
+    }
+    const ids = [...new Set(creation.map(row => String(row.shopifyInventoryTransferId || "")).filter(Boolean))];
+    if(ids.length !== 1) {throw new Error("The Shopify transfer identity could not be verified.");}
+    const shipment = shipments?.shipments?.find((row: any) => String(row.shipmentId) === shipmentId);
+    const item = shipment?.items?.find((row: any) => String(row.shipmentItemSeqId) === shipmentItemSeqId && String(row.orderId) === orderId);
+    if(!item?.productId) {throw new Error("The affected shipment item could not be verified.");}
+    const [choices, snapshot] = await Promise.all([
+      useTransferMappingResolution().fetchChoices(shopId, String(item.productId)),
+      fetchCurrentShopifyTransfer(shopId, ids[0]),
+    ]);
+    const matches = choices.length === 1 && choices[0].available
+      ? snapshot.lines.filter((line: any) => line.inventoryItem?.id === `gid://shopify/InventoryItem/${choices[0].inventoryItemId}`) : [];
+
+    return { item, choices, snapshot, transferId: ids[0], matches, checkedAt: new Date().toISOString() };
+  } };
+}
+
+export type TransferUpdateCheck = Awaited<ReturnType<ReturnType<typeof useShopifyTransferUpdateCheck>["check"]>>;

@@ -71,7 +71,10 @@ vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobs: () => ({ jobs: ref([]), hydrated: ref(true) }),
 }));
 
-vi.mock("@/composables/useShopifyTransferSync", () => ({
+vi.mock("@/composables/useShopifyTransferSync", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
   useShopifyPendingCounts: () => ({
     counts: ref({}),
     orderCounts: ref({}),
@@ -112,7 +115,8 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyNativeTransferSync: () => ({
     enabled: ref(true), loading: ref(false), saving: ref(false), loadFailed: ref(false), load: vi.fn(), save: vi.fn(),
   }),
-}));
+  };
+});
 
 vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
   useShopifyTransferSyncEnrichment: () => ({ enrichment: ref({}), load: vi.fn() }),

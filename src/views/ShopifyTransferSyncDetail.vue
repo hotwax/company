@@ -140,6 +140,7 @@
 </template>
 
 <script setup lang="ts">
+import { type TransferDetachResult, type TransferOwner, type TransferSyncJobCard, type TransferUpdateCheck, useShopifyNativeTransferSync, useShopifyTransferDelivery, useShopifyTransferDetach, useShopifyTransferSyncJobs, useShopifyTransferUpdateCheck } from "@/composables/useShopifyTransferSync";
 import { commonUtil, translate, useProducts } from "@common";
 import { IonAccordion, IonAccordionGroup, IonBackButton, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonNote, IonPage, IonRadio, IonRadioGroup, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter } from "@ionic/vue";
 import { checkmarkCircleOutline, openOutline, refreshOutline, warningOutline } from "ionicons/icons";
@@ -151,15 +152,11 @@ import ShopifyTransferMappingConflict from "@/components/shopify/ShopifyTransfer
 import ShopifyTransferMissingMapping from "@/components/shopify/ShopifyTransferMissingMapping.vue";
 import ShopifyTransferUpdateBlocker from "@/components/shopify/ShopifyTransferUpdateBlocker.vue";
 import { serviceState } from "@common/db";
-import { type TransferDetachResult, type TransferOwner, useShopifyTransferDetach } from "@/composables/useShopifyTransferDetach";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncDomainsError as syncError, syncNow } from "@/db/appDbSync";
 import { useFacilities } from "@/composables/useFacilities";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
-import { type TransferSyncJobCard, useShopifyNativeTransferSync, useShopifyTransferSyncJobs } from "@/composables/useShopifyTransferSync";
 import { fetchTransferSyncSummary, useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
-import { type TransferUpdateCheck, useShopifyTransferUpdateCheck } from "@/composables/useShopifyTransferUpdateCheck";
-import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
 import { formatDateTime } from "@/utils";
 import { transferDeliveryState } from "@/utils/shopifyTransferDelivery";
 import { type TransferStager, type TransferStagingIssue, latestCompletedStagingRun, resolveTransferStagingIssue, transferStagingIssues } from "@/utils/shopifyTransferStagingErrors";
