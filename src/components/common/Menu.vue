@@ -98,7 +98,7 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, closeCircleOutline, earthOutline, keyOutline, layersOutline, linkOutline, mailOutline, notificationsOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, closeCircleOutline, earthOutline, keyOutline, layersOutline, linkOutline, mailOutline, notificationsOutline, peopleOutline, rocketOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed, onMounted } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import { useMaargConfig } from "@/composables/useSeed";
@@ -179,6 +179,14 @@ const integrationPages = [
     permission: Actions.APP_CARRIERS_VIEW,
     iosIcon: layersOutline,
     mdIcon: layersOutline,
+  },
+  {
+    title: "FedEx",
+    url: "/fedex-setup",
+    childRoutes: ["/fedex-setup/"],
+    permission: Actions.APP_CARRIERS_VIEW,
+    iosIcon: rocketOutline,
+    mdIcon: rocketOutline,
   },
   {
     title: "Shopify",

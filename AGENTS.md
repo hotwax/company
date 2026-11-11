@@ -16,6 +16,7 @@ stands up and administers an OMS tenant. Functional areas, each a route family:
 | Facilities & groups | `/facilities/*`, `/facility-details/:id`, `/facility-group-detail/:id`, `/parking`, `/create-facility/*` | `Find*`, `Facility*`, `CreateFacility`, `AddFacility*` |
 | Users & security | `/users`, `/user-details/:partyId`, `/create-user`, `/user-quick-setup/:partyId`, `/security-groups`, `/app-permissions` | `User*`, `Security*`, `AppPermissions` |
 | Shopify integration | `/shopify`, `/shopify-connection-details/:id/**` (locations, shipment/payment methods, sales channels, product types, product-sync, order-sync) | `Shopify*` |
+| FedEx setup | `/fedex-setup` | `FedexSetup` |
 | Klaviyo integration | `/klaviyo`, `/klaviyo/:id` | `Klaviyo*` |
 | NetSuite integration | `/netsuite/*` (shipment methods, payment methods, inventory variances, sales channel, departments) | `NetSuite`, `ShipmentMethods`, `PaymentMethods`, `InventoryVariances`, `SalesChannel`, `Departments` |
 | AI agent surface | `/composer`, `/workforce` | `views/agent/*` |

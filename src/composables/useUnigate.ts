@@ -256,7 +256,7 @@ export async function createShippingGatewayAuth(data: {
   password?: string;
   publicKey?: string;
   authHeaderName?: string;
-}): Promise<void> {
+}): Promise<string> {
   const response: any = await safeApi({
     url: "oms/shipping/gatewayAuths",
     method: "post",
@@ -267,6 +267,8 @@ export async function createShippingGatewayAuth(data: {
   });
   assertUnigateMutation(response);
   await fetchShippingGatewayAuths(true);
+  // The server may assign its own id, so prefer the one it returns.
+  return String(response?.data?.shippingGatewayAuthId || data.shippingGatewayAuthId || "");
 }
 
 export async function updateShippingGatewayAuth(
