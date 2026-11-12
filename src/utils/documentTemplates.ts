@@ -131,3 +131,15 @@ export function inlineInclude(code: string, location: string, includedText: stri
 
   return code.replace(new RegExp(`<#include\\s+"${escaped}"\\s*/?>`, "g"), () => includedText.trim());
 }
+
+/** One approved order found by the preview search, with the documents a template can render for it. */
+export interface PreviewOrder {
+  orderId: string;
+  orderName?: string;
+  customerName?: string;
+  facilityName?: string;
+  orderDate?: number;
+  /** Where the order is in fulfillment: not picked yet, picked, or packed. */
+  stage: "open" | "picked" | "packed";
+  documents: SampleDocument[];
+}

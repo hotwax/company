@@ -13,7 +13,7 @@ vi.mock("@common", () => ({
 vi.mock("@/db/companyDb", () => ({ companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) } }));
 vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: (...args: any[]) => mocks.refreshAfterMutation(...args) }));
 
-import { useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useSampleDocuments } from "@/composables/useDocumentTemplates";
+import { usePreviewOrderSearch, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useSampleDocuments } from "@/composables/useDocumentTemplates";
 
 const run = <T>(factory: () => T) => { const scope = effectScope(); return { scope, state: scope.run(factory)! }; };
 
@@ -247,6 +247,62 @@ describe("document template delete", () => {
 
     await expect(state.remove("PICKLIST", "pick-list-copy", "02")).rejects.toBe(refusal);
     expect(mocks.refreshAfterMutation).not.toHaveBeenCalled();
+    scope.stop();
+  });
+});
+
+describe("preview order search", () => {
+  const bucket = (orders: any[]) => ({ data: { orders, ordersCount: orders.length } });
+
+  it("searches approved orders by keyword in the open, picked and packed lists, one row per order with its shipments", async () => {
+    mocks.api.mockImplementation(async (request: any) => {
+      if(request.url === "oms/orders/salesOrders/open") {return bucket([{ orderId: "M1", orderName: "#5955", firstName: "Ada", lastName: "L", facilityName: "Central", orderDate: 2000 }]);}
+      if(request.url === "oms/orders/salesOrders/inflight") {return bucket([{ orderId: "M1", orderName: "#5955", orderDate: 2000 }, { orderId: "M2", orderName: "#5956", orderDate: 3000 }]);}
+      if(request.url === "oms/orders/salesOrders/packed") {return bucket([]);}
+      return { data: { data: { shipments: { edges: [{ node: { shipmentId: "S1", statusId: "SHIPMENT_APPROVED", primaryOrderId: "M1" } }] } } } };
+    });
+    const { scope, state } = run(() => usePreviewOrderSearch());
+
+    await state.search("PACKING_SLIP", " 595 ");
+
+    const bucketCalls = mocks.api.mock.calls.map(([request]) => request).filter((request: any) => request.method === "get");
+    expect(bucketCalls.map((request: any) => request.url)).toEqual(["oms/orders/salesOrders/open", "oms/orders/salesOrders/inflight", "oms/orders/salesOrders/packed"]);
+    expect(bucketCalls[0].params).toEqual({ keyword: "595", pageSize: 20, orderByField: "-orderDate" });
+    const lookup = mocks.api.mock.calls.map(([request]) => request).find((request: any) => request.url === "graphql");
+    expect(lookup.data.variables).toEqual({ q: "primaryOrderId:M2,M1", first: 100 });
+    expect(state.orders.value.map(order => [order.orderId, order.stage, order.documents.map(document => document.sourceId)]))
+      .toEqual([["M2", "picked", []], ["M1", "picked", ["S1"]]]);
+    expect(state.orders.value[1]).toMatchObject({ customerName: "Ada L", facilityName: "Central" });
+    expect(state.orders.value[1].documents[0]).toMatchObject({ kind: "shipment", orderName: "#5955" });
+    scope.stop();
+  });
+
+  it("looks up pick lists for the pick list, and still shows the orders when that lookup fails", async () => {
+    mocks.api.mockImplementation(async (request: any) => {
+      if(request.method === "get") {return bucket(request.url.endsWith("/packed") ? [{ orderId: "M1", orderName: "#5955" }] : []);}
+      return { data: { data: { orderPicklists: null }, errors: [{ message: "unknown entity co.hotwax.shipment.OrderPicklist" }] } };
+    });
+    const { scope, state } = run(() => usePreviewOrderSearch());
+
+    await state.search("PICKLIST", "");
+
+    const lookup = mocks.api.mock.calls.map(([request]) => request).find((request: any) => request.url === "graphql");
+    expect(lookup.data.operationName).toBe("OrderPicklists");
+    expect(mocks.api.mock.calls[0][0].params.keyword).toBeUndefined();
+    expect(state.orders.value).toEqual([expect.objectContaining({ orderId: "M1", stage: "packed", documents: [] })]);
+    expect(state.documentsError.value).toBe(true);
+    expect(state.error.value).toBe(false);
+    scope.stop();
+  });
+
+  it("reports an error when an order list cannot be read", async () => {
+    mocks.api.mockResolvedValue({ data: { errors: "Not authorized" } });
+    const { scope, state } = run(() => usePreviewOrderSearch());
+
+    await state.search("PACKING_SLIP", "5955");
+
+    expect(state.orders.value).toEqual([]);
+    expect(state.error.value).toBe(true);
     scope.stop();
   });
 });

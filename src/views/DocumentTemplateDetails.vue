@@ -24,71 +24,29 @@
       </div>
 
       <div v-else class="template-workspace">
-        <!-- Every template for this document, and the revisions of the one that is open. -->
-        <section class="template-list" :aria-label="translate('Templates')">
-          <ion-list>
-            <ion-list-header>{{ translate("Prints now") }}</ion-list-header>
-            <ion-item button :detail="false" :class="{ open: !selection.templateName }" data-testid="document-template-live-row" @click="open('', '')">
-              <ion-label>
-                {{ translate("Live template") }}
-                <p>{{ revisionLine(documentTemplate.liveVersionName, documentTemplate.liveVersionDate, documentTemplate.liveUserId) }}</p>
-              </ion-label>
-              <ion-badge slot="end" color="success">{{ translate("Live") }}</ion-badge>
-            </ion-item>
-            <template v-if="!selection.templateName">
-              <ion-item v-for="revision in shownRevisions" :key="revision.versionName" button :detail="false" class="revision"
-                :class="{ chosen: isChosenRevision(revision.versionName) }" :data-testid="`document-template-revision-${revision.versionName}-row`"
-                @click="open('', revision.isCurrent ? '' : revision.versionName)">
-                <ion-label>
-                  {{ translate("Revision {revision}", { revision: revision.versionName }) }}
-                  <p>{{ revisionDetails(revision) }}</p>
-                </ion-label>
-                <ion-note v-if="revision.isCurrent" slot="end" color="success">{{ translate("Printing") }}</ion-note>
-              </ion-item>
-            </template>
+        <!-- Which template and revision is open; the editor and preview below get the full width. -->
+        <div class="template-picker">
+          <ion-select :key="`template-${pickerKey}`" :label="translate('Template')" label-placement="stacked" fill="outline" interface="popover"
+            :value="selection.templateName || LIVE" data-testid="document-template-select" @ionChange="pickTemplate($event.detail.value)">
+            <ion-select-option :value="LIVE">{{ translate("Live template · prints now") }}</ion-select-option>
+            <ion-select-option v-for="library in documentTemplate.templates" :key="library.templateName" :value="library.templateName">
+              {{ library.templateName }}
+            </ion-select-option>
+          </ion-select>
+          <ion-select :key="`revision-${pickerKey}`" :label="translate('Revision')" label-placement="stacked" fill="outline" interface="popover"
+            :value="selection.versionName || text.text.value?.currentVersionName" :disabled="!revisions.versions.value.length"
+            :placeholder="revisions.error.value ? translate('Revisions could not be loaded.') : translate('Loading…')"
+            data-testid="document-template-revision-select" @ionChange="pickRevision($event.detail.value)">
+            <ion-select-option v-for="revision in revisions.versions.value" :key="revision.versionName" :value="revision.versionName">
+              {{ revisionOption(revision) }}
+            </ion-select-option>
+          </ion-select>
+          <ion-button v-if="canAdmin" fill="outline" :disabled="saving" data-testid="document-template-new-btn" @click="newTemplate()">
+            <ion-icon slot="start" :icon="addOutline" />{{ translate("New template") }}
+          </ion-button>
+        </div>
 
-            <ion-list-header>
-              <ion-label>{{ translate("Templates") }}</ion-label>
-              <ion-button v-if="canAdmin" :disabled="saving" data-testid="document-template-new-btn" @click="newTemplate()">
-                <ion-icon slot="start" :icon="addOutline" />{{ translate("New") }}
-              </ion-button>
-            </ion-list-header>
-            <ion-item v-if="!documentTemplate.templates?.length" lines="none">
-              <ion-label class="ion-text-wrap secondary-label">
-                {{ canAdmin ? translate("No templates yet. Select New to start one from the live template.") : translate("No templates yet.") }}
-              </ion-label>
-            </ion-item>
-            <template v-for="library in documentTemplate.templates" :key="library.templateName">
-              <ion-item button :detail="false" :class="{ open: selection.templateName === library.templateName }"
-                :data-testid="`document-template-library-${library.templateName}-row`" @click="open(library.templateName, '')">
-                <ion-label>
-                  {{ library.templateName }}
-                  <p>{{ revisionLine(library.versionName, library.versionDate, library.userId) }}</p>
-                </ion-label>
-              </ion-item>
-              <template v-if="selection.templateName === library.templateName">
-                <ion-item v-for="revision in shownRevisions" :key="revision.versionName" button :detail="false" class="revision"
-                  :class="{ chosen: isChosenRevision(revision.versionName) }" :data-testid="`document-template-revision-${revision.versionName}-row`"
-                  @click="open(library.templateName, revision.isCurrent ? '' : revision.versionName)">
-                  <ion-label>
-                    {{ translate("Revision {revision}", { revision: revision.versionName }) }}
-                    <p>{{ revisionDetails(revision) }}</p>
-                  </ion-label>
-                  <ion-note v-if="revision.isCurrent" slot="end">{{ translate("Latest") }}</ion-note>
-                </ion-item>
-              </template>
-            </template>
-            <ion-item v-if="revisions.versions.value.length > shownRevisions.length" button :detail="false" lines="none" class="revision"
-              data-testid="document-template-revisions-all-btn" @click="showAllRevisions = true">
-              <ion-label color="primary">{{ translate("Show all {count} revisions", { count: revisions.versions.value.length }) }}</ion-label>
-            </ion-item>
-            <ion-item v-if="revisions.error.value" lines="none" data-testid="document-template-revisions-error">
-              <ion-label class="ion-text-wrap secondary-label">{{ translate("Revisions could not be loaded.") }}</ion-label>
-            </ion-item>
-          </ion-list>
-        </section>
-
-        <section class="template-editor" ref="editorSection">
+        <section class="template-editor">
           <ion-card data-testid="document-template-editor-card">
             <div class="editor-head">
               <div class="editor-title">
@@ -166,24 +124,20 @@
                   <ion-icon slot="start" color="warning" :icon="warningOutline" />
                   <ion-label class="ion-text-wrap">{{ translate("This shows the saved revision. Save your changes to preview them.") }}</ion-label>
                 </ion-item>
-                <ion-item lines="full">
-                  <ion-select :label="translate('Preview with')" interface="popover" :value="sampleId" :disabled="samples.loading.value || !samples.samples.value.length"
-                    :placeholder="samples.loading.value ? translate('Loading…') : translate('None available')" data-testid="document-template-sample-select"
-                    @ionChange="sampleId = $event.detail.value">
-                    <ion-select-option v-for="sample in samples.samples.value" :key="sample.sourceId" :value="sample.sourceId">{{ sampleLabel(sample) }}</ion-select-option>
-                  </ion-select>
+                <ion-item lines="full" data-testid="document-template-sample">
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Preview with") }}
+                    <p data-testid="document-template-sample-label">
+                      {{ chosenSample ? sampleLabel(chosenSample)
+                        : samples.loading.value ? translate("Loading…")
+                        : samples.error.value ? translate("Recent documents could not be loaded. Choose an order.")
+                        : isPicklist ? translate("No recent pick lists. Choose an order.") : translate("No recent shipments. Choose an order.") }}
+                    </p>
+                  </ion-label>
+                  <ion-button slot="end" fill="outline" data-testid="document-template-choose-order-btn" @click="orderModalOpen = true">
+                    <ion-icon slot="start" :icon="searchOutline" />{{ translate("Choose order") }}
+                  </ion-button>
                 </ion-item>
-                <template v-if="!samples.loading.value && !samples.samples.value.length">
-                  <p class="secondary-label" data-testid="document-template-no-samples">
-                    {{ samples.error.value ? translate("Recent documents to preview with could not be loaded.")
-                      : isPicklist ? translate("There are no recent pick lists to preview with.") : translate("There are no recent shipments to preview with.") }}
-                  </p>
-                  <ion-item lines="full">
-                    <ion-input :label="isPicklist ? translate('Pick list ID') : translate('Shipment ID')" label-placement="stacked" :value="manualSampleId"
-                      data-testid="document-template-sample-input" @ionInput="manualSampleId = String($event.detail.value || '').trim()" />
-                    <ion-button slot="end" fill="outline" :disabled="!manualSampleId" @click="sampleId = manualSampleId">{{ translate("Preview") }}</ion-button>
-                  </ion-item>
-                </template>
 
                 <ion-skeleton-text v-if="previewLoading" animated style="width: 100%; height: 320px" data-testid="document-template-preview-loading" />
                 <template v-else-if="result">
@@ -228,6 +182,7 @@
           </ion-card>
         </section>
       </div>
+      <PreviewOrderModal :is-open="orderModalOpen" :document-type-id="documentTypeId" :selected-id="sampleId" @close="orderModalOpen = false" @select="pickSample" />
     </ion-content>
   </ion-page>
 </template>
@@ -235,12 +190,13 @@
 <script setup lang="ts">
 import { commonUtil, logger, translate } from "@common";
 import { useSeedData } from "@common/db";
-import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonNote, IonPage, IonProgressBar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, alertCircleOutline, arrowUndoOutline, cloudUploadOutline, copyOutline, documentAttachOutline, informationCircleOutline, refreshOutline, saveOutline, trashOutline, warningOutline } from "ionicons/icons";
-import { computed, nextTick, reactive, ref, watch } from "vue";
+import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonPage, IonProgressBar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, alertCircleOutline, arrowUndoOutline, cloudUploadOutline, copyOutline, documentAttachOutline, informationCircleOutline, refreshOutline, saveOutline, searchOutline, trashOutline, warningOutline } from "ionicons/icons";
+import { computed, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import { useAuth } from "@/composables/useSecurity";
 import { useDocumentTemplate, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useDocumentTemplates, useSampleDocuments } from "@/composables/useDocumentTemplates";
+import PreviewOrderModal from "@/components/document-templates/PreviewOrderModal.vue";
 import TemplateCodeEditor from "@/components/document-templates/TemplateCodeEditor.vue";
 import { errorLine, inlineInclude, isTemplateName, locationFile, publishActionFor, sameSelection, serverErrorMessage, suggestTemplateName, templateErrorFile, type DocumentTemplateVersion, type SampleDocument } from "@/utils/documentTemplates";
 import Actions from "@/authorization/actions";
@@ -271,15 +227,14 @@ const code = ref("");
 const saveError = ref("");
 const publishError = ref("");
 const sampleId = ref("");
-const manualSampleId = ref("");
-const showAllRevisions = ref(false);
+// A document chosen from the order search, kept so its label shows even when it is not a recent one.
+const pickedSample = ref<SampleDocument | null>(null);
+const orderModalOpen = ref(false);
 const codeEditor = ref<InstanceType<typeof TemplateCodeEditor> | null>(null);
-const editorSection = ref<HTMLElement | null>(null);
 
 const isPicklist = computed(() => props.documentTypeId === "PICKLIST");
 const dirty = computed(() => !!text.text.value && code.value !== text.text.value.templateText);
 const isLatest = computed(() => !!text.text.value && text.text.value.versionName === text.text.value.currentVersionName);
-const shownRevisions = computed(() => showAllRevisions.value ? revisions.versions.value : revisions.versions.value.slice(0, 10));
 const saveErrorLine = computed(() => errorLine(saveError.value));
 // Shared files the code still includes; once copied in, the include line is gone.
 const includes = computed(() => (text.text.value?.includes || []).filter(include => code.value.includes(`"${include.location}"`)));
@@ -293,17 +248,28 @@ const publishAction = computed(() => publishActionFor(selection, documentTemplat
 const canPublish = computed(() => !!publishAction.value && !dirty.value && !publishing.value && !previewLoading.value
   && !!result.value?.rendered && !!previewed.value && sameSelection(previewed.value, selection) && previewed.value.sourceId === sampleId.value);
 
-const isChosenRevision = (versionName: string) => (selection.versionName || text.text.value?.currentVersionName) === versionName;
+// ion-select needs a value for the live template; a template name never contains an underscore.
+const LIVE = "_live";
+// Bumped to redraw the pickers when the user keeps unsaved changes instead of switching.
+const pickerKey = ref(0);
 
-function revisionLine(versionName?: string, versionDate?: number, userId?: string) {
-  return [translate("Revision {revision}", { revision: versionName || "-" }),
-    versionDate ? commonUtil.getDateAndTime(versionDate) : "",
-    userId ? revisions.usernameFor(userId) : ""].filter(Boolean).join(" · ");
+function revisionOption(revision: DocumentTemplateVersion) {
+  const mark = revision.isCurrent ? (selection.templateName ? translate("latest") : translate("printing")) : "";
+  return [translate("Revision {revision}", { revision: revision.versionName }),
+    revision.versionDate ? commonUtil.getDateAndTime(revision.versionDate) : "",
+    revision.userId ? revisions.usernameFor(revision.userId) : "", mark].filter(Boolean).join(" · ");
 }
 
-const revisionDetails = (revision: DocumentTemplateVersion) =>
-  [revision.versionDate ? commonUtil.getDateAndTime(revision.versionDate) : "", revision.userId ? revisions.usernameFor(revision.userId) : ""]
-    .filter(Boolean).join(" · ");
+async function pickTemplate(value: string) {
+  await open(value === LIVE ? "" : value, "");
+  pickerKey.value++;
+}
+
+async function pickRevision(versionName: string) {
+  const current = revisions.versions.value.find(revision => revision.versionName === versionName);
+  await open(selection.templateName, !current || current.isCurrent ? "" : versionName);
+  pickerKey.value++;
+}
 
 function sampleLabel(sample: SampleDocument) {
   const status = sample.statusId ? seed.statusDescription(sample.statusId) : "";
@@ -315,15 +281,24 @@ function sampleLabel(sample: SampleDocument) {
   return [order, translate("Shipment {id}", { id: sample.sourceId }), status].filter(Boolean).join(" · ");
 }
 
+const chosenSample = computed(() => pickedSample.value?.sourceId === sampleId.value ? pickedSample.value
+  : samples.samples.value.find(sample => sample.sourceId === sampleId.value) || null);
+
+function pickSample(document: SampleDocument) {
+  pickedSample.value = document;
+  sampleId.value = document.sourceId;
+  orderModalOpen.value = false;
+}
+
 async function reload() {
   await refresh();
   void revisions.resolveUsernames([documentTemplate.value?.liveUserId, ...(documentTemplate.value?.templates || []).map(row => row.userId)]);
   void loadOpen();
   if(canAdmin.value) {
     await samples.load(props.documentTypeId);
-    if(!samples.samples.value.some(sample => sample.sourceId === sampleId.value) && sampleId.value !== manualSampleId.value) {
-      sampleId.value = samples.samples.value[0]?.sourceId || "";
-    }
+    // Keep the document chosen before (a recent one, or one picked from an order); otherwise start on the newest.
+    const kept = !!sampleId.value && (pickedSample.value?.sourceId === sampleId.value || samples.samples.value.some(sample => sample.sourceId === sampleId.value));
+    if(!kept) {sampleId.value = samples.samples.value[0]?.sourceId || "";}
   }
 }
 
@@ -354,12 +329,8 @@ async function discardChanges(): Promise<boolean> {
 async function open(templateName: string, versionName: string) {
   if(selection.templateName === templateName && selection.versionName === versionName) {return;}
   if(!await discardChanges()) {return;}
-  if(selection.templateName !== templateName) {showAllRevisions.value = false;}
   selection.templateName = templateName;
   selection.versionName = versionName;
-  await nextTick();
-  // Stacked on narrow screens, the editor is below the list.
-  editorSection.value?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 onBeforeRouteLeave(() => discardChanges());
@@ -370,6 +341,9 @@ watch(() => [selection.templateName, selection.versionName], ([templateName], [p
   if(templateName !== previousTemplateName) {void revisions.load(props.documentTypeId, selection.templateName);}
   void text.load(props.documentTypeId, { ...selection }).then(() => { code.value = text.text.value?.templateText || ""; });
 });
+
+// A save error is about edits; once the code is back to the saved revision it no longer applies.
+watch(dirty, isDirty => { if(!isDirty) {saveError.value = "";} });
 
 // The preview follows what is open and the document chosen to preview with, while the Preview tab shows.
 watch(() => [selection.templateName, selection.versionName, sampleId.value, tab.value], () => {
@@ -568,35 +542,17 @@ async function runPublish(action: "publish" | "rollback") {
 </script>
 
 <style scoped>
-.template-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: start;
+.template-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacer-sm, 16px);
+  padding: var(--spacer-sm, 16px) var(--spacer-sm, 16px) 0;
 }
 
-/* The template list beside the editor once there is room for readable code (the menu takes ~270px). */
-@media (min-width: 1200px) {
-  .template-workspace {
-    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
-  }
-}
-
-ion-item.open {
-  --background: var(--ion-color-light);
-}
-
-ion-item.open ion-label,
-ion-item.chosen ion-label {
-  font-weight: 500;
-}
-
-ion-item.revision {
-  --padding-start: var(--spacer-lg, 32px);
-}
-
-ion-item.chosen {
-  --background: var(--ion-color-light);
-  --color: var(--ion-color-primary);
+.template-picker ion-select {
+  flex: 1 1 260px;
+  max-width: 480px;
 }
 
 .secondary-label {
@@ -642,7 +598,7 @@ ion-segment {
 .pdf-frame {
   display: block;
   width: 100%;
-  height: 70vh;
+  height: 75vh;
   border: none;
 }
 </style>

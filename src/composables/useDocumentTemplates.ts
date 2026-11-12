@@ -2,7 +2,7 @@ import { api, commonUtil, logger, useLiveEntity } from "@common";
 import { computed, onScopeDispose, ref } from "vue";
 import { companyDb } from "@/db/companyDb";
 import { refreshAfterMutation } from "@/db/appDbSync";
-import type { DocumentTemplate, DocumentTemplateVersion, PreviewResult, SampleDocument, TemplateSelection, TemplateText } from "@/utils/documentTemplates";
+import type { DocumentTemplate, DocumentTemplateVersion, PreviewOrder, PreviewResult, SampleDocument, TemplateSelection, TemplateText } from "@/utils/documentTemplates";
 
 /**
  * Document templates: the packing slip and pick list templates printing uses (Poorti
@@ -310,6 +310,126 @@ export function useSampleDocuments() {
   }
 
   return { samples, loading, error, load };
+}
+
+const ORDER_BUCKETS: Array<{ url: string; stage: PreviewOrder["stage"] }> = [
+  { url: "oms/orders/salesOrders/open", stage: "open" },
+  { url: "oms/orders/salesOrders/inflight", stage: "picked" },
+  { url: "oms/orders/salesOrders/packed", stage: "packed" },
+];
+const ORDER_SHIPMENTS_QUERY = `query OrderShipments($q: String!, $first: Int!) {
+  shipments(query: $q, first: $first) { edges { node { shipmentId statusId primaryOrderId originFacilityId } } }
+}`;
+const ORDER_PICKLISTS_QUERY = `query OrderPicklists($q: String!, $first: Int!) {
+  orderPicklists(query: $q, first: $first) { edges { node { picklistId orderId picklistDate picklistStatusId facilityId } } }
+}`;
+// GraphQL pages are at most 100 rows: enough for the documents of 20 orders from each list.
+const SEARCH_PAGE = 20;
+
+/**
+ * Finds approved sales orders by keyword (order name, HotWax order id or external id), through the same order lists
+ * the fulfillment app reads (open, in progress and packed), so a user can pick the exact order to preview a template
+ * with. Each order comes with what a template can render for it: its shipments for packing slips, its pick lists
+ * for the pick list. An order that has none yet is still returned, so the screen can say why it cannot be used.
+ */
+export function usePreviewOrderSearch() {
+  const orders = ref<PreviewOrder[]>([]);
+  const loading = ref(false);
+  const error = ref(false);
+  // The orders were found but their shipments or pick lists could not be read.
+  const documentsError = ref(false);
+  let request = 0;
+
+  async function graphql(queryText: string, variables: Record<string, unknown>, operationName: string) {
+    const resp: any = await api({ url: "graphql", method: "post", data: { query: queryText, variables, operationName } });
+    if(commonUtil.hasError(resp) || resp?.data?.errors?.length || !resp?.data?.data) {throw resp;}
+
+    return resp.data.data;
+  }
+
+  async function documentsFor(documentTypeId: string, orderIds: string[]): Promise<Map<string, SampleDocument[]>> {
+    const byOrder = new Map<string, SampleDocument[]>();
+    if(!orderIds.length) {return byOrder;}
+    const add = (orderId: string, document: SampleDocument) => {
+      const documents = byOrder.get(orderId) || [];
+      if(!documents.some(existing => existing.sourceId === document.sourceId)) {documents.push(document);}
+      byOrder.set(orderId, documents);
+    };
+    if(documentTypeId === "PICKLIST") {
+      const data = await graphql(ORDER_PICKLISTS_QUERY, { q: `orderId:${orderIds.join(",")}`, first: 100 }, "OrderPicklists");
+      for(const { node } of data.orderPicklists?.edges ?? []) {
+        if(node?.picklistId) {
+          add(node.orderId, { sourceId: node.picklistId, kind: "picklist", statusId: node.picklistStatusId, facilityId: node.facilityId,
+            orderId: node.orderId, date: node.picklistDate ? Date.parse(node.picklistDate) : undefined });
+        }
+      }
+    } else {
+      const data = await graphql(ORDER_SHIPMENTS_QUERY, { q: `primaryOrderId:${orderIds.join(",")}`, first: 100 }, "OrderShipments");
+      for(const { node } of data.shipments?.edges ?? []) {
+        if(node?.shipmentId) {
+          add(node.primaryOrderId, { sourceId: node.shipmentId, kind: "shipment", statusId: node.statusId, facilityId: node.originFacilityId, orderId: node.primaryOrderId });
+        }
+      }
+    }
+
+    return byOrder;
+  }
+
+  async function search(documentTypeId: string, keyword: string) {
+    const current = ++request;
+    loading.value = true;
+    error.value = false;
+    documentsError.value = false;
+    try {
+      // The buckets return a row per ship group item; keep one order each, in its furthest stage.
+      const pages = await Promise.all(ORDER_BUCKETS.map(async bucket => {
+        const resp: any = await api({
+          url: bucket.url,
+          method: "get",
+          params: { keyword: keyword.trim() || undefined, pageSize: SEARCH_PAGE, orderByField: "-orderDate" },
+        });
+        if(commonUtil.hasError(resp) || !Array.isArray(resp?.data?.orders)) {throw resp;}
+
+        return resp.data.orders.map((row: any) => ({ row, stage: bucket.stage }));
+      }));
+      const found = new Map<string, PreviewOrder>();
+      for(const { row, stage } of pages.flat()) {
+        if(!row?.orderId) {continue;}
+        const customerName = [row.firstName, row.lastName].filter(Boolean).join(" ");
+        const existing = found.get(row.orderId);
+        if(existing) {
+          if(ORDER_BUCKETS.findIndex(bucket => bucket.stage === stage) > ORDER_BUCKETS.findIndex(bucket => bucket.stage === existing.stage)) {existing.stage = stage;}
+          continue;
+        }
+        found.set(row.orderId, {
+          orderId: row.orderId, orderName: row.orderName || undefined, customerName: customerName || undefined,
+          facilityName: row.facilityName || undefined, orderDate: typeof row.orderDate === "number" ? row.orderDate : (row.orderDate ? Date.parse(row.orderDate) : undefined),
+          stage, documents: [],
+        });
+      }
+      const rows = [...found.values()].sort((a, b) => (b.orderDate || 0) - (a.orderDate || 0));
+      let documents = new Map<string, SampleDocument[]>();
+      try {
+        documents = await documentsFor(documentTypeId, rows.map(order => order.orderId));
+      } catch(cause) {
+        // Still show the orders: the user learns the order exists and why it cannot be chosen.
+        if(current === request) {documentsError.value = true;}
+        logger.error(cause);
+      }
+      if(current !== request) {return;}
+      orders.value = rows.map(order => ({ ...order, documents: (documents.get(order.orderId) || []).map(document => ({ ...document, orderName: order.orderName })) }));
+    } catch(cause) {
+      if(current === request) {
+        orders.value = [];
+        error.value = true;
+      }
+      logger.error(cause);
+    } finally {
+      if(current === request) {loading.value = false;}
+    }
+  }
+
+  return { orders, loading, error, documentsError, search };
 }
 
 /**
