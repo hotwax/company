@@ -142,19 +142,19 @@ describe("sample documents to preview with", () => {
     scope.stop();
   });
 
-  it("offers each recent pick list once, newest first", async () => {
-    mocks.api.mockResolvedValueOnce({ data: { data: { orderPicklists: { edges: [
-      { node: { picklistId: "P1", picklistDate: "2026-11-01T10:00:00Z", picklistStatusId: "PICKLIST_PICKED" } },
-      { node: { picklistId: "P2", picklistDate: "2026-11-05T10:00:00Z" } },
-      { node: { picklistId: "P1", picklistDate: "2026-11-01T10:00:00Z" } },
-    ] } } } });
+  it("reads the newest pick lists from Poorti's picklists REST resource", async () => {
+    mocks.api.mockResolvedValueOnce({ data: [
+      { picklistId: "P2", picklistDate: 1793000000000, statusId: "PICKLIST_PRINTED" },
+      { picklistId: "P1", picklistDate: 1792000000000, statusId: "PICKLIST_PICKED", facilityId: "WH" },
+    ] });
     const { scope, state } = run(() => useSampleDocuments());
 
     await state.load("PICKLIST");
 
-    expect(mocks.api.mock.calls[0][0].data.operationName).toBe("SamplePicklists");
+    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/picklists", method: "get", params: { pageSize: 20, orderByField: "-picklistDate" } });
     expect(state.samples.value.map(sample => sample.sourceId)).toEqual(["P2", "P1"]);
-    expect(state.samples.value[1]).toMatchObject({ kind: "picklist", statusId: "PICKLIST_PICKED", date: Date.parse("2026-11-01T10:00:00Z") });
+    expect(state.samples.value[1]).toMatchObject({ kind: "picklist", statusId: "PICKLIST_PICKED", facilityId: "WH", date: 1792000000000 });
+    expect(state.error.value).toBe(false);
     scope.stop();
   });
 
@@ -277,17 +277,40 @@ describe("preview order search", () => {
     scope.stop();
   });
 
-  it("looks up pick lists for the pick list, and still shows the orders when that lookup fails", async () => {
+  it("finds the orders' pick lists through Poorti's shipmentPicklists, reading every page", async () => {
+    const page = (rows: any[], total: number) => ({ data: rows, headers: { "x-total-count": String(total) } });
+    const shipment = (id: string, orderId: string, picklistId?: string) => ({ shipmentId: id, primaryOrderId: orderId,
+      picklistShipment: picklistId ? [{ picklistId, picklist: { statusId: "PICKLIST_ASSIGNED", facilityId: "71", picklistDate: 1771713021323 } }] : [] });
     mocks.api.mockImplementation(async (request: any) => {
-      if(request.method === "get") {return bucket(request.url.endsWith("/packed") ? [{ orderId: "M1", orderName: "#5955" }] : []);}
-      return { data: { data: { orderPicklists: null }, errors: [{ message: "unknown entity co.hotwax.shipment.OrderPicklist" }] } };
+      if(request.url.startsWith("oms/")) {return bucket(request.url.endsWith("/inflight") ? [{ orderId: "M1", orderName: "#1" }, { orderId: "M2", orderName: "#2" }] : []);}
+      // first page full (100 rows), second page the rest
+      if(request.params.pageIndex === 0) {return page([shipment("S1", "M1", "P1"), ...Array.from({ length: 99 }, (_, i) => shipment(`X${i}`, "M2"))], 101);}
+      return page([shipment("S2", "M2", "P2")], 101);
     });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
     await state.search("PICKLIST", "");
 
-    const lookup = mocks.api.mock.calls.map(([request]) => request).find((request: any) => request.url === "graphql");
-    expect(lookup.data.operationName).toBe("OrderPicklists");
+    const lookups = mocks.api.mock.calls.map(([request]) => request).filter((request: any) => request.url === "poorti/shipmentPicklists");
+    expect(lookups.map((request: any) => request.params)).toEqual([
+      { primaryOrderId: "M1,M2", primaryOrderId_op: "in", pageIndex: 0, pageSize: 100 },
+      { primaryOrderId: "M1,M2", primaryOrderId_op: "in", pageIndex: 1, pageSize: 100 },
+    ]);
+    expect(Object.fromEntries(state.orders.value.map(order => [order.orderId, order.documents.map(document => document.sourceId)]))).toEqual({ M1: ["P1"], M2: ["P2"] });
+    expect(state.orders.value.find(order => order.orderId === "M1")?.documents[0]).toMatchObject({ kind: "picklist", statusId: "PICKLIST_ASSIGNED", facilityId: "71", date: 1771713021323 });
+    expect(state.documentsError.value).toBe(false);
+    scope.stop();
+  });
+
+  it("still shows the orders when the pick list lookup fails", async () => {
+    mocks.api.mockImplementation(async (request: any) => {
+      if(request.url.startsWith("oms/")) {return bucket(request.url.endsWith("/packed") ? [{ orderId: "M1", orderName: "#5955" }] : []);}
+      return { data: { errors: "denied" } };
+    });
+    const { scope, state } = run(() => usePreviewOrderSearch());
+
+    await state.search("PICKLIST", "");
+
     expect(mocks.api.mock.calls[0][0].params.keyword).toBeUndefined();
     expect(state.orders.value).toEqual([expect.objectContaining({ orderId: "M1", stage: "packed", documents: [] })]);
     expect(state.documentsError.value).toBe(true);

@@ -52,6 +52,10 @@ const TEXT_QUERY = `query DocumentTemplateText($documentTypeId: ID!, $templateNa
   }
 }`;
 const SAMPLE_COUNT = 20;
+
+/** Moqui REST returns dates as epoch millis, GraphQL as ISO strings. */
+const toMillis = (value: unknown): number | undefined =>
+  typeof value === "number" ? value : typeof value === "string" && value ? Date.parse(value) : undefined;
 const SAMPLE_SHIPMENTS_QUERY = `query SampleShipments($first: Int!) {
   shipments(query: "statusId:SHIPMENT_SHIPPED,SHIPMENT_PACKED", sortKey: SHIPPED_DATE, reverse: true, first: $first) {
     edges { node { shipmentId statusId primaryOrderId originFacilityId } }
@@ -60,10 +64,6 @@ const SAMPLE_SHIPMENTS_QUERY = `query SampleShipments($first: Int!) {
 const SAMPLE_ORDERS_QUERY = `query SampleOrders($q: String!, $first: Int!) {
   orders(query: $q, first: $first) { edges { node { orderId orderName } } }
 }`;
-const SAMPLE_PICKLISTS_QUERY = `query SamplePicklists($first: Int!) {
-  orderPicklists(first: $first) { edges { node { picklistId picklistDate picklistStatusId facilityId } } }
-}`;
-
 /** Every document type, from the local table, and `refresh()` to fetch them again. */
 export function useDocumentTemplates() {
   const { records, hydrated } = useLiveEntity<DocumentTemplate>(companyDb.tables.documentTemplates);
@@ -294,20 +294,17 @@ export function useSampleDocuments() {
     }));
   }
 
+  /**
+   * The newest pick lists, from Poorti's `picklists` REST resource. Released moqui-gql versions have no pick list
+   * root, so pick lists are read over REST on every OMS version.
+   */
   async function picklistSamples(): Promise<SampleDocument[]> {
-    const data = await query(SAMPLE_PICKLISTS_QUERY, { first: SAMPLE_COUNT * 5 }, "SamplePicklists");
-    // One row per picked order item, so a pick list repeats; keep each once, newest first.
-    const byId = new Map<string, any>();
-    for(const edge of data.orderPicklists?.edges ?? []) {
-      const row = edge.node;
-      if(row?.picklistId && !byId.has(row.picklistId)) {byId.set(row.picklistId, row);}
-    }
+    const resp: any = await api({ url: "poorti/picklists", method: "get", params: { pageSize: SAMPLE_COUNT, orderByField: "-picklistDate" } });
+    if(commonUtil.hasError(resp) || !Array.isArray(resp?.data)) {throw resp;}
 
-    return [...byId.values()]
-      .sort((a, b) => String(b.picklistDate || "").localeCompare(String(a.picklistDate || "")))
-      .slice(0, SAMPLE_COUNT)
-      .map(row => ({ sourceId: row.picklistId, kind: "picklist", statusId: row.picklistStatusId, facilityId: row.facilityId,
-        date: row.picklistDate ? Date.parse(row.picklistDate) : undefined }));
+    return resp.data.filter((row: any) => row?.picklistId).map((row: any) => ({
+      sourceId: row.picklistId, kind: "picklist" as const, statusId: row.statusId, facilityId: row.facilityId || undefined, date: toMillis(row.picklistDate),
+    }));
   }
 
   async function load(documentTypeId: string) {
@@ -342,13 +339,7 @@ const ORDER_SHIPMENTS_QUERY = `query OrderShipments($q: String!, $first: Int!, $
     pageInfo { hasNextPage endCursor }
   }
 }`;
-const ORDER_PICKLISTS_QUERY = `query OrderPicklists($q: String!, $first: Int!, $after: String) {
-  orderPicklists(query: $q, first: $first, after: $after) {
-    edges { node { picklistId orderId picklistDate picklistStatusId facilityId } }
-    pageInfo { hasNextPage endCursor }
-  }
-}`;
-// GraphQL returns at most 100 rows a page; pick lists come a row per picked item, so read every page.
+// Lookups read every page (GraphQL returns at most 100 rows a page) and refuse rather than list part of a set.
 const LOOKUP_PAGE = 100;
 const LOOKUP_MAX_PAGES = 20;
 const SEARCH_PAGE = 20;
@@ -372,6 +363,22 @@ export function usePreviewOrderSearch() {
     if(commonUtil.hasError(resp) || resp?.data?.errors?.length || !resp?.data?.data) {throw resp;}
 
     return resp.data.data;
+  }
+
+  /**
+   * Every row of a Moqui entity REST list, page by page (`pageIndex`, `pageSize`, and the `X-Total-Count` header);
+   * refuses rather than return a partial list.
+   */
+  async function allRestRows(url: string, params: Record<string, unknown>): Promise<any[]> {
+    const rows: any[] = [];
+    for(let pageIndex = 0; pageIndex < LOOKUP_MAX_PAGES; pageIndex++) {
+      const resp: any = await api({ url, method: "get", params: { ...params, pageIndex, pageSize: LOOKUP_PAGE } });
+      if(commonUtil.hasError(resp) || !Array.isArray(resp?.data)) {throw resp;}
+      rows.push(...resp.data);
+      const total = Number(resp.headers?.["x-total-count"]);
+      if(resp.data.length < LOOKUP_PAGE || (Number.isFinite(total) && rows.length >= total)) {return rows;}
+    }
+    throw new Error(`${url} has more than ${LOOKUP_MAX_PAGES * LOOKUP_PAGE} rows`);
   }
 
   /** Every row of a connection, page by page; refuses rather than return a partial list. */
@@ -399,10 +406,14 @@ export function usePreviewOrderSearch() {
       byOrder.set(orderId, documents);
     };
     if(documentTypeId === "PICKLIST") {
-      for(const node of await allRows(ORDER_PICKLISTS_QUERY, "orderPicklists", "OrderPicklists", `orderId:${orderIds.join(",")}`)) {
-        if(node.picklistId) {
-          add(node.orderId, { sourceId: node.picklistId, kind: "picklist", statusId: node.picklistStatusId, facilityId: node.facilityId,
-            orderId: node.orderId, date: node.picklistDate ? Date.parse(node.picklistDate) : undefined });
+      // Poorti's shipmentPicklists: each of the orders' shipments with the pick lists it is on (released moqui-gql
+      // versions have no pick list root).
+      const shipments = await allRestRows("poorti/shipmentPicklists", { primaryOrderId: orderIds.join(","), primaryOrderId_op: "in" });
+      for(const shipment of shipments) {
+        for(const link of Array.isArray(shipment?.picklistShipment) ? shipment.picklistShipment : []) {
+          if(!link?.picklistId || !shipment.primaryOrderId) {continue;}
+          add(shipment.primaryOrderId, { sourceId: link.picklistId, kind: "picklist", statusId: link.picklist?.statusId,
+            facilityId: link.picklist?.facilityId || undefined, orderId: shipment.primaryOrderId, date: toMillis(link.picklist?.picklistDate) });
         }
       }
     } else {
