@@ -31,6 +31,15 @@ export interface TemplateSelection {
   versionName?: string;
 }
 
+/** One revision's code, from the `documentTemplateText` GraphQL root. */
+export interface TemplateText {
+  versionName: string;
+  currentVersionName: string;
+  templateText: string;
+  /** Shared print files the code includes, with their current text; a template can copy one in to change it. */
+  includes: Array<{ location: string; templateText: string }>;
+}
+
 export interface TemplateError {
   message?: string;
   templateName?: string;
@@ -85,3 +94,40 @@ export function serverErrorMessage(error: any): string {
 
 /** The file a template error is in, without its location, for example `PackingSlipContent.xsl-fo.ftl`. */
 export const templateErrorFile = (error: TemplateError): string => error.templateName?.split("/").pop() || "";
+
+/** Template names the server accepts: 1 to 60 lowercase letters, digits and hyphens, starting with a letter or digit. */
+export const isTemplateName = (name: string): boolean => /^[a-z0-9][a-z0-9-]{0,59}$/.test(name);
+
+/**
+ * A free template name built from `base` ("Pick list" → `pick-list-copy`), adding `-2`, `-3`… when it is taken, so
+ * nobody has to invent a name to save a copy.
+ */
+export function suggestTemplateName(base: string, taken: string[]): string {
+  const stem = (base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "template").slice(0, 50) + "-copy";
+  const names = new Set(taken);
+  if(!names.has(stem)) {return stem;}
+  let suffix = 2;
+  while(names.has(`${stem}-${suffix}`)) {suffix++;}
+
+  return `${stem}-${suffix}`;
+}
+
+/** The line a refused save points at: the server says "Template does not parse: … (line 12, column 5)". */
+export function errorLine(message: string): number | undefined {
+  const match = /\bline (\d+)/i.exec(message);
+
+  return match ? Number(match[1]) : undefined;
+}
+
+/** The file name of a template location, for example `PackingSlipContent.xsl-fo.ftl`. */
+export const locationFile = (location: string): string => location.split("/").pop() || location;
+
+/**
+ * Replaces the `<#include "location">` line with the included file's text, so a template can change a layout it
+ * shares with other documents without changing it for them.
+ */
+export function inlineInclude(code: string, location: string, includedText: string): string {
+  const escaped = location.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  return code.replace(new RegExp(`<#include\\s+"${escaped}"\\s*/?>`, "g"), () => includedText.trim());
+}

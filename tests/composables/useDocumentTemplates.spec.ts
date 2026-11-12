@@ -13,7 +13,7 @@ vi.mock("@common", () => ({
 vi.mock("@/db/companyDb", () => ({ companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) } }));
 vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: (...args: any[]) => mocks.refreshAfterMutation(...args) }));
 
-import { useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateVersions, useSampleDocuments } from "@/composables/useDocumentTemplates";
+import { useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useSampleDocuments } from "@/composables/useDocumentTemplates";
 
 const run = <T>(factory: () => T) => { const scope = effectScope(); return { scope, state: scope.run(factory)! }; };
 
@@ -166,6 +166,87 @@ describe("sample documents to preview with", () => {
 
     expect(state.error.value).toBe(true);
     expect(state.samples.value).toEqual([]);
+    scope.stop();
+  });
+});
+
+describe("document template code", () => {
+  it("reads one revision's code and the shared files it includes through GraphQL", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { data: {
+      documentTemplateText: { versionName: "02", currentVersionName: "03", templateText: "<#include \"x\">" },
+      documentTemplateIncludes: [{ location: "x", templateText: "<fo:block/>" }],
+    } } });
+    const { scope, state } = run(() => useDocumentTemplateText());
+
+    await state.load("PICKLIST", { templateName: "pick-list-copy", versionName: "02" });
+
+    expect(mocks.api).toHaveBeenCalledWith(expect.objectContaining({ url: "graphql", method: "post", data: expect.objectContaining({
+      operationName: "DocumentTemplateText", variables: { documentTypeId: "PICKLIST", templateName: "pick-list-copy", versionName: "02" } }) }));
+    expect(state.text.value).toEqual({ versionName: "02", currentVersionName: "03", templateText: "<#include \"x\">", includes: [{ location: "x", templateText: "<fo:block/>" }] });
+    expect(state.error.value).toBe(false);
+    scope.stop();
+  });
+
+  it("asks for the live template's current revision when nothing is chosen, and reports an error instead of empty code", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { data: { documentTemplateText: null }, errors: [{ message: "Template x does not exist" }] } });
+    const { scope, state } = run(() => useDocumentTemplateText());
+
+    await state.load("PICKLIST", {});
+
+    expect(mocks.api.mock.calls[0][0].data.variables).toEqual({ documentTypeId: "PICKLIST", templateName: null, versionName: null });
+    expect(state.text.value).toBeNull();
+    expect(state.error.value).toBe(true);
+    scope.stop();
+  });
+});
+
+describe("document template save", () => {
+  it("saves a revision with the revision it was edited from, then refreshes the template list", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { templateName: "pick-list-copy", versionName: "03", previousVersionName: "02" } });
+    const { scope, state } = run(() => useDocumentTemplateSave());
+
+    const saved = await state.save("PICKLIST", { templateName: "pick-list-copy", templateText: "<fo:root/>", expectedVersionName: "02" });
+
+    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PICKLIST/templates", method: "post",
+      data: { templateName: "pick-list-copy", templateText: "<fo:root/>", expectedVersionName: "02" } });
+    expect(saved.versionName).toBe("03");
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("documentTemplate", {});
+    expect(state.saving.value).toBe(false);
+    scope.stop();
+  });
+
+  it("throws the refusal so the screen can show the server's reason, and does not refresh", async () => {
+    const refusal = { response: { data: { errors: "Template does not parse: (line 4, column 1)" } } };
+    mocks.api.mockRejectedValueOnce(refusal);
+    const { scope, state } = run(() => useDocumentTemplateSave());
+
+    await expect(state.save("PICKLIST", { templateName: "pick-list-copy", templateText: "<#if>" })).rejects.toBe(refusal);
+    expect(mocks.refreshAfterMutation).not.toHaveBeenCalled();
+    expect(state.saving.value).toBe(false);
+    scope.stop();
+  });
+});
+
+describe("document template delete", () => {
+  it("deletes a named template at the revision the user saw, then refreshes the template list", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { templateName: "pick-list-copy", versionName: "02" } });
+    const { scope, state } = run(() => useDocumentTemplateDelete());
+
+    await state.remove("PICKLIST", "pick-list-copy", "02");
+
+    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PICKLIST/templates/pick-list-copy", method: "delete", params: { expectedVersionName: "02" } });
+    expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("documentTemplate", {});
+    expect(state.deleting.value).toBe(false);
+    scope.stop();
+  });
+
+  it("throws a refusal, such as a newer revision, without refreshing", async () => {
+    const refusal = { response: { data: { errors: "Template pick-list-copy is at version 03, not 02" } } };
+    mocks.api.mockRejectedValueOnce(refusal);
+    const { scope, state } = run(() => useDocumentTemplateDelete());
+
+    await expect(state.remove("PICKLIST", "pick-list-copy", "02")).rejects.toBe(refusal);
+    expect(mocks.refreshAfterMutation).not.toHaveBeenCalled();
     scope.stop();
   });
 });

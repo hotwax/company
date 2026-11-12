@@ -14,7 +14,7 @@
     </ion-header>
 
     <ion-content>
-      <p class="ion-padding-horizontal">{{ translate("Choose which template prints each document. Preview a template on a real shipment or picklist before making it live.") }}</p>
+      <p class="ion-padding-horizontal">{{ translate("Each document prints with its live template. Open one to read and edit its code, save revisions, preview them on a real shipment or pick list, and choose which revision prints.") }}</p>
 
       <template v-if="!documentTemplates.length && (!hydrated || loading || !loaded) && !error">
         <ion-card v-for="n in 3" :key="n" data-testid="document-templates-loading">
@@ -42,12 +42,12 @@
           <ion-list lines="none">
             <ion-item>
               <ion-label class="ion-text-wrap">
-                {{ translate("Live version {version}", { version: template.liveVersionName || "-" }) }}
+                {{ translate("Printing revision {revision} of the live template", { revision: template.liveVersionName || "-" }) }}
                 <p v-if="template.liveVersionDate">{{ commonUtil.getDateAndTime(template.liveVersionDate) }}</p>
               </ion-label>
             </ion-item>
             <ion-item>
-              <ion-label>{{ template.templates?.length === 1 ? translate("1 library template") : translate("{count} library templates", { count: template.templates?.length || 0 }) }}</ion-label>
+              <ion-label>{{ template.templates?.length === 1 ? translate("1 other template") : translate("{count} other templates", { count: template.templates?.length || 0 }) }}</ion-label>
             </ion-item>
           </ion-list>
         </ion-card>

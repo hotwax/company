@@ -2,7 +2,7 @@ import { api, commonUtil, logger, useLiveEntity } from "@common";
 import { computed, onScopeDispose, ref } from "vue";
 import { companyDb } from "@/db/companyDb";
 import { refreshAfterMutation } from "@/db/appDbSync";
-import type { DocumentTemplate, DocumentTemplateVersion, PreviewResult, SampleDocument, TemplateSelection } from "@/utils/documentTemplates";
+import type { DocumentTemplate, DocumentTemplateVersion, PreviewResult, SampleDocument, TemplateSelection, TemplateText } from "@/utils/documentTemplates";
 
 /**
  * Document templates: the packing slip and pick list templates printing uses (Poorti
@@ -11,9 +11,10 @@ import type { DocumentTemplate, DocumentTemplateVersion, PreviewResult, SampleDo
  *     and their libraries are the class C `documentTemplate` domain, which the screens fetch when they
  *     open and after a publish and read from the local table; version history is a server ledger, read
  *     when shown (like app version history).
- *   - Writes stay on `poorti/documentTemplates`: preview renders a template for one shipment or picklist,
- *     and the PDF is fetched from the print URL the server returns, through the app's session; publish
- *     and rollback go through `publish`, which checks the live version the screen showed.
+ *   - Writes stay on `poorti/documentTemplates`: `templates` saves a named template as a new revision
+ *     (never the live one, so saving never changes printing) and deletes one with all its revisions; preview renders a template for one shipment
+ *     or picklist, and the PDF is fetched from the print URL the server returns, through the app's session;
+ *     publish and rollback go through `publish`, which checks the live version the screen showed.
  */
 
 const DOCUMENT_TEMPLATE_DOMAIN = "documentTemplate";
@@ -21,6 +22,14 @@ const templatesUrl = (documentTypeId: string) => `poorti/documentTemplates/${enc
 const VERSIONS_QUERY = `query DocumentTemplateVersions($documentTypeId: ID!, $templateName: String) {
   documentTemplateVersions(documentTypeId: $documentTypeId, templateName: $templateName) {
     versionName previousVersionName versionDate userId isCurrent
+  }
+}`;
+const TEXT_QUERY = `query DocumentTemplateText($documentTypeId: ID!, $templateName: String, $versionName: String) {
+  documentTemplateText(documentTypeId: $documentTypeId, templateName: $templateName, versionName: $versionName) {
+    versionName currentVersionName templateText
+  }
+  documentTemplateIncludes(documentTypeId: $documentTypeId, templateName: $templateName, versionName: $versionName) {
+    location templateText
   }
 }`;
 const SAMPLE_COUNT = 20;
@@ -131,6 +140,100 @@ export function useDocumentTemplateVersions() {
   }
 
   return { versions, loading, error, load, usernameFor, resolveUsernames };
+}
+
+/**
+ * The code of the live template or a named template, at one revision (the current one when none is given), with the
+ * shared print files it includes, such as PackingSlipContent.
+ */
+export function useDocumentTemplateText() {
+  const text = ref<TemplateText | null>(null);
+  const loading = ref(false);
+  const error = ref(false);
+  let request = 0;
+
+  async function load(documentTypeId: string, selection: TemplateSelection) {
+    const current = ++request;
+    loading.value = true;
+    error.value = false;
+    try {
+      const resp: any = await api({
+        url: "graphql",
+        method: "post",
+        data: {
+          query: TEXT_QUERY,
+          variables: { documentTypeId, templateName: selection.templateName || null, versionName: selection.versionName || null },
+          operationName: "DocumentTemplateText",
+        },
+      });
+      const row = resp?.data?.data?.documentTemplateText;
+      if(commonUtil.hasError(resp) || resp?.data?.errors?.length || typeof row?.templateText !== "string") {throw resp;}
+      const includes = resp.data.data.documentTemplateIncludes;
+      if(current === request) {text.value = { ...row, includes: Array.isArray(includes) ? includes : [] };}
+    } catch(cause) {
+      if(current === request) {
+        text.value = null;
+        error.value = true;
+      }
+      logger.error(cause);
+    } finally {
+      if(current === request) {loading.value = false;}
+    }
+  }
+
+  return { text, loading, error, load };
+}
+
+/**
+ * Saves a named template as a new revision. It never changes printing: the live template only changes through
+ * publish. Pass the template's current revision as `expectedVersionName` when it exists, so a revision someone else
+ * saved in the meantime is not overwritten.
+ */
+export function useDocumentTemplateSave() {
+  const saving = ref(false);
+
+  /** Throws when the server refuses, for example text that does not parse; the error carries the reason. */
+  async function save(documentTypeId: string, payload: { templateName: string; templateText?: string; copyFromLive?: boolean; expectedVersionName?: string }) {
+    saving.value = true;
+    try {
+      const resp: any = await api({ url: `${templatesUrl(documentTypeId)}/templates`, method: "post", data: payload });
+      if(commonUtil.hasError(resp)) {throw resp;}
+      // The library list shows each template's latest revision.
+      await refreshAfterMutation(DOCUMENT_TEMPLATE_DOMAIN, {}).catch(cause => logger.error(cause));
+      return resp.data as { templateName: string; versionName: string; previousVersionName?: string };
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  return { save, saving };
+}
+
+/**
+ * Deletes a named template with all of its revisions. Printing never changes: the live template cannot be deleted,
+ * and making a template live copied its code. `expectedVersionName` is the revision the user saw, so one saved since
+ * is not deleted unseen.
+ */
+export function useDocumentTemplateDelete() {
+  const deleting = ref(false);
+
+  /** Throws when the server refuses; the error carries the reason. */
+  async function remove(documentTypeId: string, templateName: string, expectedVersionName: string) {
+    deleting.value = true;
+    try {
+      const resp: any = await api({
+        url: `${templatesUrl(documentTypeId)}/templates/${encodeURIComponent(templateName)}`,
+        method: "delete",
+        params: { expectedVersionName },
+      });
+      if(commonUtil.hasError(resp)) {throw resp;}
+      await refreshAfterMutation(DOCUMENT_TEMPLATE_DOMAIN, {}).catch(cause => logger.error(cause));
+    } finally {
+      deleting.value = false;
+    }
+  }
+
+  return { remove, deleting };
 }
 
 /**
