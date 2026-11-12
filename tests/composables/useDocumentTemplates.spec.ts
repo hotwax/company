@@ -26,7 +26,7 @@ beforeEach(() => {
 
 describe("document template preview", () => {
   it("renders the selection for one shipment, then fetches the PDF from the print URL through the session", async () => {
-    mocks.api.mockResolvedValueOnce({ data: { rendered: true, pageCount: 1, templateErrors: [{ line: 9, expression: "x.y" }], previewUrl: "/fop/apps/pdf/PrintPackingSlip?shipmentId=100051" } })
+    mocks.api.mockResolvedValueOnce({ data: { rendered: true, pageCount: 1, versionName: "02", templateErrors: [{ line: 9, expression: "x.y" }], previewUrl: "/fop/apps/pdf/PrintPackingSlip?shipmentId=100051" } })
       .mockResolvedValueOnce({ data: new Blob(["%PDF-"]) });
     const { scope, state } = run(() => useDocumentTemplatePreview());
 
@@ -35,7 +35,7 @@ describe("document template preview", () => {
     expect(mocks.api).toHaveBeenNthCalledWith(1, { url: "poorti/documentTemplates/PACKING_SLIP/preview", method: "post", data: { templateName: "holiday-2026", versionName: undefined, sourceId: "100051" } });
     expect(mocks.api).toHaveBeenNthCalledWith(2, { baseURL: "https://maarg.example.test", url: "/fop/apps/pdf/PrintPackingSlip?shipmentId=100051", method: "get", responseType: "blob" });
     expect(state.pdfUrl.value).toBe("blob:preview");
-    expect(state.result.value).toMatchObject({ rendered: true, pageCount: 1, errors: [], templateErrors: [{ line: 9 }] });
+    expect(state.result.value).toMatchObject({ rendered: true, pageCount: 1, versionName: "02", errors: [], templateErrors: [{ line: 9 }] });
     expect(state.previewed.value).toEqual({ templateName: "holiday-2026", versionName: "", sourceId: "100051" });
 
     scope.stop();
@@ -60,10 +60,10 @@ describe("document template publish", () => {
     mocks.api.mockResolvedValueOnce({ data: { liveVersionName: "16", previousLiveVersionName: "15" } });
     const { scope, state } = run(() => useDocumentTemplatePublish());
 
-    const published = await state.publish("PACKING_SLIP", { templateName: "holiday-2026", expectedLiveVersionName: "15" });
+    const published = await state.publish("PACKING_SLIP", { templateName: "holiday-2026", versionName: "02", expectedLiveVersionName: "15" });
 
     expect(published.liveVersionName).toBe("16");
-    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PACKING_SLIP/publish", method: "post", data: { templateName: "holiday-2026", expectedLiveVersionName: "15" } });
+    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PACKING_SLIP/publish", method: "post", data: { templateName: "holiday-2026", versionName: "02", expectedLiveVersionName: "15" } });
     expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("documentTemplate", {});
     scope.stop();
   });

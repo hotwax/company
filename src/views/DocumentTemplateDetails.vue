@@ -275,11 +275,14 @@ async function confirmPublish() {
 async function runPublish(action: "publish" | "rollback") {
   const template = documentTemplate.value;
   // Publishing does not render the template: the preview the user just reviewed is the check.
-  if(!template?.liveVersionName || !previewed.value || !result.value?.rendered) {return;}
+  const versionName = result.value?.versionName;
+  if(!template?.liveVersionName || !previewed.value || !result.value?.rendered || !versionName) {return;}
   publishError.value = "";
   try {
     const published = await publish(props.documentTypeId, {
-      ...(action === "publish" ? { templateName: selection.templateName } : { versionName: selection.versionName }),
+      // The version the preview rendered, so a template saved since then is not published unseen.
+      ...(action === "publish" ? { templateName: selection.templateName } : {}),
+      versionName,
       expectedLiveVersionName: template.liveVersionName,
     });
     commonUtil.showToast(translate("The live template is now version {version}.", { version: published.liveVersionName || "" }));

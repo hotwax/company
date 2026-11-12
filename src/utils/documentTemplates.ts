@@ -45,6 +45,8 @@ export interface PreviewResult {
   pageCount?: number;
   errors: Array<{ stage?: string; message?: string }>;
   templateErrors: TemplateError[];
+  /** The version rendered: publish passes it, so nothing saved since the preview goes live. */
+  versionName?: string;
   previewUrl?: string;
 }
 

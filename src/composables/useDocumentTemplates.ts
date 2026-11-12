@@ -257,7 +257,7 @@ export function useDocumentTemplatePreview() {
         return;
       }
       pdfUrl.value = objectUrl;
-      result.value = { rendered: !!data.rendered, pageCount: data.pageCount, errors: data.errors || [], templateErrors: data.templateErrors || [], previewUrl: data.previewUrl };
+      result.value = { rendered: !!data.rendered, pageCount: data.pageCount, errors: data.errors || [], templateErrors: data.templateErrors || [], versionName: data.versionName, previewUrl: data.previewUrl };
       previewed.value = { templateName: selection.templateName, versionName: selection.versionName, sourceId };
     } finally {
       if(current === request) {loading.value = false;}
@@ -272,7 +272,7 @@ export function useDocumentTemplatePublish() {
   const publishing = ref(false);
 
   /** Throws when the server refuses; the error carries the server's reason (`serverErrorMessage`). */
-  async function publish(documentTypeId: string, payload: { templateName?: string; versionName?: string; expectedLiveVersionName: string }) {
+  async function publish(documentTypeId: string, payload: { templateName?: string; versionName: string; expectedLiveVersionName: string }) {
     publishing.value = true;
     try {
       const resp: any = await api({ url: `${templatesUrl(documentTypeId)}/publish`, method: "post", data: payload });
