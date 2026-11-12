@@ -13,7 +13,7 @@ vi.mock("@common", () => ({
 vi.mock("@/db/companyDb", () => ({ companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) } }));
 vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: (...args: any[]) => mocks.refreshAfterMutation(...args) }));
 
-import { usePreviewOrderSearch, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useSampleDocuments } from "@/composables/useDocumentTemplates";
+import { committedResult, usePreviewOrderSearch, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useSampleDocuments } from "@/composables/useDocumentTemplates";
 
 const run = <T>(factory: () => T) => { const scope = effectScope(); return { scope, state: scope.run(factory)! }; };
 
@@ -269,7 +269,7 @@ describe("preview order search", () => {
     expect(bucketCalls.map((request: any) => request.url)).toEqual(["oms/orders/salesOrders/open", "oms/orders/salesOrders/inflight", "oms/orders/salesOrders/packed"]);
     expect(bucketCalls[0].params).toEqual({ keyword: "595", pageSize: 20, orderByField: "-orderDate" });
     const lookup = mocks.api.mock.calls.map(([request]) => request).find((request: any) => request.url === "graphql");
-    expect(lookup.data.variables).toEqual({ q: "primaryOrderId:M2,M1", first: 100 });
+    expect(lookup.data.variables).toEqual({ q: "primaryOrderId:M2,M1", first: 100, after: null });
     expect(state.orders.value.map(order => [order.orderId, order.stage, order.documents.map(document => document.sourceId)]))
       .toEqual([["M2", "picked", []], ["M1", "picked", ["S1"]]]);
     expect(state.orders.value[1]).toMatchObject({ customerName: "Ada L", facilityName: "Central" });
@@ -303,6 +303,76 @@ describe("preview order search", () => {
 
     expect(state.orders.value).toEqual([]);
     expect(state.error.value).toBe(true);
+    scope.stop();
+  });
+});
+
+describe("committed writes whose list refresh fails", () => {
+  it("a save that committed but could not refresh the list throws a CacheReconciliationError carrying the saved revision", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { templateName: "pick-list-copy", versionName: "03" } });
+    mocks.refreshAfterMutation.mockRejectedValueOnce(new Error("worker offline"));
+    const { scope, state } = run(() => useDocumentTemplateSave());
+
+    const error = await state.save("PICKLIST", { templateName: "pick-list-copy", templateText: "<a/>", expectedVersionName: "02" }).catch(cause => cause);
+
+    expect(error.name).toBe("CacheReconciliationError");
+    expect(error.mutationCommitted).toBe(true);
+    expect(committedResult(error)).toEqual({ templateName: "pick-list-copy", versionName: "03" });
+    expect(mocks.api).toHaveBeenCalledTimes(1);
+    scope.stop();
+  });
+
+  it("a delete and a publish report the same way, and a refused publish stays a refusal", async () => {
+    mocks.api.mockResolvedValueOnce({ data: {} }).mockResolvedValueOnce({ data: { liveVersionName: "16" } });
+    mocks.refreshAfterMutation.mockRejectedValue(new Error("worker offline"));
+    const deleting = run(() => useDocumentTemplateDelete());
+    const publishing = run(() => usePublish());
+
+    expect((await deleting.state.remove("PICKLIST", "pick-list-copy", "02").catch(cause => cause)).name).toBe("CacheReconciliationError");
+    const published = await publishing.state.publish("PICKLIST", { templateName: "x", versionName: "01", expectedLiveVersionName: "15" }).catch(cause => cause);
+    expect(published.name).toBe("CacheReconciliationError");
+    expect(committedResult(published)).toEqual({ liveVersionName: "16" });
+
+    const refused = Object.assign(new Error("400"), { response: { data: { errors: "stale" } } });
+    mocks.api.mockRejectedValueOnce(refused);
+    await expect(publishing.state.publish("PICKLIST", { versionName: "14", expectedLiveVersionName: "15" })).rejects.toBe(refused);
+    deleting.scope.stop();
+    publishing.scope.stop();
+  });
+
+  function usePublish() { return useDocumentTemplatePublish(); }
+});
+
+describe("preview document lookup paging", () => {
+  it("reads every page of shipments for the orders found, following the cursor", async () => {
+    mocks.api.mockImplementation(async (request: any) => {
+      if(request.method === "get") {return { data: { orders: request.url.endsWith("/open") ? [{ orderId: "M1", orderName: "#1" }] : [] } };}
+      if(!request.data.variables.after) {
+        return { data: { data: { shipments: { edges: [{ node: { shipmentId: "S1", primaryOrderId: "M1" } }], pageInfo: { hasNextPage: true, endCursor: "c1" } } } } };
+      }
+      return { data: { data: { shipments: { edges: [{ node: { shipmentId: "S2", primaryOrderId: "M1" } }], pageInfo: { hasNextPage: false, endCursor: "c2" } } } } };
+    });
+    const { scope, state } = run(() => usePreviewOrderSearch());
+
+    await state.search("PACKING_SLIP", "");
+
+    const pages = mocks.api.mock.calls.map(([request]) => request).filter((request: any) => request.url === "graphql");
+    expect(pages.map((request: any) => request.data.variables.after)).toEqual([null, "c1"]);
+    expect(state.orders.value[0].documents.map(document => document.sourceId)).toEqual(["S1", "S2"]);
+    scope.stop();
+  });
+
+  it("refuses a cursor that does not advance instead of listing a partial page", async () => {
+    mocks.api.mockImplementation(async (request: any) => {
+      if(request.method === "get") {return { data: { orders: request.url.endsWith("/open") ? [{ orderId: "M1" }] : [] } };}
+      return { data: { data: { shipments: { edges: [{ node: { shipmentId: "S1", primaryOrderId: "M1" } }], pageInfo: { hasNextPage: true, endCursor: "same" } } } } };
+    });
+    const { scope, state } = run(() => usePreviewOrderSearch());
+
+    await state.search("PACKING_SLIP", "");
+
+    expect(state.documentsError.value).toBe(true);
+    expect(state.orders.value[0].documents).toEqual([]);
     scope.stop();
   });
 });

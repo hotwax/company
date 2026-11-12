@@ -2,6 +2,7 @@ import { api, commonUtil, logger, useLiveEntity } from "@common";
 import { computed, onScopeDispose, ref } from "vue";
 import { companyDb } from "@/db/companyDb";
 import { refreshAfterMutation } from "@/db/appDbSync";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import type { DocumentTemplate, DocumentTemplateVersion, PreviewOrder, PreviewResult, SampleDocument, TemplateSelection, TemplateText } from "@/utils/documentTemplates";
 
 /**
@@ -18,6 +19,24 @@ import type { DocumentTemplate, DocumentTemplateVersion, PreviewOrder, PreviewRe
  */
 
 const DOCUMENT_TEMPLATE_DOMAIN = "documentTemplate";
+
+/**
+ * Refreshes the template list after a write the server committed. When that refresh fails the write still
+ * happened, so this throws a `CacheReconciliationError` carrying the write's `result`: the screen reports it as
+ * done but the list as possibly stale, and never repeats the write.
+ */
+async function reconcileAfterWrite<T>(pk: Record<string, unknown>, result: T): Promise<T> {
+  try {
+    await refreshAfterMutation(DOCUMENT_TEMPLATE_DOMAIN, {});
+  } catch(cause) {
+    throw Object.assign(new CacheReconciliationError(DOCUMENT_TEMPLATE_DOMAIN, pk, cause), { result });
+  }
+
+  return result;
+}
+
+/** The committed write's result from a `CacheReconciliationError` thrown after it. */
+export const committedResult = <T>(error: unknown): T | undefined => (error as { result?: T })?.result;
 const templatesUrl = (documentTypeId: string) => `poorti/documentTemplates/${encodeURIComponent(documentTypeId)}`;
 const VERSIONS_QUERY = `query DocumentTemplateVersions($documentTypeId: ID!, $templateName: String) {
   documentTemplateVersions(documentTypeId: $documentTypeId, templateName: $templateName) {
@@ -199,8 +218,8 @@ export function useDocumentTemplateSave() {
       const resp: any = await api({ url: `${templatesUrl(documentTypeId)}/templates`, method: "post", data: payload });
       if(commonUtil.hasError(resp)) {throw resp;}
       // The library list shows each template's latest revision.
-      await refreshAfterMutation(DOCUMENT_TEMPLATE_DOMAIN, {}).catch(cause => logger.error(cause));
-      return resp.data as { templateName: string; versionName: string; previousVersionName?: string };
+      return await reconcileAfterWrite({ documentTypeId, templateName: payload.templateName },
+        resp.data as { templateName: string; versionName: string; previousVersionName?: string });
     } finally {
       saving.value = false;
     }
@@ -227,7 +246,7 @@ export function useDocumentTemplateDelete() {
         params: { expectedVersionName },
       });
       if(commonUtil.hasError(resp)) {throw resp;}
-      await refreshAfterMutation(DOCUMENT_TEMPLATE_DOMAIN, {}).catch(cause => logger.error(cause));
+      await reconcileAfterWrite({ documentTypeId, templateName }, resp.data);
     } finally {
       deleting.value = false;
     }
@@ -317,13 +336,21 @@ const ORDER_BUCKETS: Array<{ url: string; stage: PreviewOrder["stage"] }> = [
   { url: "oms/orders/salesOrders/inflight", stage: "picked" },
   { url: "oms/orders/salesOrders/packed", stage: "packed" },
 ];
-const ORDER_SHIPMENTS_QUERY = `query OrderShipments($q: String!, $first: Int!) {
-  shipments(query: $q, first: $first) { edges { node { shipmentId statusId primaryOrderId originFacilityId } } }
+const ORDER_SHIPMENTS_QUERY = `query OrderShipments($q: String!, $first: Int!, $after: String) {
+  shipments(query: $q, first: $first, after: $after) {
+    edges { node { shipmentId statusId primaryOrderId originFacilityId } }
+    pageInfo { hasNextPage endCursor }
+  }
 }`;
-const ORDER_PICKLISTS_QUERY = `query OrderPicklists($q: String!, $first: Int!) {
-  orderPicklists(query: $q, first: $first) { edges { node { picklistId orderId picklistDate picklistStatusId facilityId } } }
+const ORDER_PICKLISTS_QUERY = `query OrderPicklists($q: String!, $first: Int!, $after: String) {
+  orderPicklists(query: $q, first: $first, after: $after) {
+    edges { node { picklistId orderId picklistDate picklistStatusId facilityId } }
+    pageInfo { hasNextPage endCursor }
+  }
 }`;
-// GraphQL pages are at most 100 rows: enough for the documents of 20 orders from each list.
+// GraphQL returns at most 100 rows a page; pick lists come a row per picked item, so read every page.
+const LOOKUP_PAGE = 100;
+const LOOKUP_MAX_PAGES = 20;
 const SEARCH_PAGE = 20;
 
 /**
@@ -347,6 +374,22 @@ export function usePreviewOrderSearch() {
     return resp.data.data;
   }
 
+  /** Every row of a connection, page by page; refuses rather than return a partial list. */
+  async function allRows(queryText: string, root: string, operationName: string, q: string): Promise<any[]> {
+    const rows: any[] = [];
+    let after: string | null = null;
+    for(let page = 0; page < LOOKUP_MAX_PAGES; page++) {
+      const data = await graphql(queryText, { q, first: LOOKUP_PAGE, after }, operationName);
+      const connection = data[root];
+      rows.push(...(connection?.edges ?? []).map((edge: any) => edge?.node).filter(Boolean));
+      const next = connection?.pageInfo?.hasNextPage ? connection.pageInfo.endCursor : null;
+      if(!next) {return rows;}
+      if(next === after) {throw new Error(`${operationName} did not advance past ${after}`);}
+      after = next;
+    }
+    throw new Error(`${operationName} has more than ${LOOKUP_MAX_PAGES * LOOKUP_PAGE} rows`);
+  }
+
   async function documentsFor(documentTypeId: string, orderIds: string[]): Promise<Map<string, SampleDocument[]>> {
     const byOrder = new Map<string, SampleDocument[]>();
     if(!orderIds.length) {return byOrder;}
@@ -356,17 +399,15 @@ export function usePreviewOrderSearch() {
       byOrder.set(orderId, documents);
     };
     if(documentTypeId === "PICKLIST") {
-      const data = await graphql(ORDER_PICKLISTS_QUERY, { q: `orderId:${orderIds.join(",")}`, first: 100 }, "OrderPicklists");
-      for(const { node } of data.orderPicklists?.edges ?? []) {
-        if(node?.picklistId) {
+      for(const node of await allRows(ORDER_PICKLISTS_QUERY, "orderPicklists", "OrderPicklists", `orderId:${orderIds.join(",")}`)) {
+        if(node.picklistId) {
           add(node.orderId, { sourceId: node.picklistId, kind: "picklist", statusId: node.picklistStatusId, facilityId: node.facilityId,
             orderId: node.orderId, date: node.picklistDate ? Date.parse(node.picklistDate) : undefined });
         }
       }
     } else {
-      const data = await graphql(ORDER_SHIPMENTS_QUERY, { q: `primaryOrderId:${orderIds.join(",")}`, first: 100 }, "OrderShipments");
-      for(const { node } of data.shipments?.edges ?? []) {
-        if(node?.shipmentId) {
+      for(const node of await allRows(ORDER_SHIPMENTS_QUERY, "shipments", "OrderShipments", `primaryOrderId:${orderIds.join(",")}`)) {
+        if(node.shipmentId) {
           add(node.primaryOrderId, { sourceId: node.shipmentId, kind: "shipment", statusId: node.statusId, facilityId: node.originFacilityId, orderId: node.primaryOrderId });
         }
       }
@@ -494,16 +535,24 @@ export function useDocumentTemplatePreview() {
 export function useDocumentTemplatePublish() {
   const publishing = ref(false);
 
-  /** Throws when the server refuses; the error carries the server's reason (`serverErrorMessage`). */
+  /**
+   * Throws when the server refuses (the error carries the server's reason, `serverErrorMessage`), or a
+   * `CacheReconciliationError` when the publish committed but the list could not be refreshed.
+   */
   async function publish(documentTypeId: string, payload: { templateName?: string; versionName: string; expectedLiveVersionName: string }) {
     publishing.value = true;
     try {
-      const resp: any = await api({ url: `${templatesUrl(documentTypeId)}/publish`, method: "post", data: payload });
-      if(commonUtil.hasError(resp)) {throw resp;}
-      return resp.data as { liveVersionName?: string; previousLiveVersionName?: string };
+      let resp: any;
+      try {
+        resp = await api({ url: `${templatesUrl(documentTypeId)}/publish`, method: "post", data: payload });
+        if(commonUtil.hasError(resp)) {throw resp;}
+      } catch(refusal) {
+        // Someone else's publish may have made ours stale: show the server's state, but report the refusal.
+        await refreshAfterMutation(DOCUMENT_TEMPLATE_DOMAIN, {}).catch(cause => logger.error(cause));
+        throw refusal;
+      }
+      return await reconcileAfterWrite({ documentTypeId }, resp.data as { liveVersionName?: string; previousLiveVersionName?: string });
     } finally {
-      // The live version changed (or someone else's publish made ours stale): show the server's state.
-      await refreshAfterMutation(DOCUMENT_TEMPLATE_DOMAIN, {}).catch(cause => logger.error(cause));
       publishing.value = false;
     }
   }

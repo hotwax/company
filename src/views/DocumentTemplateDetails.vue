@@ -5,7 +5,7 @@
         <ion-back-button slot="start" default-href="/document-templates" />
         <ion-title>{{ documentTemplate?.description || documentTypeId }}</ion-title>
         <ion-buttons slot="end">
-          <ion-button :disabled="loading" :aria-label="translate('Refresh')" data-testid="document-template-refresh-btn" @click="reload()">
+          <ion-button :disabled="loading" :aria-label="translate('Refresh')" data-testid="document-template-refresh-btn" @click="refreshPage()">
             <ion-icon slot="icon-only" :icon="refreshOutline" />
           </ion-button>
         </ion-buttons>
@@ -110,7 +110,7 @@
                     {{ translate("Go to line {line}", { line: saveErrorLine }) }}
                   </ion-button>
                 </ion-item>
-                <TemplateCodeEditor ref="codeEditor" v-model="code" :readonly="!canAdmin" :label="translate('Template code')" :error-line="saveErrorLine" />
+                <TemplateCodeEditor ref="codeEditor" v-model="code" :doc-key="codeKey" :readonly="!canAdmin" :label="translate('Template code')" :error-line="saveErrorLine" />
               </template>
             </div>
 
@@ -195,11 +195,12 @@ import { addOutline, alertCircleOutline, arrowUndoOutline, cloudUploadOutline, c
 import { computed, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import { useAuth } from "@/composables/useSecurity";
-import { useDocumentTemplate, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useDocumentTemplates, useSampleDocuments } from "@/composables/useDocumentTemplates";
+import { committedResult, useDocumentTemplate, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useDocumentTemplates, useSampleDocuments } from "@/composables/useDocumentTemplates";
 import PreviewOrderModal from "@/components/document-templates/PreviewOrderModal.vue";
 import TemplateCodeEditor from "@/components/document-templates/TemplateCodeEditor.vue";
 import { errorLine, inlineInclude, isTemplateName, locationFile, publishActionFor, sameSelection, serverErrorMessage, suggestTemplateName, templateErrorFile, type DocumentTemplateVersion, type SampleDocument } from "@/utils/documentTemplates";
 import Actions from "@/authorization/actions";
+import { CACHE_RECONCILIATION_ERROR_MESSAGE, isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 
 type Tab = "code" | "preview";
 
@@ -224,6 +225,8 @@ const { remove, deleting } = useDocumentTemplateDelete();
 const selection = reactive({ templateName: "", versionName: "" });
 const tab = ref<Tab>("code");
 const code = ref("");
+// Changes whenever the editor shows another revision's saved code, so its undo history starts over.
+const codeKey = ref(0);
 const saveError = ref("");
 const publishError = ref("");
 const sampleId = ref("");
@@ -306,11 +309,37 @@ onIonViewWillEnter(() => {
   void reload();
 });
 
+/** The header Refresh: reloading replaces the code with the saved revision, so it asks first about unsaved edits. */
+async function refreshPage() {
+  if(await discardChanges()) {await reload();}
+}
+
+/**
+ * Runs a write. When it committed but the template list could not be refreshed (`CacheReconciliationError`), it
+ * counts as done: the user is told the list may be stale, and the write is never repeated.
+ */
+async function committed<T>(write: () => Promise<T>): Promise<{ value: T; stale: boolean }> {
+  try {
+    return { value: await write(), stale: false };
+  } catch(error) {
+    if(!isCacheReconciliationError(error)) {throw error;}
+    logger.warn(error);
+    commonUtil.showToast(translate(CACHE_RECONCILIATION_ERROR_MESSAGE));
+    return { value: committedResult<T>(error) as T, stale: true };
+  }
+}
+
+/** Shows a revision's saved code in the editor as a new document, so undo cannot reach the previous one. */
+function showCode(templateText: string) {
+  code.value = templateText;
+  codeKey.value++;
+}
+
 /** Loads the open template's revisions and the chosen revision's code. */
 async function loadOpen() {
   void revisions.load(props.documentTypeId, selection.templateName);
   await text.load(props.documentTypeId, { ...selection });
-  code.value = text.text.value?.templateText || "";
+  showCode(text.text.value?.templateText || "");
 }
 
 async function discardChanges(): Promise<boolean> {
@@ -339,7 +368,7 @@ watch(() => [selection.templateName, selection.versionName], ([templateName], [p
   saveError.value = "";
   publishError.value = "";
   if(templateName !== previousTemplateName) {void revisions.load(props.documentTypeId, selection.templateName);}
-  void text.load(props.documentTypeId, { ...selection }).then(() => { code.value = text.text.value?.templateText || ""; });
+  void text.load(props.documentTypeId, { ...selection }).then(() => showCode(text.text.value?.templateText || ""));
 });
 
 // A save error is about edits; once the code is back to the saved revision it no longer applies.
@@ -382,9 +411,10 @@ async function saveRevision() {
   if(!canAdmin.value || !selection.templateName || !current || !dirty.value) {return;}
   saveError.value = "";
   try {
-    const saved = await save(props.documentTypeId, { templateName: selection.templateName, templateText: code.value, expectedVersionName: current.currentVersionName });
-    commonUtil.showToast(translate("Saved revision {revision}.", { revision: saved.versionName }));
-    await showSaved(saved.templateName || selection.templateName);
+    const { value: saved, stale } = await committed(() => save(props.documentTypeId,
+      { templateName: selection.templateName, templateText: code.value, expectedVersionName: current.currentVersionName }));
+    if(!stale) {commonUtil.showToast(translate("Saved revision {revision}.", { revision: saved?.versionName || "" }));}
+    await showSaved(saved?.templateName || selection.templateName);
   } catch(cause) {
     logger.error(cause);
     saveError.value = serverErrorMessage(cause) || translate("The revision was not saved.");
@@ -423,8 +453,8 @@ async function saveAsNewTemplate() {
   if(!templateName) {return;}
   saveError.value = "";
   try {
-    await save(props.documentTypeId, { templateName, templateText: code.value });
-    commonUtil.showToast(translate("Saved {name}.", { name: templateName }));
+    const { stale } = await committed(() => save(props.documentTypeId, { templateName, templateText: code.value }));
+    if(!stale) {commonUtil.showToast(translate("Saved {name}.", { name: templateName }));}
     // The new template has the code on screen, so nothing is left to discard.
     if(text.text.value) {code.value = text.text.value.templateText;}
     await showSaved(templateName);
@@ -441,8 +471,8 @@ async function newTemplate() {
   const templateName = await askTemplateName(translate("New template from the live one"));
   if(!templateName) {return;}
   try {
-    await save(props.documentTypeId, { templateName, copyFromLive: true });
-    commonUtil.showToast(translate("Saved {name}.", { name: templateName }));
+    const { stale } = await committed(() => save(props.documentTypeId, { templateName, copyFromLive: true }));
+    if(!stale) {commonUtil.showToast(translate("Saved {name}.", { name: templateName }));}
     if(text.text.value) {code.value = text.text.value.templateText;}
     selection.templateName = templateName;
     selection.versionName = "";
@@ -473,8 +503,8 @@ async function confirmDelete() {
   if(role !== "destructive") {return;}
   publishError.value = "";
   try {
-    await remove(props.documentTypeId, templateName, current.currentVersionName);
-    commonUtil.showToast(translate("Deleted {name}.", { name: templateName }));
+    const { stale } = await committed(() => remove(props.documentTypeId, templateName, current.currentVersionName));
+    if(!stale) {commonUtil.showToast(translate("Deleted {name}.", { name: templateName }));}
     // Nothing is left to discard; show what prints.
     code.value = current.templateText;
     selection.templateName = "";
@@ -515,13 +545,13 @@ async function runPublish(action: "publish" | "rollback") {
   if(!template?.liveVersionName || !canPublish.value || !versionName) {return;}
   publishError.value = "";
   try {
-    const published = await publish(props.documentTypeId, {
+    const { value: published, stale } = await committed(() => publish(props.documentTypeId, {
       // The revision the preview rendered, so one saved since then is not published unseen.
       ...(action === "publish" ? { templateName: selection.templateName } : {}),
       versionName,
       expectedLiveVersionName: template.liveVersionName,
-    });
-    commonUtil.showToast(translate("Printing now uses revision {revision} of the live template.", { revision: published.liveVersionName || "" }));
+    }));
+    if(!stale) {commonUtil.showToast(translate("Printing now uses revision {revision} of the live template.", { revision: published?.liveVersionName || "" }));}
     // Show what prints now.
     if(!selection.templateName && !selection.versionName) {
       await loadOpen();
