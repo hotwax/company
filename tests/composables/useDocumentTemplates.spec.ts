@@ -81,26 +81,28 @@ describe("document template publish", () => {
 });
 
 describe("document template versions", () => {
-  it("lists a library template's versions and resolves who saved them", async () => {
-    mocks.api.mockResolvedValueOnce({ data: { versions: [{ versionName: "02", userId: "M1", isCurrent: true }] } })
+  it("reads a library template's history through GraphQL, as epoch millis, and resolves who saved it", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { data: { documentTemplateVersions: [{ versionName: "02", userId: "M1", isCurrent: true, versionDate: "2026-11-12T07:22:37.937Z" }] } } })
       .mockResolvedValueOnce({ data: { username: "aditya" } });
     const { scope, state } = run(() => useDocumentTemplateVersions());
 
     await state.load("PACKING_SLIP", "holiday-2026");
     await vi.waitFor(() => expect(state.usernameFor("M1")).toBe("aditya"));
 
-    expect(mocks.api).toHaveBeenNthCalledWith(1, { url: "poorti/documentTemplates/PACKING_SLIP/versions", method: "get", params: { templateName: "holiday-2026" } });
-    expect(state.versions.value).toHaveLength(1);
+    const request = mocks.api.mock.calls[0][0];
+    expect(request).toMatchObject({ url: "graphql", method: "post", data: { variables: { documentTypeId: "PACKING_SLIP", templateName: "holiday-2026" }, operationName: "DocumentTemplateVersions" } });
+    expect(request.data.query).toContain("documentTemplateVersions(documentTypeId: $documentTypeId, templateName: $templateName)");
+    expect(state.versions.value).toEqual([{ versionName: "02", userId: "M1", isCurrent: true, versionDate: Date.parse("2026-11-12T07:22:37.937Z") }]);
     scope.stop();
   });
 
-  it("marks an error rather than showing an empty history", async () => {
-    mocks.api.mockResolvedValueOnce({ data: { error: "denied" } });
+  it("marks an error rather than showing an empty history when GraphQL returns errors", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { errors: [{ message: "denied" }], data: null } });
     const { scope, state } = run(() => useDocumentTemplateVersions());
 
     await state.load("PACKING_SLIP");
 
-    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PACKING_SLIP/versions", method: "get", params: {} });
+    expect(mocks.api.mock.calls[0][0].data.variables).toEqual({ documentTypeId: "PACKING_SLIP", templateName: null });
     expect(state.error.value).toBe(true);
     expect(state.versions.value).toEqual([]);
     scope.stop();

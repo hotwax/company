@@ -6,17 +6,23 @@ import type { DocumentTemplate, DocumentTemplateVersion, PreviewResult, Template
 
 /**
  * Document templates: the packing slip and pick list templates printing uses (Poorti
- * `poorti/documentTemplates`, the same services as the document-templates MCP tools).
- *   - The document types and their libraries are the class C `documentTemplate` domain: the screens
- *     fetch it when they open and after a publish, and read it from the local table.
- *   - Version history is a server ledger, read when shown (like app version history).
- *   - Preview renders a template for one shipment or picklist; the PDF is fetched from the print URL
- *     the server returns, through the app's session.
- *   - Publish and rollback go through `publish`, which checks the live version the screen showed.
+ * DocumentTemplateServices, the same services as the document-templates MCP tools).
+ *   - Reads go through the OMS GraphQL endpoint (moqui-gql), the one agents query: the document types
+ *     and their libraries are the class C `documentTemplate` domain, which the screens fetch when they
+ *     open and after a publish and read from the local table; version history is a server ledger, read
+ *     when shown (like app version history).
+ *   - Writes stay on `poorti/documentTemplates`: preview renders a template for one shipment or picklist,
+ *     and the PDF is fetched from the print URL the server returns, through the app's session; publish
+ *     and rollback go through `publish`, which checks the live version the screen showed.
  */
 
 const DOCUMENT_TEMPLATE_DOMAIN = "documentTemplate";
 const templatesUrl = (documentTypeId: string) => `poorti/documentTemplates/${encodeURIComponent(documentTypeId)}`;
+const VERSIONS_QUERY = `query DocumentTemplateVersions($documentTypeId: ID!, $templateName: String) {
+  documentTemplateVersions(documentTypeId: $documentTypeId, templateName: $templateName) {
+    versionName previousVersionName versionDate userId isCurrent
+  }
+}`;
 
 /** Every document type, from the local table, and `refresh()` to fetch them again. */
 export function useDocumentTemplates() {
@@ -91,13 +97,15 @@ export function useDocumentTemplateVersions() {
     error.value = false;
     try {
       const resp: any = await api({
-        url: `${templatesUrl(documentTypeId)}/versions`,
-        method: "get",
-        params: templateName ? { templateName } : {},
+        url: "graphql",
+        method: "post",
+        data: { query: VERSIONS_QUERY, variables: { documentTypeId, templateName: templateName || null }, operationName: "DocumentTemplateVersions" },
       });
-      if(commonUtil.hasError(resp) || !Array.isArray(resp.data?.versions)) {throw resp;}
+      const rows = resp?.data?.data?.documentTemplateVersions;
+      if(commonUtil.hasError(resp) || resp?.data?.errors?.length || !Array.isArray(rows)) {throw resp;}
       if(current !== request) {return;}
-      versions.value = resp.data.versions;
+      // GraphQL DateTime is an ISO string; the screens format epoch millis.
+      versions.value = rows.map((row: any) => ({ ...row, versionDate: row.versionDate ? Date.parse(row.versionDate) : undefined }));
       void resolveUsernames(versions.value.map(version => version.userId));
     } catch(cause) {
       if(current === request) {
