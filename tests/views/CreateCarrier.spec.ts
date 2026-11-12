@@ -13,6 +13,7 @@ vi.mock("@common", () => ({
   commonUtil: {
     showToast: (...args: any[]) => harness.showToast(...args),
     generateInternalId: (name: string) => name.replace(/[^a-zA-Z0-9]/g, "_").toUpperCase(),
+    getErrorMessage: vi.fn(() => ""),
   },
   logger: {
     error: (...args: any[]) => harness.error(...args),
@@ -97,7 +98,7 @@ describe("CreateCarrier", () => {
       partyId: "DHL",
       groupName: "DHL Express",
     });
-    expect(harness.showToast).toHaveBeenCalledWith("Failed to create carrier.");
+    expect(harness.showToast).toHaveBeenCalledWith("Failed to create carrier. ");
     expect(harness.replace).not.toHaveBeenCalled();
   });
 });

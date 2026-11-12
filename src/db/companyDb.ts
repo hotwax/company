@@ -48,8 +48,12 @@ export const companyDb = defineAppDb({
   // v5: re-keyed enumGroupMembers on fromDate, so an expired membership and its re-added
   //     replacement are two rows rather than one.
   // v6: added dataManagerErrorRecords (the DataManager error files ShopifySyncDB used to hold).
-  // v7: added documentTemplates (packing slip and pick list templates, fetched when opened).
-  version: 7,
+  // v7: inventoryChannels gained channelTypeEnumId (physical, pre-order, back-order) and both
+  //     inventory ledgers gained resetInventoryLevel (Y = an absolute quantity, not a delta);
+  //     added productStoreFacilityPurposes (the stores' pre-order and back-order parking).
+  // v8: added shopifyMetafieldAdjustments (inventory events that carry only a metafield revision).
+  // v9: added documentTemplates (packing slip and pick list templates, fetched when opened).
+  version: 9,
   schema: mergeSchemas(commonSchema.pick([...COMPANY_SEED_TABLES]), companySchema),
 });
 

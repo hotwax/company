@@ -7,6 +7,7 @@ import { computed, ref, toValue } from "vue";
 
 const channelDetails = ref<any[]>([]);
 const locationDetails = ref<any[]>([]);
+const metafieldRows = ref<any[]>([]);
 const messages = ref<any[]>([]);
 const shopLocations = ref<any[]>([]);
 const facilities = ref<any[]>([]);
@@ -47,6 +48,7 @@ vi.mock("@common", () => ({
     };
     if(table === "shopifyInventoryAdjustmentDetails") {return list(channelDetails, ledgerHydrated);}
     if(table === "shopifyLocationInventoryAdjustmentDetails") {return list(locationDetails, ledgerHydrated);}
+    if(table === "shopifyMetafieldAdjustments") {return list(metafieldRows);}
     if(table === "systemMessages") {return list(messages);}
     if(table === "shopifyLocations") {return list(shopLocations);}
     if(table === "facilities") {return list(facilities);}
@@ -139,6 +141,7 @@ const kpi = (wrapper: VueWrapper, subtitle: string) => wrapper.findAll(".kpi-car
 beforeEach(() => {
   channelDetails.value = [];
   locationDetails.value = [];
+  metafieldRows.value = [];
   messages.value = [];
   shopLocations.value = [];
   facilities.value = [];
@@ -548,4 +551,44 @@ enableAutoUnmount(afterEach);
 // Load the lazy view during setup, before the first test's assertion timeout.
 beforeAll(async () => {
   await import("@/views/ShopifyInventoryEventHistory.vue");
+});
+
+describe("ShopifyInventoryEventHistory - metafield-only events (a promise date change moves no quantity)", () => {
+  const metafieldRow = (over: Record<string, any> = {}) => ({
+    shopifyInventoryAdjustmentId: "M100918", metafieldId: "MF_1", metafieldDetailSeqId: "28",
+    eventTypeId: "SIE_FI_SUPPLY_UPDATE", eventReferenceId: "M100306:06", eventTypeDescription: "Future inventory quantity or date changed",
+    shopId: "100002", shopifyInventoryItemId: "ITEM_1", shopifyProductId: "V1", metafieldNamespace: "hotwax", metafieldKey: "preorder_batches",
+    failed: "N", createdDate: 2_000_000, ...over,
+  });
+
+  it("lists the revision beside the ledger rows, newest first, as an event with no quantity", async () => {
+    channelDetails.value = [channelRow({ createdDate: 1_000_000 })];
+    metafieldRows.value = [metafieldRow()];
+    inventoryItems.value = [{ shopId: "100002", shopifyInventoryItemId: "ITEM_1", productTitle: "Fundamental Hoodie", sku: "MH06-S", shopifyVariantId: "V1" }];
+    const wrapper = await mountHistory("channel");
+
+    expect(rows(wrapper)).toHaveLength(2);
+    const first = rows(wrapper)[0].text();
+    expect(first).toContain("Fundamental Hoodie");
+    expect(first).toContain("hotwax.preorder_batches");
+    expect(first).toContain("M100306:06");
+    expect(first).toContain("Waiting");
+    expect(first).not.toContain("= 0");
+    expect(rows(wrapper)[1].text()).toContain("Inbound shipment receipt");
+  });
+
+  it("follows its batch's message to Sent", async () => {
+    metafieldRows.value = [metafieldRow({ systemMessageId: "M103767", systemMessageStatusId: "SmsgSent", systemMessageProcessedDate: 2_360_000, systemMessageInitDate: 2_300_000 })];
+    const wrapper = await mountHistory("channel");
+
+    expect(rows(wrapper)[0].text()).toContain("Sent");
+    expect(rows(wrapper)[0].text()).toContain("M103767");
+  });
+
+  it("stays out of the location history", async () => {
+    metafieldRows.value = [metafieldRow()];
+    const wrapper = await mountHistory("location");
+
+    expect(rows(wrapper)).toHaveLength(0);
+  });
 });

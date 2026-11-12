@@ -230,7 +230,7 @@ describe("useUserToken — issuance and credential lifecycle", () => {
     await state.generate({ purpose: "MCP", expireDays });
     expect(harness.api).toHaveBeenCalledWith({
       baseURL: "https://example.hotwax.io/moqui/rest/s1/",
-      url: "admin/user/jwtToken",
+      url: "admin/user/token",
       method: "post",
       data: { username: "test-user", purpose: "MCP", expireDays },
     });

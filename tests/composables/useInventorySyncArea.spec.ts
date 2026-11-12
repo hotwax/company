@@ -63,6 +63,7 @@ describe("inventory sync area", () => {
       "shopifyInventoryAdjustmentDetailMessage",
       "shopifyLocationInventoryAdjustmentDetail",
       "shopifyLocationInventoryAdjustmentDetailMessage",
+      "shopifyMetafieldOnlyAdjustment",
       "inventoryEventSystemMessage",
       "inventoryEventProduct",
     ]);

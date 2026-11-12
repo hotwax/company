@@ -88,8 +88,9 @@ const handleCreateCarrier = async () => {
       router.replace({ path: `/shipment-methods-setup/${encodeURIComponent(createdPartyId)}` });
     }
   } catch (err: any) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error("Failed to create carrier", err);
-    commonUtil.showToast(translate("Failed to create carrier."));
+    commonUtil.showToast(`${translate("Failed to create carrier.")} ${serverError}`);
   } finally {
     creating.value = false;
   }

@@ -136,7 +136,7 @@ export async function savePermissionGroups(
   permissionId: string,
   originalGroups: AppPermissionSecurityGroup[],
   selectedGroups: AppPermissionSecurityGroup[],
-): Promise<{ failed: number; succeeded: number }> {
+): Promise<{ failed: number; succeeded: number; error?: any }> {
   const originalIds = originalGroups.map((group) => group.groupId);
   const selectedIds = selectedGroups.map((group) => group.groupId);
   const groupIdsToCreate = selectedIds.filter((groupId) => !originalIds.includes(groupId));
@@ -167,8 +167,14 @@ export async function savePermissionGroups(
   ];
 
   const results = await Promise.allSettled(operations.map((operation) => operation.execute()));
+  let firstError: any;
   const failedGroupIds = results.flatMap((result, index) => {
-    if(result.status === "rejected" || commonUtil.hasError(result.value)) {
+    if(result.status === "rejected") {
+      if(!firstError) firstError = result.reason;
+      return [operations[index].groupId];
+    }
+    if(commonUtil.hasError(result.value)) {
+      if(!firstError) firstError = result.value;
       return [operations[index].groupId];
     }
 
@@ -181,6 +187,7 @@ export async function savePermissionGroups(
   return {
     failed: failedGroupIds.length,
     succeeded: operations.length - failedGroupIds.length,
+    ...(firstError ? { error: firstError } : {}),
   };
 }
 

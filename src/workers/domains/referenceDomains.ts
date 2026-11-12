@@ -53,6 +53,24 @@ defineSnapshotDomain({
   byPkRecordKey: "jobDetail",
 }),
 
+/**
+ * Store facility purposes, for the pre-order and back-order channel checks. `oms/productStoreFacilityPurposes`
+ * is a bare array and filters by productStoreId (verified live), so a write re-lists that store.
+ */
+defineSnapshotDomain({
+  name: "productStoreFacilityPurpose",
+  label: "Store facility purposes",
+  syncClass: "B",
+  table: "productStoreFacilityPurposes",
+  projection: companyDb.entities.productStoreFacilityPurposes,
+  listUrl: "oms/productStoreFacilityPurposes",
+  collectionKey: null,
+  refetchScope: (pk) => ({
+    params: { productStoreId: pk.productStoreId },
+    scope: { field: "productStoreId", value: pk.productStoreId },
+  }),
+}),
+
 defineSnapshotDomain({
   name: "inventoryEventDocument",
   label: "Shopify inventory event sources",

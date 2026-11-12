@@ -13,6 +13,7 @@ import {
   sumDelta,
   summarizeInventoryEvents,
   toInventoryEvent,
+  toMetafieldInventoryEvent,
 } from "@/utils/inventoryEvents";
 import { canonicalEventTypeId, isReservationEventType, sourceRootFor } from "@/utils/inventoryEventSourceRoots";
 import { SYSTEM_MESSAGE_STATUS_IDS } from "@/utils/systemMessage";
@@ -203,6 +204,13 @@ describe("ledgerRetentionOf — the purge job's window per ledger", () => {
     expect(ledgerRetentionOf("channel", [job(LOCATION, "3")])).toBeUndefined();
   });
 
+  it("prefers the combined purge for both ledgers, and ignores the paused per-ledger jobs next to it", () => {
+    const COMBINED = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustments";
+    const jobs = [job(LOCATION, "9", "Y"), job(COMBINED, "2")];
+    expect(ledgerRetentionOf("channel", jobs)).toEqual({ days: 2, paused: false });
+    expect(ledgerRetentionOf("location", jobs)).toEqual({ days: 2, paused: false });
+  });
+
   it("falls back to the service's own default of 5 when the parameter is absent or invalid", () => {
     expect(ledgerRetentionOf("location", [job(LOCATION)])?.days).toBe(5);
     expect(ledgerRetentionOf("location", [job(LOCATION, "0")])?.days).toBe(5);
@@ -224,5 +232,71 @@ describe("delta arithmetic", () => {
     ];
 
     expect(changeEntriesOf(rows)[0]).toMatchObject({ delta: 0, outcome: "noChange", eventCount: 2 });
+  });
+});
+
+describe("absolute rows (resetInventoryLevel = Y)", () => {
+  it("reads the flag, and treats an unbatched absolute zero as waiting rather than no change", () => {
+    const event = toInventoryEvent("channel", "1", channelRow({ eventTypeId: "SIE_FUTURE_RESET", computedInventoryChange: 0, resetInventoryLevel: "Y" }), undefined);
+
+    expect(event.absolute).toBe(true);
+    expect(event.delivery.id).toBe("waiting");
+    expect(deliveryStateOf(undefined, 0, undefined, true).id).toBe("waiting");
+    expect(toInventoryEvent("channel", "2", channelRow({ computedInventoryChange: 0 }), undefined).absolute).toBe(false);
+  });
+
+  it("enters the latest absolute quantity plus the deltas after it, as what Shopify ends up holding", () => {
+    const rows = [
+      toInventoryEvent("channel", "1", channelRow({ eventReferenceId: "A", computedInventoryChange: 5, createdDate: 1 }), undefined),
+      toInventoryEvent("channel", "2", channelRow({ eventReferenceId: "B", computedInventoryChange: 9, resetInventoryLevel: "Y", createdDate: 2 }), undefined),
+      toInventoryEvent("channel", "3", channelRow({ eventReferenceId: "C", computedInventoryChange: -1, createdDate: 3 }), undefined),
+    ];
+
+    expect(changeEntriesOf(rows)[0]).toMatchObject({ delta: 8, absolute: true, outcome: "publish", eventCount: 3 });
+  });
+});
+
+describe("metafield-only events (a promise date change moves no quantity)", () => {
+  const revision = (overrides: Record<string, any> = {}) => ({
+    eventTypeId: "SIE_FI_SUPPLY_UPDATE", eventReferenceId: "M100306:06", eventTypeDescription: "Future inventory quantity or date changed",
+    shopId: "10000", shopifyInventoryItemId: "ITEM_1", metafieldNamespace: "hotwax", metafieldKey: "preorder_batches",
+    createdDate: 1_000, failed: "N", ...overrides,
+  });
+
+  it("waits until a publish job batches its header, then follows the message", () => {
+    expect(toMetafieldInventoryEvent("A", revision(), undefined).delivery.id).toBe("waiting");
+
+    const batched = toMetafieldInventoryEvent("A", revision({ systemMessageId: "M1" }), { statusId: "SmsgProduced" });
+    expect(batched.delivery.id).toBe("inFlight");
+
+    const sent = toMetafieldInventoryEvent("A", revision({ systemMessageId: "M1" }), { statusId: "SmsgSent", processedDate: 5_000, initDate: 2_000 });
+    expect(sent).toMatchObject({ delivery: { id: "sent" }, sentAt: 5_000, batchedAt: 2_000, awaitingDelivery: false });
+  });
+
+  it("reads Shopify's rejection of the revision as an error even when the message was sent", () => {
+    const event = toMetafieldInventoryEvent("A", revision({ systemMessageId: "M1", failed: "Y" }), { statusId: "SmsgSent" });
+
+    expect(event.delivery.id).toBe("error");
+    expect(event.awaitingDelivery).toBe(true);
+  });
+
+  it("names the metafield and carries no quantity, item entry or location", () => {
+    const event = toMetafieldInventoryEvent("A", revision(), undefined);
+
+    expect(event).toMatchObject({ kind: "channel", metafieldOnly: true, metafieldName: "hotwax.preorder_batches", delta: 0, absolute: false, locationId: "" });
+    expect(event.rowKey).toBe("channel:metafield:A");
+  });
+
+  it("counts as a waiting event in the figures, but adds nothing to a batch's change entries", () => {
+    const waiting = toMetafieldInventoryEvent("A", revision({ createdDate: 3_000 }), undefined);
+    const batched = toMetafieldInventoryEvent("B", revision({ systemMessageId: "M1", createdDate: 2_000 }), { statusId: "SmsgSent", processedDate: 9_000, initDate: 4_000 });
+    const quantity = toInventoryEvent("channel", "C", channelRow({ systemMessageId: "M1", createdDate: 2_100 }), { statusId: "SmsgSent" });
+
+    expect(summarizeInventoryEvents([waiting, batched])).toMatchObject({ total: 2, waiting: 1, oldestWaitingAt: 3_000 });
+    expect(changeEntriesOf([batched])).toEqual([]);
+    const batch = groupInventoryEventBatches([batched, quantity])[0];
+    expect(batch.events).toHaveLength(2);
+    expect(batch.entries).toHaveLength(1);
+    expect(groupInventoryEventBatches([batched])[0].entries).toEqual([]);
   });
 });

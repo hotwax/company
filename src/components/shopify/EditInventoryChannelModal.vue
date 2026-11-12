@@ -25,6 +25,13 @@
         </ion-item>
         <ion-item>
           <ion-label>
+            {{ translate("Channel type") }}
+            <p>{{ channelTypeLabel }}</p>
+          </ion-label>
+          <ion-note slot="end">{{ translate("Fixed") }}</ion-note>
+        </ion-item>
+        <ion-item>
+          <ion-label>
             {{ translate("Shopify shop") }}
             <p>{{ channel?.shopId }}</p>
           </ion-label>
@@ -156,6 +163,8 @@ import { commonUtil, logger, translate } from "@common";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import {
   ABSOLUTE_CHANNEL_RESET_SERVICE,
+  CHANNEL_TYPE,
+  channelTypeOf,
   ensureChannelResetJob,
   fetchLocationsFromShopify,
   fetchShopifyShopLocations,
@@ -167,6 +176,14 @@ import { formatDateTime } from "@/utils";
 import { parameterMap } from "@/utils/serviceJob";
 
 const props = defineProps<{ isOpen: boolean; channel: any }>();
+
+const channelTypeLabel = computed(() => {
+  const type = channelTypeOf(props.channel);
+  if(type === CHANNEL_TYPE.preOrder) {return translate("Pre-order");}
+  if(type === CHANNEL_TYPE.backOrder) {return translate("Back-order");}
+
+  return translate("Physical");
+});
 const emit = defineEmits<{
   close: [];
   updated: [];
@@ -224,8 +241,9 @@ async function openScheduleJob() {
         description: `Full aggregate ATP reset for ${channelName}`,
       });
     } catch (error: any) {
+      const serverError = commonUtil.getErrorMessage(error);
       logger.error("Failed to ensure channel reset job", error);
-      commonUtil.showToast(error?.message || translate("Failed to set up reset job."));
+      commonUtil.showToast(`${translate("Failed to set up reset job.")} ${serverError}`);
       isSettingUpJob.value = false;
       return;
     } finally {
@@ -337,8 +355,9 @@ async function save() {
     emit("updated");
     close();
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("updateInventoryChannel", error);
-    commonUtil.showToast(error?.message || translate("Failed to update the inventory channel."));
+    commonUtil.showToast(`${translate("Failed to update the inventory channel.")} ${serverError}`);
   } finally {
     isSaving.value = false;
   }
@@ -373,8 +392,9 @@ async function confirmExpire() {
     emit("updated");
     close();
   } catch (error: any) {
-    logger.error("expireInventoryChannel", error);
-    commonUtil.showToast(error?.message || translate("Failed to expire the inventory channel."));
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error(error);
+    commonUtil.showToast(`${translate("Failed to expire the inventory channel.")} ${serverError}`);
   } finally {
     isSaving.value = false;
   }

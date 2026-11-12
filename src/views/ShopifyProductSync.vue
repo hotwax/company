@@ -1786,9 +1786,10 @@ async function loadWizard() {
     }
 
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
     loadErrorMessage.value = getErrorMessage(error, translate("Failed to load product sync"));
-    commonUtil.showToast(translate("Failed to load product sync"));
+    commonUtil.showToast(`${translate("Failed to load product sync")}. ${serverError}`);
   } finally {
     isLoading.value = false;
   }
@@ -1942,8 +1943,9 @@ async function openStepDetails(step: any) {
     try {
       await fetchLogDetails(step.id);
     } catch (error: any) {
+      const serverError = commonUtil.getErrorMessage(error);
       logger.error(error);
-      commonUtil.showToast(translate("Failed to load sync step details."));
+      commonUtil.showToast(`${translate("Failed to load sync step details.")} ${serverError}`);
     } finally {
       isStepDetailsLoading.value = false;
     }
@@ -2048,8 +2050,9 @@ async function loadProducts() {
     endCursor.value = response.endCursor;
   } catch (error: any) {
     if (requestId !== productSearchRequestId) return;
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(isSearchMode.value ? translate("Failed to load recently updated products.") : translate("Failed to load un-synced product updates."));
+    commonUtil.showToast(`${isSearchMode.value ? translate("Failed to load recently updated products.") : translate("Failed to load un-synced product updates.")} ${serverError}`);
     productsPickerProducts.value = [];
     hasNextPage.value = false;
     endCursor.value = "";
@@ -2077,8 +2080,9 @@ async function searchProducts(after?: string) {
     endCursor.value = response.endCursor;
   } catch (error: any) {
     if (requestId !== productSearchRequestId) return;
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to search Shopify products."));
+    commonUtil.showToast(`${translate("Failed to search Shopify products.")} ${serverError}`);
     productsPickerProducts.value = after ? productsPickerProducts.value : [];
     hasNextPage.value = false;
     endCursor.value = "";
@@ -2358,8 +2362,9 @@ async function downloadRawFile(item: any) {
     downloadTextFile(fileContent, getRawShopifyFileName(item));
     commonUtil.showToast(translate("File downloaded successfully"));
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(`Failed to download raw file for ${item.id}`, error);
-    commonUtil.showToast(translate("Failed to download raw file"));
+    commonUtil.showToast(`${translate("Failed to download raw file")}. ${serverError}`);
   }
 }
 
@@ -2394,8 +2399,9 @@ async function resyncProduct(record: any) {
     commonUtil.showToast(getSelectedProductSyncResultMessage(result, 1));
     await loadLatestSystemMessage();
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(getErrorMessage(error, translate("Failed to resync product.")));
+    commonUtil.showToast(`${translate("Failed to resync product.")} ${serverError}`);
   } finally {
     isSaving.value = false;
   }
@@ -2593,8 +2599,9 @@ async function executeRunSyncJob(job: any) {
     commonUtil.showToast(translate("Job has been scheduled to run now"));
     await refreshAfterRunNow();
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error("Failed to run job now", err);
-    commonUtil.showToast(translate("Failed to run job"));
+    commonUtil.showToast(`${translate("Failed to run job")}. ${serverError}`);
   } finally {
     if (syncJobRunNowJobName.value === job.jobName) {
       syncJobRunNowJobName.value = "";
@@ -2685,8 +2692,9 @@ async function updateSyncJob(payload: any, successMessage: string) {
     commonUtil.showToast(successMessage);
     return true;
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update sync job."));
+    commonUtil.showToast(`${translate("Failed to update sync job.")} ${serverError}`);
     return false;
   }
 }
@@ -2773,8 +2781,9 @@ async function persistProductStoreSelection() {
       throw resp.data;
     }
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(getErrorMessage(error, translate("Failed to link product store")));
+    commonUtil.showToast(`${translate("Failed to link product store")}. ${serverError}`);
   }
   isSaving.value = false;
   return false;
@@ -2800,8 +2809,9 @@ async function persistIdentifierSelection() {
       throw resp.data;
     }
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update product store settings."));
+    commonUtil.showToast(`${translate("Failed to update product store settings.")} ${serverError}`);
   }
   isSaving.value = false;
   return false;
@@ -2828,7 +2838,8 @@ async function loadReviewStats() {
       linkedShopCount: relatedShops.value.length,
       loaded: false
     };
-    commonUtil.showToast(translate("Failed to load Shopify product counts."));
+    const serverError = commonUtil.getErrorMessage(error);
+    commonUtil.showToast(`${translate("Failed to load Shopify product counts.")} ${serverError}`);
     return false;
   } finally {
     isReviewLoading.value = false;
@@ -2877,8 +2888,9 @@ async function openMistakeModal() {
   try {
     await loadPreflight();
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to load preflight review."));
+    commonUtil.showToast(`${translate("Failed to load preflight review.")} ${serverError}`);
   } finally {
     isPreflightLoading.value = false;
   }
@@ -2914,8 +2926,9 @@ async function openStartSyncModal() {
       await Promise.all(promises);
     }
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to prepare product sync."));
+    commonUtil.showToast(`${translate("Failed to prepare product sync.")} ${serverError}`);
   }
 }
 
@@ -2955,8 +2968,9 @@ async function configureSyncJob() {
     await refreshAfterMutation("serviceJob", { jobName: `sync_ShopifyProductUpdates_${shopId}` });
     await checkSyncJobConfig(); // Refresh state
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to configure sync job", error);
-    commonUtil.showToast(translate("Failed to schedule job."));
+    commonUtil.showToast(`${translate("Failed to schedule job.")} ${serverError}`);
   }
   isSyncJobConfiguring.value = false;
 }
@@ -3011,8 +3025,9 @@ async function startProductSync() {
       await loadProgress();
     }
   } catch (err) {
-    commonUtil.showToast(getErrorMessage(err, translate("Failed to start product sync.")));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error(err);
+    commonUtil.showToast(`${translate("Failed to start product sync.")} ${serverError}`);
   } finally {
     isSaving.value = false;
   }
@@ -3079,8 +3094,9 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
     commonUtil.showToast(translate("Product sync run cancelled."));
     await refreshAfterSystemMessageAction();
   } catch (err) {
-    commonUtil.showToast(getErrorMessage(err, translate("Failed to {actionLabel}.", { actionLabel: translate("cancel the product sync run") })));
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error(err);
+    commonUtil.showToast(`${translate("Failed to {actionLabel}.", { actionLabel: translate("cancel the product sync run") })} ${serverError}`);
   } finally {
     systemMessageActionLoadingId.value = "";
   }
@@ -3117,8 +3133,9 @@ async function performSync(params: any, successMsg: string, modalRef: any, loadi
     modalRef.value = false;
     commonUtil.showToast(translate(successMsg));
   } catch (error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to start product sync"));
+    commonUtil.showToast(`${translate("Failed to start product sync")}. ${serverError}`);
   } finally {
     loadingRef.value = false;
   }
@@ -3577,8 +3594,9 @@ async function toggleWebhookSubscription(subscribe: boolean) {
     }
     await loadWebhookSubscriptions();
   } catch (error) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error("Failed to toggle webhook subscription", error);
-    commonUtil.showToast(translate("Failed to update webhook subscription."));
+    commonUtil.showToast(`${translate("Failed to update webhook subscription.")} ${serverError}`);
   } finally {
     isWebhookLoading.value = false;
   }

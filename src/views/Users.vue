@@ -52,7 +52,7 @@
       <ion-card v-if="currentUser.userId" class="list-item" @click="viewUserDetails(currentUser)">
         <ion-item lines="none">
           <ion-label>
-            {{ currentUser.userFullName }}
+            {{ currentUser.userFullName || "" }}
             <p>{{ currentUser.username }}</p>
             <p>{{ currentUser.emailAddress }}</p>
             <ion-badge>{{ translate("Your user") }}</ion-badge>
@@ -84,7 +84,7 @@
         <div v-for="(user, index) in users" :key="index" class="list-item" @click="viewUserDetails(user)">
           <ion-item lines="none">
             <ion-label>
-              {{ `${user.firstName} ${user.lastName ?? ''}`.trim() }}
+              {{ `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() }}
               <p>{{ user.username }}</p>
               <p>{{ user.emailAddress }}</p>
             </ion-label>

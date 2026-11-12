@@ -421,8 +421,9 @@ async function saveSftpConfig() {
       throw resp.data;
     }
   } catch(error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update SFTP configurations"))
+    commonUtil.showToast(`${translate("Failed to update SFTP configurations")}. ${serverError}`);
   }
 
   emitter.emit("dismissLoader")
@@ -477,8 +478,9 @@ async function updateSubsidiaryId() {
       throw resp.data;
     }
   } catch(error: any) {
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update product store settings"))
+    commonUtil.showToast(`${translate("Failed to update product store settings")}. ${serverError}`);
   }
   emitter.emit("dismissLoader")
   closeProductStoreModal();

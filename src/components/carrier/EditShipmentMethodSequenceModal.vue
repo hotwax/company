@@ -105,8 +105,9 @@ const saveShipmentMethodsOrder = async () => {
     commonUtil.showToast(translate("Shipment methods order updated successfully."));
     modalController.dismiss({ updated: true });
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error("Failed to save shipment methods order", err);
-    commonUtil.showToast(translate("Failed to save shipment methods order."));
+    commonUtil.showToast(`${translate("Failed to save shipment methods order.")} ${serverError}`);
   } finally {
     saving.value = false;
   }

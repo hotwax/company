@@ -282,7 +282,7 @@ import {
   settingsOutline,
   trashOutline,
 } from "ionicons/icons";
-import { commonUtil, translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import {
   deleteShippingCarrierBillingConfig,
   deleteShippingCarrierConfig,
@@ -360,7 +360,9 @@ async function confirmDeleteAuth(auth: ShippingGatewayAuth) {
             await deleteShippingGatewayAuth(auth.shippingGatewayAuthId);
             commonUtil.showToast(translate("Carrier credentials deleted successfully."));
           } catch (err: any) {
-            commonUtil.showToast(translate(err?.message || "Failed to delete carrier credentials."));
+            logger.error(err);
+            const serverError = commonUtil.getErrorMessage(err);
+            commonUtil.showToast(`${translate("Failed to delete carrier credentials.")} ${serverError}`);
           }
         },
       },
@@ -384,7 +386,9 @@ async function confirmDeleteCarrierConfig(cfg: ShippingCarrierConfig) {
             await deleteShippingCarrierConfig(cfg.carrierConfigId!);
             commonUtil.showToast(translate("Carrier mapping deleted successfully."));
           } catch (err: any) {
-            commonUtil.showToast(translate(err?.message || "Failed to delete carrier mapping."));
+            logger.error(err);
+            const serverError = commonUtil.getErrorMessage(err);
+            commonUtil.showToast(`${translate("Failed to delete carrier mapping.")} ${serverError}`);
           }
         },
       },
@@ -408,7 +412,9 @@ async function confirmDeleteBillingConfig(b: ShippingCarrierBillingConfig) {
             await deleteShippingCarrierBillingConfig(b.carrierBillingConfigId!);
             commonUtil.showToast(translate("Billing configuration deleted successfully."));
           } catch (err: any) {
-            commonUtil.showToast(translate(err?.message || "Failed to delete billing configuration."));
+            logger.error(err);
+            const serverError = commonUtil.getErrorMessage(err);
+            commonUtil.showToast(`${translate("Failed to delete billing configuration.")} ${serverError}`);
           }
         },
       },

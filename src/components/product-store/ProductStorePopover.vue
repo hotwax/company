@@ -76,8 +76,9 @@ async function removeStoreFromFacility() {
       throw resp.data;
     }
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error(err);
-    commonUtil.showToast(translate('Store unlink failed.'));
+    commonUtil.showToast(`${translate('Store unlink failed.')} ${serverError}`);
   }
 
   popoverController.dismiss();
@@ -89,7 +90,8 @@ async function updatePrimaryStore(shopifyShopId = '') {
     const resp = await mutations.updateFacility({ primaryFacilityGroupId: shopifyShopId });
     if (commonUtil.hasError(resp)) throw resp.data;
   } catch (error) {
-    commonUtil.showToast(translate('Failed to update primary product store'));
+    const serverError = commonUtil.getErrorMessage(error);
+    commonUtil.showToast(`${translate('Failed to update primary product store')}. ${serverError}`);
     logger.error('Failed to update primary product store', error);
   }
 }

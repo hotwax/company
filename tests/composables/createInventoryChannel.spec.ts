@@ -16,7 +16,7 @@ vi.mock("@/db/appDbSync", () => ({
   bootstrapState: { running: false },
 }));
 
-import { createInventoryChannel, ensureChannelResetJob, repairInventoryResetImportConfig, ensureShopPhysicalAtpResetJob } from "@/composables/useShopify";
+import { createInventoryChannel, ensureChannelResetJob, repairInventoryResetImportConfig, ensureShopPhysicalAtpResetJob, setStoreParkingFacility } from "@/composables/useShopify";
 
 describe("createInventoryChannel", () => {
   it("sends fromDate in the payload when creating an inventory channel", async () => {
@@ -42,6 +42,7 @@ describe("createInventoryChannel", () => {
         shopId: "100002",
         facilityGroupId: "CHANNEL_FG_1",
         shopifyLocationId: "LOC_998877",
+        channelTypeEnumId: "SICT_PHYSICAL",
         fromDate: fixedNow,
         description: "Channel FG 1 aggregate inventory",
       },
@@ -75,9 +76,71 @@ describe("createInventoryChannel", () => {
         shopId: "100002",
         facilityGroupId: "CHANNEL_FG_2",
         shopifyLocationId: "LOC_112233",
+        channelTypeEnumId: "SICT_PHYSICAL",
         fromDate: customFromDate,
       },
     });
+  });
+
+  it("creates a pre-order channel with its type", async () => {
+    harness.api.mockResolvedValue({ data: { inventoryChannelId: "IC_PRE" }, status: 200 });
+
+    await createInventoryChannel({
+      shopId: "100002",
+      facilityGroupId: "CHANNEL_FG_3",
+      shopifyLocationId: "LOC_PRE",
+      channelTypeEnumId: "SICT_PRE_ORDER",
+      fromDate: 1,
+    });
+
+    expect(harness.api).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ channelTypeEnumId: "SICT_PRE_ORDER" }),
+    }));
+  });
+});
+
+describe("setStoreParkingFacility", () => {
+  const purpose = (facilityId: string, fromDate = 100) => ({
+    productStoreId: "STORE", facilityId, facilityPurposeEnumId: "FP_PRE_ORDER_PARK", fromDate,
+  });
+
+  it("does nothing when the facility is already the store's only parking", async () => {
+    harness.api.mockReset();
+    await setStoreParkingFacility({
+      productStoreId: "STORE", facilityId: "PARK_A", purposeEnumId: "FP_PRE_ORDER_PARK", activePurposes: [purpose("PARK_A")],
+    });
+    expect(harness.api).not.toHaveBeenCalled();
+  });
+
+  it("creates the new purpose, then ends every other active one of that purpose", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValue({ data: {} });
+    vi.spyOn(Date, "now").mockReturnValue(500);
+
+    await setStoreParkingFacility({
+      productStoreId: "STORE", facilityId: "PARK_B", purposeEnumId: "FP_PRE_ORDER_PARK",
+      activePurposes: [purpose("PARK_A", 100), { ...purpose("BACK"), facilityPurposeEnumId: "FP_BACKORDER_PARK" }],
+    });
+
+    expect(harness.api.mock.calls.map(([call]) => [call.method, call.data])).toEqual([
+      ["post", { productStoreId: "STORE", facilityId: "PARK_B", facilityPurposeEnumId: "FP_PRE_ORDER_PARK", fromDate: 500 }],
+      ["put", { productStoreId: "STORE", facilityId: "PARK_A", facilityPurposeEnumId: "FP_PRE_ORDER_PARK", fromDate: 100, thruDate: 500 }],
+    ]);
+    expect(harness.refreshAfterMutation).toHaveBeenCalledWith("productStoreFacilityPurpose", { productStoreId: "STORE" });
+    vi.restoreAllMocks();
+  });
+
+  it("keeps an existing row for the chosen facility and only ends the duplicates", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValue({ data: {} });
+
+    await setStoreParkingFacility({
+      productStoreId: "STORE", facilityId: "PARK_A", purposeEnumId: "FP_PRE_ORDER_PARK",
+      activePurposes: [purpose("PARK_A"), purpose("PARK_B")],
+    });
+
+    expect(harness.api).toHaveBeenCalledTimes(1);
+    expect(harness.api.mock.calls[0][0]).toMatchObject({ method: "put", data: { facilityId: "PARK_B" } });
   });
 });
 

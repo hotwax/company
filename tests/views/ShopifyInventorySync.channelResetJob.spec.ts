@@ -20,6 +20,7 @@ const syncReady = ref(true);
 const syncError = ref<string | null>(null);
 
 const harness = vi.hoisted(() => ({
+  mode: "returning",
   ensureChannelResetJob: vi.fn(),
   ensureChannelEventPublisherJob: vi.fn(),
   ensureChannelEventDiscardJob: vi.fn(),
@@ -34,6 +35,8 @@ const harness = vi.hoisted(() => ({
 vi.mock("vue-router", () => ({
   useRouter: () => ({
     push: harness.push,
+    // These specs exercise the returning view; with no channels cached, auto mode would show the first-time wizard.
+    currentRoute: { get value() { return { query: { mode: harness.mode } }; } },
   }),
   useRoute: () => ({
     params: { id: "100002" },
@@ -44,6 +47,7 @@ vi.mock("vue-router", () => ({
 vi.mock("@common", () => ({
   commonUtil: {
     showToast: (...args: any[]) => harness.showToast(...args),
+    getErrorMessage: vi.fn((err: any) => err?.message || ""),
   },
   logger: {
     error: vi.fn(),
@@ -96,6 +100,7 @@ vi.mock("@/composables/useFacilities", () => ({
   useFacilityTypes: () => ({ facilityTypes: ref([]) }),
   useFacilities: () => ({ facilities: ref([]), hydrated: ref(true) }),
   useGroupFacilities: () => ({ records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated }),
+  useFacilityGroups: () => ({ records: ref([]), hydrated: ref(true) }),
   useFacilityGroupMutations: (facilityGroupId: string) => ({
     saveMembers: (...args: any[]) => harness.saveFacilityGroupMembers(facilityGroupId, ...args),
   }),
@@ -142,6 +147,17 @@ vi.mock("@/composables/useShopify", () => ({
     resolve: vi.fn(),
     sourceKeyOf: (eventTypeId: string, eventReferenceId: string) => `${eventTypeId}|${eventReferenceId}`,
   }),
+  CHANNEL_TYPE: { physical: "SICT_PHYSICAL", preOrder: "SICT_PRE_ORDER", backOrder: "SICT_BACK_ORDER" },
+  FUTURE_CHANNEL_PARKING: {
+    SICT_PRE_ORDER: { purposeEnumId: "FP_PRE_ORDER_PARK", facilityTypeId: "PRE_ORDER" },
+    SICT_BACK_ORDER: { purposeEnumId: "FP_BACKORDER_PARK", facilityTypeId: "BACKORDER" },
+  },
+  SHOPIFY_FUTURE_INVENTORY_EVENT_FEED_ID: "ShopifyFutureInventoryEventFeed",
+  channelTypeOf: (channel: any) => channel?.channelTypeEnumId || "SICT_PHYSICAL",
+  configureFutureChannelParking: vi.fn(),
+  updateShopifyFutureInventoryEventFeedType: vi.fn(),
+  useProductStoreFacilityPurposes: () => ({ purposes: ref([]), hydrated: ref(true) }),
+  useShopifyLocations: () => ({ locationByFacility: ref({}) }),
   SHOPIFY_INVENTORY_EVENT_FEED_ID: "ShopifyInventoryEventFeed",
   SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID: "ShopifyLocationInventoryEventFeed",
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL: "manual",
@@ -499,17 +515,50 @@ describe("ShopifyInventorySync - shared jobs location groups", () => {
     expect(physicalCard.findAll("ion-item-group")).toHaveLength(1);
     expect(channelGroup.find("ion-item-divider").text().trim()).toBe("Jobs");
     expect(physicalGroup.find("ion-item-divider").text().trim()).toBe("Jobs");
-    expect(channelJobs).toHaveLength(6);
+    expect(channelJobs).toHaveLength(5);
     expect(physicalJobs).toHaveLength(4);
     expect(channelJobs.join(" ")).toContain("Publish channel batches");
     expect(channelJobs.join(" ")).toContain("Purge old channel events");
     expect(channelJobs.join(" ")).toContain("Apply effective-dated inventory changes");
-    expect(channelJobs.join(" ")).toContain("Send channel batches");
+    expect(channelJobs.join(" ")).not.toContain("Send batches");
     expect(physicalJobs.join(" ")).toContain("Reset physical on-hand");
     expect(physicalJobs.join(" ")).toContain("Purge old physical events");
     expect(channelJobs.join(" ")).not.toContain("Reset physical on-hand");
-    expect(physicalJobs.join(" ")).not.toContain("Send channel batches");
-    expect([...channelJobs, ...physicalJobs]).toHaveLength(10);
+    expect(physicalJobs.join(" ")).not.toContain("Send batches");
+    expect([...channelJobs, ...physicalJobs]).toHaveLength(9);
+
+    // The one sender serves both queues, so it is listed once, in the Shared jobs card, with what it delivers.
+    const sharedCard = cards.find((item) => item.find("ion-item-divider").exists() && item.find("ion-item-divider").text().trim() === "Shared jobs")!;
+    expect(sharedCard.findAll("ion-item")).toHaveLength(1);
+    expect(sharedCard.text()).toContain("Send batches (all shops)");
+    expect(sharedCard.text()).toContain("Delivers channel and physical batches.");
+    wrapper.unmount();
+  });
+
+  it("lists the combined purge once, under Shared jobs, instead of one purge per queue", async () => {
+    cachedJobs.value = [
+      { jobName: "purge_OldShopifyInventoryAdjustments_hourly", serviceName: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustments", paused: "N", cronExpression: "0 0 * * * ?" },
+      // The upgrade pauses the two per-ledger jobs but leaves them on the OMS; they must not show as extra purges.
+      { jobName: "OLD_CHANNEL_PURGE", serviceName: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails", paused: "Y" },
+      { jobName: "OLD_PHYSICAL_PURGE", serviceName: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails", paused: "Y" },
+    ];
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: { stubs: { IonModal: true, ServiceJobDetailsModal: true, EditInventoryChannelModal: true, SetupInventoryChannelModal: true } },
+    });
+    await flushPromises();
+
+    const cards = wrapper.findAll("ion-card");
+    const sharedCard = cards.find((item) => item.find("ion-item-divider").exists() && item.find("ion-item-divider").text().trim() === "Shared jobs")!;
+    expect(sharedCard.text()).toContain("Purge old events (all shops)");
+    expect(sharedCard.text()).toContain("Prunes channel, physical and metafield events together.");
+    expect(wrapper.text()).not.toContain("Purge old channel events");
+    expect(wrapper.text()).not.toContain("Purge old physical events");
+
+    const row = sharedCard.findAll("ion-item").find((item) => item.text().includes("Purge old events"))!;
+    await row.trigger("click");
+    expect(wrapper.findComponent({ name: "ServiceJobDetailsModal" }).props("jobName")).toBe("purge_OldShopifyInventoryAdjustments_hourly");
     wrapper.unmount();
   });
 });
@@ -704,6 +753,9 @@ describe("ShopifyInventorySync - monitor batch carousels", () => {
       },
     });
     await flushPromises();
+    // The batch carousels live under the History segment.
+    (wrapper.vm as any).selectedSegment = "history";
+    await flushPromises();
 
     const titles = wrapper.find(`.run-carousel[aria-label="${label}"]`)
       .findAll("ion-card-title").map((title) => title.text().trim());
@@ -764,6 +816,86 @@ describe("ShopifyInventorySync - channels crossing a date boundary while open", 
     await vi.advanceTimersByTimeAsync(60_000);
     await flushPromises();
     expect(cardNames()).toEqual(["future"]);
+    wrapper.unmount();
+  });
+});
+
+describe("ShopifyInventorySync - skipping the setup wizard", () => {
+  afterEach(() => {
+    harness.mode = "returning";
+  });
+
+  it("leaves the wizard for the returning view when 'Skip setup process' is clicked", async () => {
+    harness.mode = "first-time";
+    cachedChannels.value = [];
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: {
+        stubs: {
+          IonModal: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+    expect(wrapper.find(".onboarding-layout").exists()).toBe(true);
+
+    const skip = wrapper.findAll("ion-button").find((button) => button.text().includes("Skip setup process"))!;
+    await skip.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".onboarding-layout").exists()).toBe(false);
+    wrapper.unmount();
+  });
+});
+
+describe("ShopifyInventorySync - first-time vs returning in auto mode", () => {
+  const mountPage = async () => {
+    harness.mode = "auto";
+    cachedChannels.value = [];
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: {
+        stubs: {
+          IonModal: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    return wrapper;
+  };
+
+  afterEach(() => {
+    harness.mode = "returning";
+    cachedJobs.value = [];
+  });
+
+  it("shows the wizard when there is no channel and no push job is enabled", async () => {
+    cachedJobs.value = [{ jobName: "publish_PendingShopifyLocationInventoryAdjustments", serviceName: "svc#PublishLocation", paused: "Y" }];
+    const wrapper = await mountPage();
+    expect(wrapper.find(".onboarding-layout").exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("shows the returning view when a push job is enabled, even with no channel", async () => {
+    cachedJobs.value = [{ jobName: "publish_PendingShopifyLocationInventoryAdjustments", serviceName: "svc#PublishLocation", paused: "N" }];
+    const wrapper = await mountPage();
+    expect(wrapper.find(".onboarding-layout").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("does not count an enabled upkeep job such as the purge as a push", async () => {
+    cachedJobs.value = [{ jobName: "purge_OldShopifyInventoryAdjustmentDetails_hourly", serviceName: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails", paused: "N" }];
+    const wrapper = await mountPage();
+    expect(wrapper.find(".onboarding-layout").exists()).toBe(true);
     wrapper.unmount();
   });
 });

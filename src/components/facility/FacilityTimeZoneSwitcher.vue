@@ -154,8 +154,9 @@ async function setFacilityTimeZone() {
       throw resp.data;
     }
   } catch (err) {
+    const serverError = commonUtil.getErrorMessage(err);
     logger.error('Failed to update facility timezone.', err);
-    commonUtil.showToast(translate('Failed to update facility timezone.'));
+    commonUtil.showToast(`${translate('Failed to update facility timezone.')} ${serverError}`);
   }
   closeModal();
 }

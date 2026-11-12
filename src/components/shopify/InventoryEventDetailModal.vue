@@ -51,13 +51,21 @@
             <p v-if="event.shopifyVariantId">
               {{ translate("Shopify variant {id}", { id: event.shopifyVariantId }) }}
             </p>
-            <p>{{ translate("Shopify inventory item {id}", { id: event.inventoryItemId }) }}</p>
+            <p v-if="event.inventoryItemId">
+              {{ translate("Shopify inventory item {id}", { id: event.inventoryItemId }) }}
+            </p>
           </ion-label>
           <ion-note slot="end">
             {{ event.change }}
           </ion-note>
         </ion-item>
-        <ion-item>
+        <ion-item v-if="event.metafieldOnly">
+          <ion-label class="ion-text-wrap">
+            {{ translate("Metafield") }}
+            <p>{{ event.metafieldName }}</p>
+          </ion-label>
+        </ion-item>
+        <ion-item v-else>
           <ion-label class="ion-text-wrap">
             {{ translate("Shopify location") }}
             <p>{{ event.locationLabel }}</p>
@@ -70,7 +78,7 @@
             {{ translate("Retarget drain") }}
           </ion-badge>
         </ion-item>
-        <ion-item>
+        <ion-item v-if="!event.metafieldOnly">
           <ion-label class="ion-text-wrap">
             {{ translate("Publishes under") }}
             <p>{{ event.reason }}</p>
@@ -112,6 +120,7 @@
           </ion-label>
         </ion-item>
         <ShopifyInventorySnapshot
+          v-if="!event.metafieldOnly"
           :key="event.rowKey"
           :remote-id="remoteId"
           :inventory-item-id="event.inventoryItemId"

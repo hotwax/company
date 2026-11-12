@@ -224,8 +224,9 @@ async function saveStoreConfig() {
     commonUtil.showToast(translate("Facility configurations created successfully."));
     router.replace(`/facility-details/${props.facilityId}`);
   } catch (error: any) {
-    commonUtil.showToast(error.message || translate("Failed to save configurations."));
-    logger.error(error);
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to save configurations", error);
+    commonUtil.showToast(`${translate("Failed to save configurations.")} ${serverError}`);
   }
 }
 </script>

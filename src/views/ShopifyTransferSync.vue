@@ -657,7 +657,7 @@
 </template>
 
 <script setup lang="ts">
-import { commonUtil, translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader,
   IonCardSubtitle, IonCardTitle, IonContent, IonFab, IonFabButton, IonHeader,
@@ -1177,7 +1177,9 @@ async function configureJob(card: any) {
     selectedJobName.value = await ensureJob(card.definition.key);
     showJobModal.value = true;
   } catch (error: any) {
-    commonUtil.showToast(error?.message || translate("The job could not be created."));
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to create job:", error);
+    commonUtil.showToast(`${translate("The job could not be created.")} ${serverError}`);
   } finally {
     configuringJobKey.value = "";
   }

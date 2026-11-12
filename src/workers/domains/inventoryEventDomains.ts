@@ -26,6 +26,15 @@ const CURSOR_OVERLAP_MS = 60_000;
 /** A backfill's backstop: 40 pages of 250, past any ledger the five-day purge leaves. */
 const BACKFILL_MAX_PAGES = 40;
 const MESSAGE_REFRESH_MAX = 25;
+/** Metafield-only revisions are rare (promise date changes, channel resets), so one window holds a long history. */
+const METAFIELD_EVENT_WINDOW = 200;
+const METAFIELD_EVENT_ENDPOINT = "sob/shopify/metafieldOnlyAdjustments";
+const METAFIELD_EVENT_FIELDS = [
+  "shopifyInventoryAdjustmentId", "metafieldId", "metafieldDetailSeqId", "eventTypeId", "eventReferenceId", "eventTypeDescription",
+  "shopifyReason", "shopId", "shopifyProductId", "shopifyInventoryItemId", "metafieldNamespace", "metafieldKey", "failed",
+  "systemMessageId", "systemMessageStatusId", "systemMessageInitDate", "systemMessageProcessedDate", "createdDate",
+  "detailLastUpdatedStamp", "systemMessageLastUpdatedStamp",
+] as const;
 /** Two requests of 100 items per tick, so a cold page does not burst the quota the OMS's own jobs share. */
 const INVENTORY_ITEM_BATCH_SIZE = 100;
 const INVENTORY_ITEM_REQUESTS_PER_TICK = 2;
@@ -42,6 +51,7 @@ interface LedgerDefinition {
 const systemMessageEntity = companyDb.entity(companyDb.tables.systemMessages);
 const inventoryItemEntity = companyDb.entity(companyDb.tables.shopifyInventoryItems);
 const ledgerBoundEntity = companyDb.entity(companyDb.tables.inventoryLedgerBounds);
+const metafieldAdjustmentEntity = companyDb.entity(companyDb.tables.shopifyMetafieldAdjustments);
 
 function ledger(kind: InventoryEventKind, table: AppDbTables<typeof companyDb>, endpoint: string, domains: { rows: string; messages: string }): LedgerDefinition {
   return { kind, rowsDomain: domains.rows, messageDomain: domains.messages, endpoint, table, entity: companyDb.entity(table) };
@@ -333,6 +343,77 @@ const inventoryEventSystemMessageDomain = defineSyncDomain({
   },
 });
 
+/** A connector older than the resource answers 404: no such events to show, not a failed pass. */
+function isNotFound(error: any): boolean {
+  return Number(error?.status ?? error?.statusCode ?? error?.errorCode ?? error?.response?.status) === 404;
+}
+
+/** The revision's key members stored verbatim; the sequence is a number on the wire and a text key here. */
+function metafieldRowOf(row: Record<string, any>): Record<string, any> | undefined {
+  if(!row?.shopifyInventoryAdjustmentId || !row.metafieldId || row.metafieldDetailSeqId === undefined || row.metafieldDetailSeqId === null) {return undefined;}
+  const stored: Record<string, any> = {};
+  for(const field of METAFIELD_EVENT_FIELDS) {stored[field] = row[field] ?? null;}
+  stored.metafieldDetailSeqId = String(row.metafieldDetailSeqId);
+
+  return stored;
+}
+
+function metafieldKeyOf(row: Record<string, unknown>): DbKey | undefined {
+  return entityKeyOf(row, companyDb.entities[companyDb.tables.shopifyMetafieldAdjustments]);
+}
+
+/**
+ * Inventory events with a metafield revision and no inventory line, which the ledger domains cannot see.
+ * The set is small, so each pass reads the newest window with its joined message columns (the delivery
+ * state arrives with the row) and writes only what changed. A cached row inside the window that the server
+ * no longer lists was purged there, so it leaves the cache too; older rows stay as history.
+ */
+const metafieldEventDomain = defineSyncDomain({
+  name: INVENTORY_EVENT_DOMAINS.metafieldRows,
+  table: "shopifyMetafieldAdjustments",
+  label: INVENTORY_SYNC_DOMAIN_LABELS[INVENTORY_EVENT_DOMAINS.metafieldRows],
+  syncClass: "A",
+  intervalMs: POLL_INTERVAL_MS,
+  async sync(ctx, args: ShopArgs = {}) {
+    const shopId = shopOf(args);
+    if(!shopId) {return 0;}
+    let response: any;
+    try {
+      response = await workerGet(ctx, METAFIELD_EVENT_ENDPOINT, { shopId, orderByField: "-createdDate", pageSize: METAFIELD_EVENT_WINDOW, pageIndex: 0 });
+    } catch(error) {
+      if(isNotFound(error)) {return 0;}
+      throw error;
+    }
+    const listed = ledgerRowsOf(response, METAFIELD_EVENT_ENDPOINT).map(metafieldRowOf).filter((row): row is Record<string, any> => !!row);
+    const keyed = listed.map((row) => ({ row, key: metafieldKeyOf(row) })).filter((entry): entry is { row: Record<string, any>; key: DbKey } => entry.key !== undefined);
+    const cachedRows = await metafieldAdjustmentEntity.query({ scope: { field: "shopId", value: shopId } });
+    const cached = new Map(cachedRows.map((row: Record<string, any>) => [canonicalKey(metafieldKeyOf(row)!), row]));
+
+    const changed = keyed.filter(({ row, key }) => {
+      const before = cached.get(canonicalKey(key));
+      if(!before) {return true;}
+
+      return toMillis(before.detailLastUpdatedStamp) !== toMillis(row.detailLastUpdatedStamp) ||
+        toMillis(before.systemMessageLastUpdatedStamp) !== toMillis(row.systemMessageLastUpdatedStamp) ||
+        String(before.systemMessageId ?? "") !== String(row.systemMessageId ?? "") ||
+        String(before.systemMessageStatusId ?? "") !== String(row.systemMessageStatusId ?? "");
+    }).map(({ row }) => row);
+
+    // A full window may have more rows behind it; only what it reaches back over can be judged purged.
+    const reachedBack = listed.length < METAFIELD_EVENT_WINDOW
+      ? -Infinity
+      : Math.min(...listed.map((row) => toMillis(row.createdDate) ?? Infinity));
+    const listedKeys = new Set(keyed.map(({ key }) => canonicalKey(key)));
+    const purged = cachedRows
+      .filter((row: Record<string, any>) => (toMillis(row.createdDate) ?? Infinity) >= reachedBack && !listedKeys.has(canonicalKey(metafieldKeyOf(row)!)))
+      .map((row: Record<string, any>) => metafieldKeyOf(row))
+      .filter((key: DbKey | undefined): key is DbKey => key !== undefined);
+    if(purged.length) {await metafieldAdjustmentEntity.bulkRemove(purged);}
+
+    return changed.length ? metafieldAdjustmentEntity.upsertMany(changed) : 0;
+  },
+});
+
 /** A node is `null` for an item Shopify no longer has, and its `variant` can be `null` too. */
 const INVENTORY_ITEMS_QUERY = "query($ids: [ID!]!) { nodes(ids: $ids) { ... on InventoryItem { id sku variant { id title image { url } product { id title featuredMedia { preview { image { url } } } } } } } }";
 
@@ -403,8 +484,10 @@ function inventoryItemKey(shopId: string, shopifyInventoryItemId: string): strin
 }
 
 async function unresolvedInventoryItems(shopId: string): Promise<string[]> {
-  const rows = (await Promise.all(Object.values(INVENTORY_LEDGERS).map((ledger) => scopedRows(ledger, shopId)))).flat()
-    .sort((a, b) => (toMillis(b.createdDate) ?? 0) - (toMillis(a.createdDate) ?? 0));
+  const rows = [
+    ...(await Promise.all(Object.values(INVENTORY_LEDGERS).map((ledger) => scopedRows(ledger, shopId)))).flat(),
+    ...await metafieldAdjustmentEntity.query({ scope: { field: "shopId", value: shopId } }),
+  ].sort((a, b) => (toMillis(b.createdDate) ?? 0) - (toMillis(a.createdDate) ?? 0));
   const items = new Set<string>();
   for(const row of rows) {
     const item = String(row.shopifyInventoryItemId ?? "");
@@ -474,6 +557,7 @@ const inventoryEventProductDomain = defineSyncDomain({
 /** Every inventory sync area domain, for `appSync.worker.ts` to register. */
 export const inventoryEventDomains: SyncDomain[] = [
   ...Object.values(INVENTORY_LEDGERS).flatMap(ledgerDomains),
+  metafieldEventDomain,
   inventoryEventBoundsDomain,
   inventoryEventSystemMessageDomain,
   inventoryEventProductDomain,

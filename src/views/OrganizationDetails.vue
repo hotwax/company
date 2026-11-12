@@ -169,7 +169,7 @@
 </template>
 
 <script setup lang="ts">
-import { commonUtil, translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import {
   IonBackButton,
   IonBadge,
@@ -205,7 +205,6 @@ import {
   usePrimaryOrganization,
 } from "@/composables/useOrganizations";
 import { useAuth } from "@/composables/useSecurity";
-import { getResponseErrorMessage } from "@/utils";
 import Actions from "@/authorization/actions";
 
 const props = defineProps<{ partyId: string }>();
@@ -257,7 +256,9 @@ async function saveRename() {
     editingName.value = false;
     await commonUtil.showToast(translate("Organization renamed."));
   } catch (error) {
-    await commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to rename organization.")));
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to rename organization", error);
+    await commonUtil.showToast(`${translate("Failed to rename organization.")} ${serverError}`);
   }
 }
 
@@ -268,7 +269,9 @@ async function saveExternalId() {
     editingExternalId.value = false;
     await commonUtil.showToast(translate("External ID updated."));
   } catch (error) {
-    await commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update external ID.")));
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to update external ID", error);
+    await commonUtil.showToast(`${translate("Failed to update external ID.")} ${serverError}`);
   } finally {
     savingExternalId.value = false;
   }
@@ -286,7 +289,9 @@ async function saveParent() {
     await commonUtil.showToast(translate("Parent organization updated."));
   } catch (error) {
     selectedParentId.value = parentId.value;
-    await commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update parent organization.")));
+    const serverError = commonUtil.getErrorMessage(error);
+    logger.error("Failed to update parent organization", error);
+    await commonUtil.showToast(`${translate("Failed to update parent organization.")} ${serverError}`);
   } finally {
     moving.value = false;
   }

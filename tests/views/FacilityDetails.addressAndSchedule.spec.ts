@@ -55,6 +55,7 @@ vi.mock("@common", () => ({
     showToast: harness.showToast,
     isValidEmail: () => true,
     getTelecomCountryCode: () => "1",
+    getErrorMessage: (err: any) => err?.message || "",
   },
   emitter: { emit: vi.fn(), on: vi.fn(), off: vi.fn() },
   logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
@@ -168,7 +169,7 @@ describe("Facility Details — add address", () => {
     vm.showAddressModal = true;
     await vm.saveContact();
 
-    expect(harness.showToast).toHaveBeenCalledWith("Failed to update facility contact.");
+    expect(harness.showToast).toHaveBeenCalledWith("Failed to update facility contact. 400");
     expect(vm.showAddressModal).toBe(true);
     expect(vm.address).toMatchObject(typed);
   });

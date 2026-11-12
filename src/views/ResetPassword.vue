@@ -153,8 +153,9 @@ const submit = async () => {
     commonUtil.showToast(translate("Password reset successful. Please login with your new password."));
     router.replace("/login");
   } catch (error) {
-    commonUtil.showToast(translate("Failed to reset password. Please check your reset password and try again."));
+    const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
+    commonUtil.showToast(`${translate("Failed to reset password. Please check your reset password and try again.")} ${serverError}`);
   }
   isSubmitting.value = false;
 };
