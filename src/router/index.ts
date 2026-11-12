@@ -51,6 +51,8 @@ const AppVersion = () => import("@/views/AppVersion.vue")
 const Organizations = () => import("@/views/Organizations.vue")
 const OrganizationDetails = () => import("@/views/OrganizationDetails.vue")
 const RejectionReasons = () => import("@/views/RejectionReasons.vue")
+const DocumentTemplates = () => import("@/views/DocumentTemplates.vue")
+const DocumentTemplateDetails = () => import("@/views/DocumentTemplateDetails.vue")
 
 const authGuard = () => {
   if(!useAuth().isAuthenticated.value) {
@@ -213,6 +215,8 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/settings", name: "Settings", component: Settings, beforeEnter: authGuard },
   { path: "/rejection-reasons", name: "RejectionReasons", component: RejectionReasons, beforeEnter: authGuard },
   { path: "/app-version", name: "AppVersion", component: AppVersion, beforeEnter: authGuard },
+  { path: "/document-templates", name: "DocumentTemplates", component: DocumentTemplates, beforeEnter: requirePermission(Actions.APP_DOCUMENT_TEMPLATES_VIEW) },
+  { path: "/document-templates/:documentTypeId", name: "DocumentTemplateDetails", component: DocumentTemplateDetails, props: true, beforeEnter: requirePermission(Actions.APP_DOCUMENT_TEMPLATES_VIEW) },
   { path: "/clone-product-store", name: "CloneProductStore", component: CloneProductStore, beforeEnter: authGuard },
   { path: "/mcp-setup", name: "McpSetup", component: McpSetup, beforeEnter: authGuard },
   { path: "/composer", name: "Composer", component: Composer, beforeEnter: authGuard },

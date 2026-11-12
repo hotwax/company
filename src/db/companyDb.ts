@@ -52,7 +52,8 @@ export const companyDb = defineAppDb({
   //     inventory ledgers gained resetInventoryLevel (Y = an absolute quantity, not a delta);
   //     added productStoreFacilityPurposes (the stores' pre-order and back-order parking).
   // v8: added shopifyMetafieldAdjustments (inventory events that carry only a metafield revision).
-  version: 8,
+  // v9: added documentTemplates (packing slip and pick list templates, fetched when opened).
+  version: 9,
   schema: mergeSchemas(commonSchema.pick([...COMPANY_SEED_TABLES]), companySchema),
 });
 
