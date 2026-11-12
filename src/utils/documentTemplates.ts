@@ -13,7 +13,22 @@ export interface DocumentTemplate {
   liveVersionName?: string;
   liveVersionDate?: number;
   liveUserId?: string;
+  /** The parameter its print screen takes: shipmentId, picklistId or orderId. Older OMS versions do not send it. */
+  sourceParameter?: string;
   templates?: LibraryTemplate[];
+}
+
+export type SourceParameter = "shipmentId" | "picklistId" | "orderId";
+
+/**
+ * What a document type is printed from, so a preview offers the right documents. OMS versions without
+ * `sourceParameter` only have Poorti's three types, where the pick list prints from a pick list.
+ */
+export function sourceParameterOf(documentTypeId: string, template?: DocumentTemplate): SourceParameter {
+  const value = template?.sourceParameter;
+  if(value === "shipmentId" || value === "picklistId" || value === "orderId") {return value;}
+
+  return documentTypeId === "PICKLIST" ? "picklistId" : "shipmentId";
 }
 
 /** One saved version of the live template or of a library template, newest first. */
@@ -59,10 +74,10 @@ export interface PreviewResult {
   previewUrl?: string;
 }
 
-/** A real document a preview renders: a shipment for packing slips, a pick list for pick lists. */
+/** A real document a preview renders: a shipment for packing slips, a pick list, or an order such as a transfer order. */
 export interface SampleDocument {
   sourceId: string;
-  kind: "shipment" | "picklist";
+  kind: "shipment" | "picklist" | "order";
   statusId?: string;
   facilityId?: string;
   orderId?: string;

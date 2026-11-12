@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errorLine, inlineInclude, isTemplateName, locationFile, publishActionFor, sameSelection, serverErrorMessage, suggestTemplateName, templateErrorFile } from "@/utils/documentTemplates";
+import { errorLine, inlineInclude, isTemplateName, locationFile, publishActionFor, sameSelection, serverErrorMessage, sourceParameterOf, suggestTemplateName, templateErrorFile } from "@/utils/documentTemplates";
 
 const packingSlip = {
   documentTypeId: "PACKING_SLIP",
@@ -73,5 +73,19 @@ describe("editing helpers", () => {
     expect(inlined).not.toContain("PackingSlipContent");
     expect(inlined).toContain("LabelContent.xsl-fo.ftl");
     expect(locationFile(location)).toBe("PackingSlipContent.xsl-fo.ftl");
+  });
+});
+
+describe("sourceParameterOf", () => {
+  it("uses what the server says a type prints from", () => {
+    expect(sourceParameterOf("GORJANA_PICK_TICKET", { documentTypeId: "GORJANA_PICK_TICKET", sourceParameter: "picklistId" })).toBe("picklistId");
+    expect(sourceParameterOf("GORJANA_TO_PICKLIST", { documentTypeId: "GORJANA_TO_PICKLIST", sourceParameter: "orderId" })).toBe("orderId");
+    expect(sourceParameterOf("PICKLIST", { documentTypeId: "PICKLIST", sourceParameter: "shipmentId" })).toBe("shipmentId");
+  });
+
+  it("falls back to Poorti's three types on an OMS that does not send it, or sends something unknown", () => {
+    expect(sourceParameterOf("PICKLIST")).toBe("picklistId");
+    expect(sourceParameterOf("PACKING_SLIP", { documentTypeId: "PACKING_SLIP" })).toBe("shipmentId");
+    expect(sourceParameterOf("PICKLIST", { documentTypeId: "PICKLIST", sourceParameter: "returnId" })).toBe("picklistId");
   });
 });

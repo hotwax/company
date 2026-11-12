@@ -117,7 +117,7 @@ describe("sample documents to preview with", () => {
     ] } } } }).mockResolvedValueOnce({ data: { data: { orders: { edges: [{ node: { orderId: "M108436", orderName: "#973026" } }] } } } });
     const { scope, state } = run(() => useSampleDocuments());
 
-    await state.load("PACKING_SLIP");
+    await state.load("shipmentId");
 
     const shipmentsCall = mocks.api.mock.calls[0][0];
     expect(shipmentsCall).toMatchObject({ url: "graphql", method: "post", data: { operationName: "SampleShipments", variables: { first: 20 } } });
@@ -135,7 +135,7 @@ describe("sample documents to preview with", () => {
       .mockRejectedValueOnce(new Error("offline"));
     const { scope, state } = run(() => useSampleDocuments());
 
-    await state.load("PACKING_SLIP_AND_LABEL");
+    await state.load("shipmentId");
 
     expect(state.samples.value.map(sample => sample.sourceId)).toEqual(["1"]);
     expect(state.error.value).toBe(false);
@@ -149,7 +149,7 @@ describe("sample documents to preview with", () => {
     ] });
     const { scope, state } = run(() => useSampleDocuments());
 
-    await state.load("PICKLIST");
+    await state.load("picklistId");
 
     expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/picklists", method: "get", params: { pageSize: 20, orderByField: "-picklistDate" } });
     expect(state.samples.value.map(sample => sample.sourceId)).toEqual(["P2", "P1"]);
@@ -158,11 +158,29 @@ describe("sample documents to preview with", () => {
     scope.stop();
   });
 
+  it("offers recent approved transfer orders for a document printed from an order", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { orders: [
+      { orderId: "TO2", orderName: "Store 12 restock", orderStatusId: "ORDER_APPROVED", facilityId: "WH", orderDate: 1793000000000 },
+      { orderId: "TO1", orderStatusId: "ORDER_APPROVED" },
+    ], ordersCount: 2 } });
+    const { scope, state } = run(() => useSampleDocuments());
+
+    await state.load("orderId");
+
+    expect(mocks.api).toHaveBeenCalledWith({ url: "oms/transferOrders", method: "get", params: { keyword: undefined, orderStatusId: "ORDER_APPROVED",
+      limit: 20, orderBy: "-orderDate", fieldsToSelect: "orderId,orderName,orderStatusId,facilityId,orderDate" } });
+    expect(state.samples.value).toEqual([
+      { sourceId: "TO2", kind: "order", statusId: "ORDER_APPROVED", facilityId: "WH", orderId: "TO2", orderName: "Store 12 restock", date: 1793000000000 },
+      { sourceId: "TO1", kind: "order", statusId: "ORDER_APPROVED", facilityId: undefined, orderId: "TO1", orderName: undefined, date: undefined },
+    ]);
+    scope.stop();
+  });
+
   it("reports an error instead of an empty list when the lookup fails", async () => {
     mocks.api.mockResolvedValueOnce({ data: { errors: [{ message: "denied" }], data: null } });
     const { scope, state } = run(() => useSampleDocuments());
 
-    await state.load("PACKING_SLIP");
+    await state.load("shipmentId");
 
     expect(state.error.value).toBe(true);
     expect(state.samples.value).toEqual([]);
@@ -263,7 +281,7 @@ describe("preview order search", () => {
     });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PACKING_SLIP", " 595 ");
+    await state.search("shipmentId", " 595 ");
 
     const bucketCalls = mocks.api.mock.calls.map(([request]) => request).filter((request: any) => request.method === "get");
     expect(bucketCalls.map((request: any) => request.url)).toEqual(["oms/orders/salesOrders/open", "oms/orders/salesOrders/inflight", "oms/orders/salesOrders/packed"]);
@@ -289,7 +307,7 @@ describe("preview order search", () => {
     });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PICKLIST", "");
+    await state.search("picklistId", "");
 
     const lookups = mocks.api.mock.calls.map(([request]) => request).filter((request: any) => request.url === "poorti/shipmentPicklists");
     expect(lookups.map((request: any) => request.params)).toEqual([
@@ -309,7 +327,7 @@ describe("preview order search", () => {
     });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PICKLIST", "");
+    await state.search("picklistId", "");
 
     expect(mocks.api.mock.calls[0][0].params.keyword).toBeUndefined();
     expect(state.orders.value).toEqual([expect.objectContaining({ orderId: "M1", stage: "packed", documents: [] })]);
@@ -318,11 +336,25 @@ describe("preview order search", () => {
     scope.stop();
   });
 
+  it("searches approved transfer orders by keyword for a document printed from an order, each order its own document", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { orders: [{ orderId: "TO7", orderName: "Store 7", orderStatusId: "ORDER_APPROVED", orderDate: 5000 }] } });
+    const { scope, state } = run(() => usePreviewOrderSearch());
+
+    await state.search("orderId", " TO7 ");
+
+    expect(mocks.api).toHaveBeenCalledTimes(1);
+    expect(mocks.api.mock.calls[0][0]).toMatchObject({ url: "oms/transferOrders", params: { keyword: "TO7", orderStatusId: "ORDER_APPROVED", limit: 20 } });
+    expect(state.orders.value).toEqual([{ orderId: "TO7", orderName: "Store 7", orderDate: 5000, stage: "open",
+      documents: [expect.objectContaining({ sourceId: "TO7", kind: "order", orderName: "Store 7" })] }]);
+    expect(state.error.value).toBe(false);
+    scope.stop();
+  });
+
   it("reports an error when an order list cannot be read", async () => {
     mocks.api.mockResolvedValue({ data: { errors: "Not authorized" } });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PACKING_SLIP", "5955");
+    await state.search("shipmentId", "5955");
 
     expect(state.orders.value).toEqual([]);
     expect(state.error.value).toBe(true);
@@ -377,7 +409,7 @@ describe("preview document lookup paging", () => {
     });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PACKING_SLIP", "");
+    await state.search("shipmentId", "");
 
     const pages = mocks.api.mock.calls.map(([request]) => request).filter((request: any) => request.url === "graphql");
     expect(pages.map((request: any) => request.data.variables.after)).toEqual([null, "c1"]);
@@ -392,7 +424,7 @@ describe("preview document lookup paging", () => {
     });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PACKING_SLIP", "");
+    await state.search("shipmentId", "");
 
     expect(state.documentsError.value).toBe(true);
     expect(state.orders.value[0].documents).toEqual([]);
