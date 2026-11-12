@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { publishActionFor, sameSelection, serverErrorMessage, sourceIdLabel, templateErrorFile } from "@/utils/documentTemplates";
+import { publishActionFor, sameSelection, serverErrorMessage, templateErrorFile } from "@/utils/documentTemplates";
 
 const packingSlip = {
   documentTypeId: "PACKING_SLIP",
@@ -30,10 +30,6 @@ describe("document template helpers", () => {
     expect(sameSelection({ templateName: "plain" }, { templateName: "plain", versionName: "01" })).toBe(false);
   });
 
-  it("asks for a picklist id for pick lists and a shipment id otherwise", () => {
-    expect(sourceIdLabel("PICKLIST")).toBe("Picklist ID");
-    expect(sourceIdLabel("PACKING_SLIP_AND_LABEL")).toBe("Shipment ID");
-  });
 
   it("reads the server's reason from a refused Moqui REST call", () => {
     expect(serverErrorMessage({ response: { data: { errors: "The live PACKING_SLIP template is at version 16, not 15.\n" } } }))

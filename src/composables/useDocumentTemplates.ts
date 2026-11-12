@@ -2,7 +2,7 @@ import { api, commonUtil, logger, useLiveEntity } from "@common";
 import { computed, onScopeDispose, ref } from "vue";
 import { companyDb } from "@/db/companyDb";
 import { refreshAfterMutation } from "@/db/appDbSync";
-import type { DocumentTemplate, DocumentTemplateVersion, PreviewResult, TemplateSelection } from "@/utils/documentTemplates";
+import type { DocumentTemplate, DocumentTemplateVersion, PreviewResult, SampleDocument, TemplateSelection } from "@/utils/documentTemplates";
 
 /**
  * Document templates: the packing slip and pick list templates printing uses (Poorti
@@ -22,6 +22,18 @@ const VERSIONS_QUERY = `query DocumentTemplateVersions($documentTypeId: ID!, $te
   documentTemplateVersions(documentTypeId: $documentTypeId, templateName: $templateName) {
     versionName previousVersionName versionDate userId isCurrent
   }
+}`;
+const SAMPLE_COUNT = 20;
+const SAMPLE_SHIPMENTS_QUERY = `query SampleShipments($first: Int!) {
+  shipments(query: "statusId:SHIPMENT_SHIPPED,SHIPMENT_PACKED", sortKey: SHIPPED_DATE, reverse: true, first: $first) {
+    edges { node { shipmentId statusId primaryOrderId originFacilityId } }
+  }
+}`;
+const SAMPLE_ORDERS_QUERY = `query SampleOrders($q: String!, $first: Int!) {
+  orders(query: $q, first: $first) { edges { node { orderId orderName } } }
+}`;
+const SAMPLE_PICKLISTS_QUERY = `query SamplePicklists($first: Int!) {
+  orderPicklists(first: $first) { edges { node { picklistId picklistDate picklistStatusId facilityId } } }
 }`;
 
 /** Every document type, from the local table, and `refresh()` to fetch them again. */
@@ -119,6 +131,82 @@ export function useDocumentTemplateVersions() {
   }
 
   return { versions, loading, error, load, usernameFor, resolveUsernames };
+}
+
+/**
+ * Recent real documents to preview a template with, so nobody has to know an id: shipped or packed
+ * shipments for packing slips (newest shipped first, with their order's name), recent pick lists for
+ * pick lists. Read from the OMS GraphQL endpoint.
+ */
+export function useSampleDocuments() {
+  const samples = ref<SampleDocument[]>([]);
+  const loading = ref(false);
+  const error = ref(false);
+  let request = 0;
+
+  async function query(queryText: string, variables: Record<string, unknown>, operationName: string) {
+    const resp: any = await api({ url: "graphql", method: "post", data: { query: queryText, variables, operationName } });
+    if(commonUtil.hasError(resp) || resp?.data?.errors?.length || !resp?.data?.data) {throw resp;}
+
+    return resp.data.data;
+  }
+
+  async function shipmentSamples(): Promise<SampleDocument[]> {
+    const data = await query(SAMPLE_SHIPMENTS_QUERY, { first: SAMPLE_COUNT }, "SampleShipments");
+    const shipments: any[] = (data.shipments?.edges ?? []).map((edge: any) => edge.node).filter((row: any) => row?.shipmentId);
+    const orderIds = [...new Set(shipments.map(row => row.primaryOrderId).filter(Boolean))];
+    const orders = new Map<string, any>();
+    if(orderIds.length) {
+      try {
+        const orderData = await query(SAMPLE_ORDERS_QUERY, { q: `orderId:${orderIds.join(",")}`, first: orderIds.length }, "SampleOrders");
+        for(const edge of orderData.orders?.edges ?? []) {orders.set(edge.node.orderId, edge.node);}
+      } catch(cause) {
+        // Order names only make the list easier to read; the shipments are still usable without them.
+        logger.warn(cause);
+      }
+    }
+
+    return shipments.map(row => ({
+      sourceId: row.shipmentId, kind: "shipment", statusId: row.statusId, facilityId: row.originFacilityId,
+      orderId: row.primaryOrderId, orderName: orders.get(row.primaryOrderId)?.orderName || undefined,
+    }));
+  }
+
+  async function picklistSamples(): Promise<SampleDocument[]> {
+    const data = await query(SAMPLE_PICKLISTS_QUERY, { first: SAMPLE_COUNT * 5 }, "SamplePicklists");
+    // One row per picked order item, so a pick list repeats; keep each once, newest first.
+    const byId = new Map<string, any>();
+    for(const edge of data.orderPicklists?.edges ?? []) {
+      const row = edge.node;
+      if(row?.picklistId && !byId.has(row.picklistId)) {byId.set(row.picklistId, row);}
+    }
+
+    return [...byId.values()]
+      .sort((a, b) => String(b.picklistDate || "").localeCompare(String(a.picklistDate || "")))
+      .slice(0, SAMPLE_COUNT)
+      .map(row => ({ sourceId: row.picklistId, kind: "picklist", statusId: row.picklistStatusId, facilityId: row.facilityId,
+        date: row.picklistDate ? Date.parse(row.picklistDate) : undefined }));
+  }
+
+  async function load(documentTypeId: string) {
+    const current = ++request;
+    loading.value = true;
+    error.value = false;
+    try {
+      const rows = documentTypeId === "PICKLIST" ? await picklistSamples() : await shipmentSamples();
+      if(current === request) {samples.value = rows;}
+    } catch(cause) {
+      if(current === request) {
+        samples.value = [];
+        error.value = true;
+      }
+      logger.error(cause);
+    } finally {
+      if(current === request) {loading.value = false;}
+    }
+  }
+
+  return { samples, loading, error, load };
 }
 
 /**

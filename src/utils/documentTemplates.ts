@@ -48,9 +48,16 @@ export interface PreviewResult {
   previewUrl?: string;
 }
 
-/** The id a preview renders: a shipment for packing slips, a picklist for pick lists. */
-export const sourceIdLabel = (documentTypeId: string): string =>
-  documentTypeId === "PICKLIST" ? "Picklist ID" : "Shipment ID";
+/** A real document a preview renders: a shipment for packing slips, a pick list for pick lists. */
+export interface SampleDocument {
+  sourceId: string;
+  kind: "shipment" | "picklist";
+  statusId?: string;
+  facilityId?: string;
+  orderId?: string;
+  orderName?: string;
+  date?: number;
+}
 
 /**
  * What publishing a previewed selection does: a library template is published, an earlier version of

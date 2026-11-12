@@ -13,7 +13,7 @@ vi.mock("@common", () => ({
 vi.mock("@/db/companyDb", () => ({ companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) } }));
 vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: (...args: any[]) => mocks.refreshAfterMutation(...args) }));
 
-import { useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateVersions } from "@/composables/useDocumentTemplates";
+import { useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateVersions, useSampleDocuments } from "@/composables/useDocumentTemplates";
 
 const run = <T>(factory: () => T) => { const scope = effectScope(); return { scope, state: scope.run(factory)! }; };
 
@@ -105,6 +105,67 @@ describe("document template versions", () => {
     expect(mocks.api.mock.calls[0][0].data.variables).toEqual({ documentTypeId: "PACKING_SLIP", templateName: null });
     expect(state.error.value).toBe(true);
     expect(state.versions.value).toEqual([]);
+    scope.stop();
+  });
+});
+
+describe("sample documents to preview with", () => {
+  it("offers recent shipped or packed shipments, newest shipped first, named by their order", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { data: { shipments: { edges: [
+      { node: { shipmentId: "100053", statusId: "SHIPMENT_SHIPPED", primaryOrderId: "M108436", originFacilityId: "WH" } },
+      { node: { shipmentId: "100060", statusId: "SHIPMENT_PACKED", primaryOrderId: "M2", originFacilityId: "WH" } },
+    ] } } } }).mockResolvedValueOnce({ data: { data: { orders: { edges: [{ node: { orderId: "M108436", orderName: "#973026" } }] } } } });
+    const { scope, state } = run(() => useSampleDocuments());
+
+    await state.load("PACKING_SLIP");
+
+    const shipmentsCall = mocks.api.mock.calls[0][0];
+    expect(shipmentsCall).toMatchObject({ url: "graphql", method: "post", data: { operationName: "SampleShipments", variables: { first: 20 } } });
+    expect(shipmentsCall.data.query).toContain('statusId:SHIPMENT_SHIPPED,SHIPMENT_PACKED", sortKey: SHIPPED_DATE, reverse: true');
+    expect(mocks.api.mock.calls[1][0].data.variables).toEqual({ q: "orderId:M108436,M2", first: 2 });
+    expect(state.samples.value).toEqual([
+      { sourceId: "100053", kind: "shipment", statusId: "SHIPMENT_SHIPPED", facilityId: "WH", orderId: "M108436", orderName: "#973026" },
+      { sourceId: "100060", kind: "shipment", statusId: "SHIPMENT_PACKED", facilityId: "WH", orderId: "M2", orderName: undefined },
+    ]);
+    scope.stop();
+  });
+
+  it("keeps the shipments when their order names cannot be read", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { data: { shipments: { edges: [{ node: { shipmentId: "1", primaryOrderId: "O1" } }] } } } })
+      .mockRejectedValueOnce(new Error("offline"));
+    const { scope, state } = run(() => useSampleDocuments());
+
+    await state.load("PACKING_SLIP_AND_LABEL");
+
+    expect(state.samples.value.map(sample => sample.sourceId)).toEqual(["1"]);
+    expect(state.error.value).toBe(false);
+    scope.stop();
+  });
+
+  it("offers each recent pick list once, newest first", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { data: { orderPicklists: { edges: [
+      { node: { picklistId: "P1", picklistDate: "2026-11-01T10:00:00Z", picklistStatusId: "PICKLIST_PICKED" } },
+      { node: { picklistId: "P2", picklistDate: "2026-11-05T10:00:00Z" } },
+      { node: { picklistId: "P1", picklistDate: "2026-11-01T10:00:00Z" } },
+    ] } } } });
+    const { scope, state } = run(() => useSampleDocuments());
+
+    await state.load("PICKLIST");
+
+    expect(mocks.api.mock.calls[0][0].data.operationName).toBe("SamplePicklists");
+    expect(state.samples.value.map(sample => sample.sourceId)).toEqual(["P2", "P1"]);
+    expect(state.samples.value[1]).toMatchObject({ kind: "picklist", statusId: "PICKLIST_PICKED", date: Date.parse("2026-11-01T10:00:00Z") });
+    scope.stop();
+  });
+
+  it("reports an error instead of an empty list when the lookup fails", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { errors: [{ message: "denied" }], data: null } });
+    const { scope, state } = run(() => useSampleDocuments());
+
+    await state.load("PACKING_SLIP");
+
+    expect(state.error.value).toBe(true);
+    expect(state.samples.value).toEqual([]);
     scope.stop();
   });
 });
