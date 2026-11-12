@@ -53,7 +53,8 @@ export const companyDb = defineAppDb({
   //     added productStoreFacilityPurposes (the stores' pre-order and back-order parking).
   // v8: added shopifyMetafieldAdjustments (inventory events that carry only a metafield revision).
   // v9: added documentTemplates (packing slip and pick list templates, fetched when opened).
-  version: 9,
+  // v10: documentTemplates gained sourceParameter (what a document type prints from).
+  version: 10,
   schema: mergeSchemas(commonSchema.pick([...COMPANY_SEED_TABLES]), companySchema),
 });
 
