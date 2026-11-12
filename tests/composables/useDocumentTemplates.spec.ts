@@ -60,10 +60,10 @@ describe("document template publish", () => {
     mocks.api.mockResolvedValueOnce({ data: { liveVersionName: "16", previousLiveVersionName: "15" } });
     const { scope, state } = run(() => useDocumentTemplatePublish());
 
-    const published = await state.publish("PACKING_SLIP", { templateName: "holiday-2026", expectedLiveVersionName: "15", sourceId: "100051" });
+    const published = await state.publish("PACKING_SLIP", { templateName: "holiday-2026", expectedLiveVersionName: "15" });
 
     expect(published.liveVersionName).toBe("16");
-    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PACKING_SLIP/publish", method: "post", data: { templateName: "holiday-2026", expectedLiveVersionName: "15", sourceId: "100051" } });
+    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PACKING_SLIP/publish", method: "post", data: { templateName: "holiday-2026", expectedLiveVersionName: "15" } });
     expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("documentTemplate", {});
     scope.stop();
   });

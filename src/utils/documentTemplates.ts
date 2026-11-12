@@ -4,7 +4,6 @@ export interface LibraryTemplate {
   versionName?: string;
   versionDate?: number;
   userId?: string;
-  isLive?: boolean;
 }
 
 /** One document type and its live template, as stored in the `documentTemplates` table. */
@@ -14,7 +13,6 @@ export interface DocumentTemplate {
   liveVersionName?: string;
   liveVersionDate?: number;
   liveUserId?: string;
-  liveTemplateNames?: string[];
   templates?: LibraryTemplate[];
 }
 
@@ -56,16 +54,12 @@ export const sourceIdLabel = (documentTypeId: string): string =>
 
 /**
  * What publishing a previewed selection does: a library template is published, an earlier version of
- * the live template is rolled back to. Nothing when the selection is already what prints.
+ * the live template is rolled back to. Nothing for the live template's current version. Publishing a
+ * library template that already matches the live text is refused by the server.
  */
 export function publishActionFor(selection: TemplateSelection, template?: DocumentTemplate): "publish" | "rollback" | "" {
   if(!template) {return "";}
-  if(selection.templateName) {
-    const libraryTemplate = template.templates?.find(row => row.templateName === selection.templateName);
-    const isCurrentVersion = !selection.versionName || selection.versionName === libraryTemplate?.versionName;
-
-    return isCurrentVersion && libraryTemplate?.isLive ? "" : "publish";
-  }
+  if(selection.templateName) {return "publish";}
 
   return selection.versionName && selection.versionName !== template.liveVersionName ? "rollback" : "";
 }

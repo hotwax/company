@@ -176,7 +176,7 @@ export function useDocumentTemplatePublish() {
   const publishing = ref(false);
 
   /** Throws when the server refuses; the error carries the server's reason (`serverErrorMessage`). */
-  async function publish(documentTypeId: string, payload: { templateName?: string; versionName?: string; expectedLiveVersionName: string; sourceId?: string }) {
+  async function publish(documentTypeId: string, payload: { templateName?: string; versionName?: string; expectedLiveVersionName: string }) {
     publishing.value = true;
     try {
       const resp: any = await api({ url: `${templatesUrl(documentTypeId)}/publish`, method: "post", data: payload });

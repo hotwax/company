@@ -123,9 +123,6 @@
               <ion-label class="ion-text-wrap">
                 <template v-if="documentTemplate.liveVersionDate">{{ commonUtil.getDateAndTime(documentTemplate.liveVersionDate) }}</template>
                 <p v-if="documentTemplate.liveUserId">{{ translate("By {user}", { user: liveVersions.usernameFor(documentTemplate.liveUserId) }) }}</p>
-                <p data-testid="document-template-live-matches">
-                  {{ documentTemplate.liveTemplateNames?.length ? translate("Same text as {templates}", { templates: documentTemplate.liveTemplateNames.join(", ") }) : translate("Not from the library") }}
-                </p>
               </ion-label>
             </ion-item>
             <ion-card-content>{{ translate("Printing always uses the live template. Publishing a library template copies it into the live template, and rolling back restores an earlier live version.") }}</ion-card-content>
@@ -164,7 +161,6 @@
                   {{ library.templateName }}
                   <p>{{ translate("Version {version}", { version: library.versionName || "-" }) }} · {{ commonUtil.getDateAndTime(library.versionDate) }}<span v-if="library.userId"> · {{ liveVersions.usernameFor(library.userId) }}</span></p>
                 </ion-label>
-                <ion-badge v-if="library.isLive" slot="end" color="success">{{ translate("Live") }}</ion-badge>
                 <ion-button v-if="canAdmin" slot="end" fill="clear" :aria-label="translate('Preview {template}', { template: library.templateName })"
                   :data-testid="`document-template-library-${library.templateName}-preview-btn`" @click="select({ templateName: library.templateName, versionName: '' })">
                   <ion-icon slot="icon-only" :icon="eyeOutline" />
@@ -284,15 +280,13 @@ async function confirmPublish() {
 
 async function runPublish(action: "publish" | "rollback") {
   const template = documentTemplate.value;
-  const sourceIdPreviewed = previewed.value?.sourceId;
-  if(!template?.liveVersionName || !sourceIdPreviewed) {return;}
+  // Publishing does not render the template: the preview the user just reviewed is the check.
+  if(!template?.liveVersionName || !previewed.value || !result.value?.rendered) {return;}
   publishError.value = "";
   try {
     const published = await publish(props.documentTypeId, {
       ...(action === "publish" ? { templateName: selection.templateName, versionName: selection.versionName || undefined } : { versionName: selection.versionName }),
       expectedLiveVersionName: template.liveVersionName,
-      // The server renders it for the same document again and refuses new template errors.
-      sourceId: sourceIdPreviewed,
     });
     commonUtil.showToast(translate("The live template is now version {version}.", { version: published.liveVersionName || "" }));
     clearPreview();

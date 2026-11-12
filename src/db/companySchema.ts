@@ -589,8 +589,7 @@ export const companySchema = defineSchema({
       liveVersionName: "text",
       liveVersionDate: "date",
       liveUserId: "text",
-      liveTemplateNames: ["text"],
-      templates: [{ templateName: "text", versionName: "text", versionDate: "date", userId: "text", isLive: "structured" }],
+      templates: [{ templateName: "text", versionName: "text", versionDate: "date", userId: "text" }],
     },
   }),
 

@@ -5,20 +5,15 @@ const packingSlip = {
   documentTypeId: "PACKING_SLIP",
   liveVersionName: "15",
   templates: [
-    { templateName: "holiday-2026", versionName: "02", isLive: true },
-    { templateName: "plain", versionName: "01", isLive: false },
+    { templateName: "holiday-2026", versionName: "02" },
+    { templateName: "plain", versionName: "01" },
   ],
 };
 
 describe("publishActionFor", () => {
-  it("publishes a library template that is not already what prints", () => {
+  it("publishes any library template, at any version (the server refuses text that is already live)", () => {
     expect(publishActionFor({ templateName: "plain" }, packingSlip)).toBe("publish");
     expect(publishActionFor({ templateName: "holiday-2026", versionName: "01" }, packingSlip)).toBe("publish");
-  });
-
-  it("offers nothing for the library template version that is already live", () => {
-    expect(publishActionFor({ templateName: "holiday-2026" }, packingSlip)).toBe("");
-    expect(publishActionFor({ templateName: "holiday-2026", versionName: "02" }, packingSlip)).toBe("");
   });
 
   it("rolls the live template back to an earlier version, never to the current one", () => {

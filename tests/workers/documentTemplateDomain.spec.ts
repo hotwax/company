@@ -37,7 +37,7 @@ describe("documentTemplateDomain", () => {
 
   it("replaces the table with every document type the server lists", async () => {
     state.response = { documentTemplates: [
-      { documentTypeId: "PACKING_SLIP", liveVersionName: "15", templates: [{ templateName: "holiday-2026", versionName: "02", isLive: false }] },
+      { documentTypeId: "PACKING_SLIP", liveVersionName: "15", templates: [{ templateName: "holiday-2026", versionName: "02" }] },
       { documentTypeId: "PICKLIST", liveVersionName: "03", templates: [] },
     ] };
 

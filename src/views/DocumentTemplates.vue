@@ -44,7 +44,6 @@
               <ion-label class="ion-text-wrap">
                 {{ translate("Live version {version}", { version: template.liveVersionName || "-" }) }}
                 <p v-if="template.liveVersionDate">{{ commonUtil.getDateAndTime(template.liveVersionDate) }}</p>
-                <p>{{ template.liveTemplateNames?.length ? translate("Same text as {templates}", { templates: template.liveTemplateNames.join(", ") }) : translate("Not from the library") }}</p>
               </ion-label>
             </ion-item>
             <ion-item>
