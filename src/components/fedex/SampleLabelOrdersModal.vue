@@ -121,27 +121,25 @@ let requestId = 0;
 
 async function loadOrders(append = false) {
   const current = ++requestId;
-  if(!append) {
-    pageIndex.value = 0;
-    isLoading.value = true;
-  }
+  if(!append) {isLoading.value = true;}
   loadError.value = "";
   try {
     let found: SampleLabelOrder[] = [];
     let more = false;
+    let last = append ? pageIndex.value : -1;
     // A filtered page can be empty while later ones aren't.
     for(let attempt = 0; attempt < MAX_EMPTY_PAGES; attempt++) {
       const page = await fetchSampleLabelOrders({
         productStoreId: props.productStoreId,
         queryString: queryString.value,
-        pageIndex: pageIndex.value,
+        pageIndex: last + 1,
         pageSize: PAGE_SIZE,
       });
       if(current !== requestId) {return;}
+      last += 1;
       found = [...found, ...page.orders];
       more = page.hasMore;
       if(page.orders.length || !page.hasMore) {break;}
-      pageIndex.value += 1;
     }
 
     // Listed once, after the first page.
@@ -153,11 +151,11 @@ async function loadOrders(append = false) {
     if(current !== requestId) {return;}
     orders.value = append ? [...orders.value, ...found] : [...found, ...unshipped];
     hasMore.value = more;
+    pageIndex.value = last;
   } catch(error: any) {
     if(current !== requestId) {return;}
     logger.error(error);
     if(append) {
-      pageIndex.value = Math.max(0, pageIndex.value - 1);
       commonUtil.showToast(error?.message || translate("Failed to load orders."));
     } else {
       loadError.value = error?.message || translate("Failed to load orders.");
@@ -173,7 +171,6 @@ const clearSearch = () => {
 };
 
 async function loadMore(event: any) {
-  pageIndex.value += 1;
   await loadOrders(true);
   event.target.complete();
 }
