@@ -14,6 +14,7 @@ import {
   updateShippingGatewayAuth,
   useUnigate,
   type ShippingCarrierConfig,
+  type ShippingGatewayAuth,
 } from "./useUnigate";
 
 import { FEDEX_SETUP_SETUP_STEP_IDS, type FedexSetupStepId, type FedexSetupStepStatus } from "@/config/fedexSetup";
@@ -76,6 +77,30 @@ export function fedexFormFromConfigs(configs: ShippingCarrierConfig[], productSt
       .filter((row) => row.facilityId)
       .map((row) => ({ facilityId: String(row.facilityId), accountNumber: row.carrierAccountId || "" })),
   };
+}
+
+/** The auth a store's FedEx config already points at, if any. */
+export function mappedFedexAuthId(configs: ShippingCarrierConfig[], productStoreId: string): string | undefined {
+  return configs.find((config) =>
+    config.carrierPartyId === FEDEX_CARRIER_PARTY_ID && config.productStoreId === productStoreId && config.gatewayAuthId)?.gatewayAuthId;
+}
+
+/**
+ * The credentials a store uses: the ones it is already mapped to, else the one chosen on the page,
+ * else the only FedEx auth there is. With several and no choice there is none, so nothing is guessed.
+ */
+export function resolveFedexAuth(
+  auths: ShippingGatewayAuth[],
+  configs: ShippingCarrierConfig[],
+  productStoreId: string,
+  chosenAuthId?: string,
+): ShippingGatewayAuth | undefined {
+  const mapped = mappedFedexAuthId(configs, productStoreId);
+  if(mapped) {return auths.find((row) => row.shippingGatewayAuthId === mapped);}
+
+  const fedex = auths.filter((row) => row.shippingGatewayConfigId === FEDEX_GATEWAY_CONFIG_ID);
+  if(chosenAuthId) {return fedex.find((row) => row.shippingGatewayAuthId === chosenAuthId);}
+  return fedex.length === 1 ? fedex[0] : undefined;
 }
 
 /**
@@ -479,8 +504,8 @@ export function useFedexSetup() {
   const { fetchShippingMethodsFor } = useProductStoreShippingMethodsLive();
 
   const carrier = computed(() => carriers.value.find((row: any) => row.partyId === FEDEX_CARRIER_PARTY_ID));
-  const auth = computed(() =>
-    shippingGatewayAuths.value.find((row) => row.shippingGatewayConfigId === FEDEX_GATEWAY_CONFIG_ID));
+  const fedexAuths = computed(() =>
+    shippingGatewayAuths.value.filter((row) => row.shippingGatewayConfigId === FEDEX_GATEWAY_CONFIG_ID));
   const fedexConfigs = computed(() =>
     shippingCarrierConfigs.value.filter((config) => config.carrierPartyId === FEDEX_CARRIER_PARTY_ID));
   const mappedStoreIds = computed(() => [...new Set(fedexConfigs.value.map((config) => config.productStoreId))]);
@@ -491,7 +516,7 @@ export function useFedexSetup() {
   /** Every status is derived from live data, except the label, which is remembered per browser. */
   const stepStatuses = computed<Record<FedexSetupStepId, FedexSetupStepStatus>>(() => {
     const verified = verifiedStoreIds.value.some((id) => mappedStoreIds.value.includes(id));
-    const account: FedexSetupStepStatus = !auth.value
+    const account: FedexSetupStepStatus = !fedexAuths.value.length
       ? "not-started"
       : !fedexConfigs.value.length ? "in-progress" : brokenMapping.value ? "attention" : "complete";
     const unigate: FedexSetupStepStatus = isConfigured.value ? "complete" : "not-started";
@@ -511,19 +536,30 @@ export function useFedexSetup() {
     // Statuses are only reliable once the Unigate reads have settled.
     loaded: computed(() => status.value.config !== "pending" && status.value.auths !== "pending" && status.value.carrierConfigs !== "pending"),
     isUnigateConfigured: isConfigured,
-    existingAuthId: computed(() => auth.value?.shippingGatewayAuthId),
-    existingAuth: auth,
+    fedexAuths,
+    resolveAuth: (productStoreId: string, chosenAuthId?: string) =>
+      resolveFedexAuth(shippingGatewayAuths.value, shippingCarrierConfigs.value, productStoreId, chosenAuthId),
+    mappedAuthId: (productStoreId: string) => mappedFedexAuthId(shippingCarrierConfigs.value, productStoreId),
+    /** Other stores that use the same credentials, which a change to them affects. */
+    storesSharingAuth: (authId: string | undefined, productStoreId: string) => authId
+      ? [...new Set(fedexConfigs.value.filter((config) => config.gatewayAuthId === authId && config.productStoreId !== productStoreId)
+        .map((config) => config.productStoreId))]
+      : [],
     fedexConfigs,
     mappedStoreIds,
     carrier,
     stepStatuses,
     completedCount,
     totalStepCount: FEDEX_SETUP_SETUP_STEP_IDS.length,
-    saveSetup: (form: FedexSetupForm) => {
+    saveSetup: (form: FedexSetupForm, chosenAuthId?: string) => {
       // Before hydration the carrier looks missing and would be created again.
       if(!hydrated.value) {return Promise.reject(new Error(translate("Carriers are still loading. Try again in a moment.")));}
+      const auth = resolveFedexAuth(shippingGatewayAuths.value, shippingCarrierConfigs.value, form.productStoreId, chosenAuthId);
+      if(!auth && fedexAuths.value.length > 1) {
+        return Promise.reject(new Error(translate("Choose which FedEx credentials this store uses.")));
+      }
       return saveFedexSetup(form, {
-        authId: auth.value?.shippingGatewayAuthId,
+        authId: auth?.shippingGatewayAuthId,
         configs: shippingCarrierConfigs.value,
         carrierExists: Boolean(carrier.value),
       });

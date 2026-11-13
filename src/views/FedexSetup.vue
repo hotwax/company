@@ -76,6 +76,14 @@
                     {{ store.storeName || store.productStoreId }}
                   </ion-select-option>
                 </ion-select>
+                <ion-select v-if="showAuthChoice" v-model="form.gatewayAuthId" fill="outline" label-placement="stacked" interface="popover" :label="translate('FedEx credentials')" data-testid="fedex-auth" @ion-change="loadCredentials()">
+                  <ion-select-option v-for="auth in fedexAuths" :key="auth.shippingGatewayAuthId" :value="auth.shippingGatewayAuthId">
+                    {{ auth.shippingGatewayAuthId }}
+                  </ion-select-option>
+                </ion-select>
+                <ion-note v-if="sharingStores.length" color="warning" data-testid="shared-auth-note">
+                  {{ translate("These credentials are also used by {stores}. Changing them affects those stores.", { stores: sharingStores.join(", ") }) }}
+                </ion-note>
                 <ion-input v-model="form.accountNumber" fill="outline" label-placement="stacked" :label="translate('FedEx account number')" data-testid="fedex-account" />
                 <ion-input v-model="form.apiKey" fill="outline" label-placement="stacked" :label="translate('API key')" :placeholder="existingAuthId ? translate('Leave blank to keep the saved key') : ''" autocomplete="off" data-testid="fedex-api-key" />
                 <ion-input v-model="form.secretKey" fill="outline" label-placement="stacked" :label="translate('Secret key')" :placeholder="existingAuthId ? translate('Leave blank to keep the saved secret') : ''" autocomplete="off" data-testid="fedex-secret" />
@@ -196,7 +204,7 @@ const STATUS: Record<FedexSetupStepStatus, { label: string; color: string }> = {
 };
 
 const {
-  isUnigateConfigured, existingAuthId, existingAuth, fedexConfigs, mappedStoreIds, stepStatuses,
+  isUnigateConfigured, fedexAuths, resolveAuth, mappedAuthId, storesSharingAuth, fedexConfigs, mappedStoreIds, stepStatuses,
   completedCount, totalStepCount, saveSetup: save, shippingCarrierConfigs,
 } = useFedexSetup();
 const { facilities } = useFacilities({ excludeVirtual: true });
@@ -217,6 +225,7 @@ const canContinue = computed(() =>
 
 const form = reactive({
   productStoreId: "",
+  gatewayAuthId: "",
   accountNumber: "",
   apiKey: "",
   secretKey: "",
@@ -225,9 +234,15 @@ const form = reactive({
 const perFacility = ref(false);
 const isSaving = ref(false);
 const labelStoreId = ref("");
+const currentAuth = computed(() => resolveAuth(form.productStoreId, form.gatewayAuthId));
+const existingAuthId = computed(() => currentAuth.value?.shippingGatewayAuthId);
+// With several FedEx credentials, a store that isn't linked yet has to say which ones it uses.
+const showAuthChoice = computed(() => fedexAuths.value.length > 1 && !mappedAuthId(form.productStoreId));
+const sharingStores = computed(() => storesSharingAuth(existingAuthId.value, form.productStoreId).map(storeName));
 // Credentials are required only the first time; blank keeps the saved ones.
 const canSave = computed(() =>
-  Boolean(form.productStoreId && form.accountNumber.trim() && (existingAuthId.value || (form.apiKey.trim() && form.secretKey.trim()))));
+  Boolean(form.productStoreId && form.accountNumber.trim()
+    && (existingAuthId.value ? true : fedexAuths.value.length <= 1 && form.apiKey.trim() && form.secretKey.trim())));
 
 const facilityName = (facilityId: string) =>
   facilities.value.find((facility: any) => facility.facilityId === facilityId)?.facilityName || facilityId;
@@ -240,8 +255,8 @@ const loadedCredentials = { apiKey: "", secretKey: "" };
 
 /** Keeps typed values the server doesn't return. */
 function loadCredentials(keepTyped = false) {
-  loadedCredentials.apiKey = existingAuth.value?.username || "";
-  loadedCredentials.secretKey = existingAuth.value?.publicKey || "";
+  loadedCredentials.apiKey = currentAuth.value?.username || "";
+  loadedCredentials.secretKey = currentAuth.value?.publicKey || "";
   form.apiKey = loadedCredentials.apiKey || (keepTyped ? form.apiKey : "");
   form.secretKey = loadedCredentials.secretKey || (keepTyped ? form.secretKey : "");
 }
@@ -249,6 +264,7 @@ function loadCredentials(keepTyped = false) {
 /** Fills the account fields from what is saved for the selected store. */
 function loadStore() {
   const saved = fedexFormFromConfigs(shippingCarrierConfigs.value, form.productStoreId);
+  form.gatewayAuthId = "";
   form.accountNumber = saved.accountNumber;
   form.facilityAccounts = saved.facilityAccounts;
   perFacility.value = saved.facilityAccounts.length > 0;
@@ -302,7 +318,7 @@ async function saveSetup() {
       apiKey: changed || !existingAuthId.value ? form.apiKey : "",
       secretKey: changed || !existingAuthId.value ? form.secretKey : "",
       facilityAccounts: form.facilityAccounts.map((row) => ({ ...row })),
-    });
+    }, form.gatewayAuthId || undefined);
     loadCredentials(true);
     labelStoreId.value = labelStoreId.value || form.productStoreId;
     commonUtil.showToast(translate("FedEx account saved"));

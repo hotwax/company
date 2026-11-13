@@ -43,6 +43,24 @@ vi.mock("@/composables/useUnigate", () => ({
 const form = { productStoreId: "STORE", accountNumber: " 123 ", apiKey: "k", secretKey: "s", facilityAccounts: [] as any[] };
 const none = { configs: [] as any[], carrierExists: true };
 
+describe("resolveFedexAuth", () => {
+  const auth = (id: string, configId = "FEDEX") => ({ shippingGatewayAuthId: id, shippingGatewayConfigId: configId } as any);
+  const config = (storeId: string, gatewayAuthId: string) => ({ carrierPartyId: "FEDEX", productStoreId: storeId, gatewayAuthId } as any);
+
+  it("keeps the credentials a store is already linked to, not the first FedEx auth", async () => {
+    const { resolveFedexAuth } = await import("@/composables/useFedexSetup");
+    const auths = [auth("A1"), auth("A2")];
+    expect(resolveFedexAuth(auths, [config("S2", "A2")], "S2")?.shippingGatewayAuthId).toBe("A2");
+  });
+
+  it("uses the only FedEx auth for an unlinked store, and nothing when there are several", async () => {
+    const { resolveFedexAuth } = await import("@/composables/useFedexSetup");
+    expect(resolveFedexAuth([auth("A1"), auth("X", "UPS")], [], "S1")?.shippingGatewayAuthId).toBe("A1");
+    expect(resolveFedexAuth([auth("A1"), auth("A2")], [], "S1")).toBeUndefined();
+    expect(resolveFedexAuth([auth("A1"), auth("A2")], [], "S1", "A2")?.shippingGatewayAuthId).toBe("A2");
+  });
+});
+
 describe("useFedexSetup", () => {
   beforeEach(() => { h.api.mockReset(); h.calls.length = 0; h.tenant = { internalId: "T1", sendUrl: "https://u" }; });
 
