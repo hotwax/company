@@ -32,7 +32,7 @@ describe("document template preview", () => {
 
     await state.preview("PACKING_SLIP", { templateName: "holiday-2026", versionName: "" }, "100051");
 
-    expect(mocks.api).toHaveBeenNthCalledWith(1, { url: "poorti/documentTemplates/PACKING_SLIP/preview", method: "post", data: { templateName: "holiday-2026", versionName: undefined, sourceId: "100051" } });
+    expect(mocks.api).toHaveBeenNthCalledWith(1, { url: "document-templates/PACKING_SLIP/preview", method: "post", data: { templateName: "holiday-2026", versionName: undefined, sourceId: "100051" } });
     expect(mocks.api).toHaveBeenNthCalledWith(2, { baseURL: "https://maarg.example.test", url: "/fop/apps/pdf/PrintPackingSlip?shipmentId=100051", method: "get", responseType: "blob" });
     expect(state.pdfUrl.value).toBe("blob:preview");
     expect(state.result.value).toMatchObject({ rendered: true, pageCount: 1, versionName: "02", errors: [], templateErrors: [{ line: 9 }] });
@@ -55,6 +55,28 @@ describe("document template preview", () => {
   });
 });
 
+describe("document template REST root", () => {
+  it("retries a 404 on the poorti/documentTemplates paths of an OMS that predates document-templates", async () => {
+    mocks.api.mockRejectedValueOnce({ response: { status: 404 } }).mockResolvedValueOnce({ data: { templateName: "x", versionName: "01" } });
+    const { scope, state } = run(() => useDocumentTemplateSave());
+
+    await state.save("PICKLIST", { templateName: "x", templateText: "<a/>" });
+
+    expect(mocks.api.mock.calls.map(([request]) => request.url)).toEqual(["document-templates/PICKLIST/templates", "poorti/documentTemplates/PICKLIST/templates"]);
+    scope.stop();
+  });
+
+  it("does not retry a refusal that is not a 404, such as a user who is not a template admin", async () => {
+    const refusal = { response: { status: 403 } };
+    mocks.api.mockRejectedValueOnce(refusal);
+    const { scope, state } = run(() => useDocumentTemplateSave());
+
+    await expect(state.save("PICKLIST", { templateName: "x", templateText: "<a/>" })).rejects.toBe(refusal);
+    expect(mocks.api).toHaveBeenCalledTimes(1);
+    scope.stop();
+  });
+});
+
 describe("document template publish", () => {
   it("sends the live version the screen showed and refreshes the stored templates", async () => {
     mocks.api.mockResolvedValueOnce({ data: { liveVersionName: "16", previousLiveVersionName: "15" } });
@@ -63,7 +85,7 @@ describe("document template publish", () => {
     const published = await state.publish("PACKING_SLIP", { templateName: "holiday-2026", versionName: "02", expectedLiveVersionName: "15" });
 
     expect(published.liveVersionName).toBe("16");
-    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PACKING_SLIP/publish", method: "post", data: { templateName: "holiday-2026", versionName: "02", expectedLiveVersionName: "15" } });
+    expect(mocks.api).toHaveBeenCalledWith({ url: "document-templates/PACKING_SLIP/publish", method: "post", data: { templateName: "holiday-2026", versionName: "02", expectedLiveVersionName: "15" } });
     expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("documentTemplate", {});
     scope.stop();
   });
@@ -225,7 +247,7 @@ describe("document template save", () => {
 
     const saved = await state.save("PICKLIST", { templateName: "pick-list-copy", templateText: "<fo:root/>", expectedVersionName: "02" });
 
-    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PICKLIST/templates", method: "post",
+    expect(mocks.api).toHaveBeenCalledWith({ url: "document-templates/PICKLIST/templates", method: "post",
       data: { templateName: "pick-list-copy", templateText: "<fo:root/>", expectedVersionName: "02" } });
     expect(saved.versionName).toBe("03");
     expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("documentTemplate", {});
@@ -252,7 +274,7 @@ describe("document template delete", () => {
 
     await state.remove("PICKLIST", "pick-list-copy", "02");
 
-    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PICKLIST/templates/pick-list-copy", method: "delete", params: { expectedVersionName: "02" } });
+    expect(mocks.api).toHaveBeenCalledWith({ url: "document-templates/PICKLIST/templates/pick-list-copy", method: "delete", params: { expectedVersionName: "02" } });
     expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("documentTemplate", {});
     expect(state.deleting.value).toBe(false);
     scope.stop();

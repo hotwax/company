@@ -1,4 +1,4 @@
-/** A named template in a document type's library (`poorti/documentTemplates`). */
+/** A named template in a document type's library. */
 export interface LibraryTemplate {
   templateName: string;
   versionName?: string;

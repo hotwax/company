@@ -12,9 +12,10 @@ import type { DocumentTemplate, DocumentTemplateVersion, PreviewOrder, PreviewRe
  *     and their libraries are the class C `documentTemplate` domain, which the screens fetch when they
  *     open and after a publish and read from the local table; version history is a server ledger, read
  *     when shown (like app version history).
- *   - Writes stay on `poorti/documentTemplates`: `templates` saves a named template as a new revision
+ *   - Writes go to the `document-templates` REST root, granted to template admins only (on an OMS that predates
+ *     it, the same paths under `poorti/documentTemplates`): `templates` saves a named template as a new revision
  *     (never the live one, so saving never changes printing) and deletes one with all its revisions; preview renders a template for one shipment
- *     or picklist, and the PDF is fetched from the print URL the server returns, through the app's session;
+ *     or picklist, and the PDF is fetched from the preview URL the server returns, through the app's session;
  *     publish and rollback go through `publish`, which checks the live version the screen showed.
  */
 
@@ -37,7 +38,20 @@ async function reconcileAfterWrite<T>(pk: Record<string, unknown>, result: T): P
 
 /** The committed write's result from a `CacheReconciliationError` thrown after it. */
 export const committedResult = <T>(error: unknown): T | undefined => (error as { result?: T })?.result;
-const templatesUrl = (documentTypeId: string) => `poorti/documentTemplates/${encodeURIComponent(documentTypeId)}`;
+/**
+ * A write to the document template REST root, `document-templates/{documentTypeId}{path}`. An OMS that predates that
+ * root (hotwax-poorti#484) has the same paths under `poorti/documentTemplates`, so a 404 is retried there; any other
+ * refusal, such as a user who is not a template admin, is not.
+ */
+async function templatesApi(documentTypeId: string, path: string, config: Record<string, unknown>): Promise<any> {
+  const url = (root: string) => `${root}/${encodeURIComponent(documentTypeId)}${path}`;
+  try {
+    return await api({ ...config, url: url("document-templates") });
+  } catch(error: any) {
+    if(error?.response?.status !== 404 && error?.status !== 404) {throw error;}
+    return api({ ...config, url: url("poorti/documentTemplates") });
+  }
+}
 const VERSIONS_QUERY = `query DocumentTemplateVersions($documentTypeId: ID!, $templateName: String) {
   documentTemplateVersions(documentTypeId: $documentTypeId, templateName: $templateName) {
     versionName previousVersionName versionDate userId isCurrent
@@ -233,7 +247,7 @@ export function useDocumentTemplateSave() {
   async function save(documentTypeId: string, payload: { templateName: string; templateText?: string; copyFromLive?: boolean; expectedVersionName?: string }) {
     saving.value = true;
     try {
-      const resp: any = await api({ url: `${templatesUrl(documentTypeId)}/templates`, method: "post", data: payload });
+      const resp: any = await templatesApi(documentTypeId, "/templates", { method: "post", data: payload });
       if(commonUtil.hasError(resp)) {throw resp;}
       // The library list shows each template's latest revision.
       return await reconcileAfterWrite({ documentTypeId, templateName: payload.templateName },
@@ -258,8 +272,7 @@ export function useDocumentTemplateDelete() {
   async function remove(documentTypeId: string, templateName: string, expectedVersionName: string) {
     deleting.value = true;
     try {
-      const resp: any = await api({
-        url: `${templatesUrl(documentTypeId)}/templates/${encodeURIComponent(templateName)}`,
+      const resp: any = await templatesApi(documentTypeId, `/templates/${encodeURIComponent(templateName)}`, {
         method: "delete",
         params: { expectedVersionName },
       });
@@ -546,8 +559,7 @@ export function useDocumentTemplatePreview() {
     const current = request;
     loading.value = true;
     try {
-      const resp: any = await api({
-        url: `${templatesUrl(documentTypeId)}/preview`,
+      const resp: any = await templatesApi(documentTypeId, "/preview", {
         method: "post",
         data: { templateName: selection.templateName || undefined, versionName: selection.versionName || undefined, sourceId },
       });
@@ -590,7 +602,7 @@ export function useDocumentTemplatePublish() {
     try {
       let resp: any;
       try {
-        resp = await api({ url: `${templatesUrl(documentTypeId)}/publish`, method: "post", data: payload });
+        resp = await templatesApi(documentTypeId, "/publish", { method: "post", data: payload });
         if(commonUtil.hasError(resp)) {throw resp;}
       } catch(refusal) {
         // Someone else's publish may have made ours stale: show the server's state, but report the refusal.
