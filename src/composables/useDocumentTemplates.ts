@@ -56,9 +56,10 @@ async function templatesApi(documentTypeId: string, path: string, config: Record
 const statusOf = (error: any): number | undefined => error?.response?.status ?? error?.status;
 
 /**
- * Whether this user may save, preview, publish and delete templates. The OMS answers it: `document-templates/access`
- * runs only for the user groups it grants artifact group DOCUMENT_TEMPLATE_EDIT and refuses everyone else with a 403.
- * An OMS that predates the route answers 404; there the DOCUMENT_TEMPLATE_ADMIN permission still decides
+ * Whether this user may save, preview, publish and delete templates. The OMS answers it: a GET on the
+ * `document-templates` root succeeds only for the user groups it grants artifact group DOCUMENT_TEMPLATE_EDIT and
+ * refuses everyone else with a 403. An OMS that predates the root answers 404; there the DOCUMENT_TEMPLATE_ADMIN
+ * permission still decides
  * (`legacyCanEdit`). Until the answer arrives, and after any other failure, editing stays off.
  */
 export function useDocumentTemplateAccess(legacyCanEdit: () => boolean) {
@@ -67,8 +68,8 @@ export function useDocumentTemplateAccess(legacyCanEdit: () => boolean) {
 
   async function check(): Promise<boolean> {
     try {
-      const resp: any = await api({ url: "document-templates/access", method: "get" });
-      canEdit.value = !commonUtil.hasError(resp) && resp?.data?.canEdit === true;
+      const resp: any = await api({ url: "document-templates", method: "get" });
+      canEdit.value = !commonUtil.hasError(resp);
     } catch(error: any) {
       const status = statusOf(error);
       if(status === 404) {

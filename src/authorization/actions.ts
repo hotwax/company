@@ -32,6 +32,6 @@ export default {
   APP_CARRIERS_VIEW: "CARRIER_SETUP_VIEW",
   APP_NOTIFICATIONS_VIEW: "COMMON_ADMIN",
   // Template editing follows the OMS's artifact group DOCUMENT_TEMPLATE_EDIT (useDocumentTemplateAccess); this permission
-  // decides only on an OMS that predates document-templates/access.
+  // decides only on an OMS that predates the document-templates REST root.
   APP_DOCUMENT_TEMPLATES_ADMIN: "DOCUMENT_TEMPLATE_ADMIN"
 } as const satisfies Record<string, string>

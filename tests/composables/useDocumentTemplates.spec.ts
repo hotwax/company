@@ -78,13 +78,13 @@ describe("document template REST root", () => {
 });
 
 describe("document template access", () => {
-  it("turns editing on when the OMS answers the access route", async () => {
-    mocks.api.mockResolvedValueOnce({ data: { canEdit: true } });
+  it("turns editing on when the OMS answers a GET on the REST root", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { documentTypes: [{ documentTypeId: "PICKLIST" }] } });
     const legacy = vi.fn(() => false);
     const { scope, state } = run(() => useDocumentTemplateAccess(legacy));
 
     expect(await state.check()).toBe(true);
-    expect(mocks.api).toHaveBeenCalledWith({ url: "document-templates/access", method: "get" });
+    expect(mocks.api).toHaveBeenCalledWith({ url: "document-templates", method: "get" });
     expect(state.canEdit.value).toBe(true);
     expect(legacy).not.toHaveBeenCalled();
     scope.stop();
@@ -101,7 +101,7 @@ describe("document template access", () => {
     scope.stop();
   });
 
-  it("falls back to the DOCUMENT_TEMPLATE_ADMIN permission on an OMS without the access route", async () => {
+  it("falls back to the DOCUMENT_TEMPLATE_ADMIN permission on an OMS without the REST root", async () => {
     mocks.api.mockRejectedValueOnce({ response: { status: 404 } });
     const { scope, state } = run(() => useDocumentTemplateAccess(() => true));
 
