@@ -238,6 +238,7 @@ export async function fetchOrdersWithoutShipment(params: {
     viewSize: params.pageSize ?? 20,
     sort: "orderDate asc",
     filters: {
+      "-shipmentMethodTypeId": { value: ["STOREPICKUP", "POS_COMPLETED"] },
       orderStatusId: { value: "ORDER_APPROVED" },
       orderTypeId: { value: "SALES_ORDER" },
       productStoreId: { value: params.productStoreId },

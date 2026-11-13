@@ -266,6 +266,7 @@ describe("useFedexSetup", () => {
       { doclist: { docs: [{ orderId: "O9", shipGroupSeqId: "00001" }] } },
     ] } } } });
     const unshipped = await fetchOrdersWithoutShipment({ productStoreId: "STORE" });
+    expect(h.api.mock.calls[1][0].solr.filters["-shipmentMethodTypeId"].value).toEqual(["STOREPICKUP", "POS_COMPLETED"]);
     expect(unshipped).toMatchObject([{ orderId: "O9", shipGroupSeqId: "00001", hasShipment: false, shipmentId: "" }]);
   });
 });
