@@ -204,11 +204,11 @@ describe("useFedexSetup", () => {
   it("uses the shipment an already picked order has instead of picking it again", async () => {
     const { generateSampleLabel } = await import("@/composables/useFedexSetup");
     h.api
-      .mockResolvedValueOnce({ data: { shipments: [{ shipmentId: "S7", statusId: "SHIPMENT_APPROVED" }] } })
+      .mockResolvedValueOnce({ data: { shipments: [{ shipmentId: "S7", statusId: "SHIPMENT_APPROVED", shipGroupSeqId: "00001" }] } })
       .mockResolvedValueOnce(seg({ carrierPartyId: "FEDEX", shipmentMethodTypeId: "FEDEX_GROUND" }))
       .mockResolvedValueOnce({ data: {} })
       .mockResolvedValueOnce(seg({ carrierPartyId: "FEDEX", trackingCode: "T", labelImageUrl: "u" }));
-    await generateSampleLabel({ shipmentId: "", orderId: "O7", facilityId: "F1", itemCount: 1, hasShipment: false, items: [{} as any] }, methods);
+    await generateSampleLabel({ shipmentId: "", orderId: "O7", facilityId: "F1", itemCount: 1, hasShipment: false, shipGroupSeqId: "00001", items: [{} as any] }, methods);
     expect(urls()).not.toContain("/poorti/createOrderFulfillmentWave");
     expect(urls()).toContain("/poorti/shipments/S7/pack");
   });
@@ -231,6 +231,31 @@ describe("useFedexSetup", () => {
     await expect(generateSampleLabel({
       shipmentId: "", orderId: "O8", itemCount: 3, hasShipment: false, hasPartialItems: true, items: [{} as any],
     }, methods)).rejects.toThrow(/too many items/);
+    expect(urls()).not.toContain("/poorti/createOrderFulfillmentWave");
+  });
+
+  it("never reuses a shipment of another ship group or one it can't match", async () => {
+    const { generateSampleLabel } = await import("@/composables/useFedexSetup");
+    const items = [{ orderId: "O7", orderItemSeqId: "00101", shipGroupSeqId: "00001", productId: "P", quantity: 1 }];
+    const unpicked = { shipmentId: "", orderId: "O7", itemCount: 1, hasShipment: false, shipGroupSeqId: "00001", items };
+
+    // Another ship group's shipment: picks this group instead.
+    h.api.mockResolvedValueOnce({ data: { shipments: [{ shipmentId: "S2", statusId: "SHIPMENT_APPROVED", shipGroupSeqId: "00002" }] } })
+      .mockResolvedValueOnce({ data: { shipmentIds: [] } });
+    await expect(generateSampleLabel(unpicked, methods)).rejects.toThrow(/no shipment came back/);
+    expect(urls()).toContain("/poorti/createOrderFulfillmentWave");
+
+    // No group and no items to compare: refuses instead of guessing.
+    h.api.mockReset().mockResolvedValueOnce({ data: { shipments: [{ shipmentId: "S3", statusId: "SHIPMENT_APPROVED" }] } });
+    await expect(generateSampleLabel(unpicked, methods)).rejects.toThrow(/can't be matched/);
+    expect(urls()).toEqual(["/poorti/shipments"]);
+
+    // Matched through its items.
+    h.api.mockReset()
+      .mockResolvedValueOnce({ data: { shipments: [{ shipmentId: "S4", statusId: "SHIPMENT_PACKED", items: [{ orderItemSeqId: "00101" }] }] } })
+      .mockResolvedValueOnce(seg({ carrierPartyId: "FEDEX", shipmentMethodTypeId: "FEDEX_GROUND" }))
+      .mockResolvedValueOnce(seg({ carrierPartyId: "FEDEX", trackingCode: "T", labelImageUrl: "u" }));
+    await generateSampleLabel(unpicked, methods);
     expect(urls()).not.toContain("/poorti/createOrderFulfillmentWave");
   });
 

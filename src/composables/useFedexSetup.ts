@@ -344,6 +344,17 @@ async function ensureFedexCarrier(order: SampleLabelOrder, fedexMethods: any[]):
 }
 
 /** The search index lags, so an order may already be picked; use its shipment and pick only if none exists. */
+/** True or false when the shipment reports its ship group (directly or through its items); null when it doesn't. */
+function belongsToShipGroup(shipment: any, order: SampleLabelOrder): boolean | null {
+  if(shipment.shipGroupSeqId) {return shipment.shipGroupSeqId === order.shipGroupSeqId;}
+
+  const seqIds = (Array.isArray(shipment.items) ? shipment.items : []).map((item: any) => item.orderItemSeqId).filter(Boolean);
+  if(!seqIds.length) {return null;}
+
+  const orderSeqIds = new Set((order.items ?? []).map((item) => item.orderItemSeqId));
+  return seqIds.every((seqId: string) => orderSeqIds.has(seqId));
+}
+
 async function withShipment(order: SampleLabelOrder): Promise<SampleLabelOrder> {
   const response: any = await api({
     url: "/poorti/shipments",
@@ -352,10 +363,14 @@ async function withShipment(order: SampleLabelOrder): Promise<SampleLabelOrder> 
   });
   if(commonUtil.hasError(response)) {throw failure(response, translate("Failed to check the order's shipments."));}
 
-  const existing = (response.data?.shipments ?? []).filter((shipment: any) =>
-    shipment.statusId !== "SHIPMENT_CANCELLED" &&
-    (!order.shipGroupSeqId || !shipment.shipGroupSeqId || shipment.shipGroupSeqId === order.shipGroupSeqId));
-  const found = existing.find((shipment: any) => shipment.statusId === "SHIPMENT_APPROVED") ?? existing[0];
+  const active: any[] = (response.data?.shipments ?? []).filter((shipment: any) => shipment.statusId !== "SHIPMENT_CANCELLED");
+  const matches = active.filter((shipment) => belongsToShipGroup(shipment, order) === true);
+  // A shipment that can't be tied to a ship group may belong to another one, so it is never reused.
+  if(!matches.length && active.some((shipment) => belongsToShipGroup(shipment, order) === null)) {
+    throw new Error(translate("This order already has a shipment, but it can't be matched to this ship group. Continue it in Fulfillment."));
+  }
+
+  const found = matches.find((shipment) => shipment.statusId === "SHIPMENT_APPROVED") ?? matches[0];
   if(found) {return { ...order, shipmentId: found.shipmentId, statusId: found.statusId, hasShipment: true };}
 
   return { ...order, shipmentId: await pickOrder(order) };
