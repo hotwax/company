@@ -2,7 +2,6 @@ import { computed, ref } from "vue";
 import { api, commonUtil, translate, useSolrSearch } from "@common";
 import { getResponseErrorMessage } from "@/utils";
 import type { SampleLabel } from "@/utils/fedexLabel";
-import { refreshAfterMutation } from "@/db/appDbSync";
 import { createCarrier, useCarriers } from "./useCarriers";
 import { onSessionCleared } from "./sessionScope";
 import { useProductStoreShippingMethodsLive } from "./useProductStores";
@@ -79,10 +78,16 @@ export function fedexFormFromConfigs(configs: ShippingCarrierConfig[], productSt
   };
 }
 
-/** The auth a store's FedEx config already points at, if any. */
-export function mappedFedexAuthId(configs: ShippingCarrierConfig[], productStoreId: string): string | undefined {
-  return configs.find((config) =>
+/** The auth a store's FedEx config already points at, if it still exists. */
+export function mappedFedexAuthId(
+  configs: ShippingCarrierConfig[],
+  productStoreId: string,
+  auths: ShippingGatewayAuth[],
+): string | undefined {
+  const id = configs.find((config) =>
     config.carrierPartyId === FEDEX_CARRIER_PARTY_ID && config.productStoreId === productStoreId && config.gatewayAuthId)?.gatewayAuthId;
+  // A link to credentials that no longer exist doesn't count, so the store can pick again.
+  return auths.some((row) => row.shippingGatewayAuthId === id) ? id : undefined;
 }
 
 /**
@@ -95,7 +100,7 @@ export function resolveFedexAuth(
   productStoreId: string,
   chosenAuthId?: string,
 ): ShippingGatewayAuth | undefined {
-  const mapped = mappedFedexAuthId(configs, productStoreId);
+  const mapped = mappedFedexAuthId(configs, productStoreId, auths);
   if(mapped) {return auths.find((row) => row.shippingGatewayAuthId === mapped);}
 
   const fedex = auths.filter((row) => row.shippingGatewayConfigId === FEDEX_GATEWAY_CONFIG_ID);
@@ -140,7 +145,6 @@ export async function saveFedexSetup(
 
   if(!current.carrierExists) {
     await createCarrier({ partyId: FEDEX_CARRIER_PARTY_ID, groupName: "FedEx" });
-    await refreshAfterMutation("carrier", { partyId: FEDEX_CARRIER_PARTY_ID });
   }
 
   const authFields = {
@@ -368,7 +372,6 @@ async function ensureFedexCarrier(order: SampleLabelOrder, fedexMethods: any[]):
   if(commonUtil.hasError(updated)) {throw failure(updated, translate("Failed to set the order's carrier to FedEx."));}
 }
 
-/** The search index lags, so an order may already be picked; use its shipment and pick only if none exists. */
 /** True or false when the shipment reports its ship group (directly or through its items); null when it doesn't. */
 function belongsToShipGroup(shipment: any, order: SampleLabelOrder): boolean | null {
   if(shipment.shipGroupSeqId) {return shipment.shipGroupSeqId === order.shipGroupSeqId;}
@@ -380,6 +383,7 @@ function belongsToShipGroup(shipment: any, order: SampleLabelOrder): boolean | n
   return seqIds.every((seqId: string) => orderSeqIds.has(seqId));
 }
 
+/** The search index lags, so an order may already be picked; use its shipment and pick only if none exists. */
 async function withShipment(order: SampleLabelOrder): Promise<SampleLabelOrder> {
   const response: any = await api({
     url: "/poorti/shipments",
@@ -434,7 +438,8 @@ export async function generateSampleLabel(source: SampleLabelOrder, fedexMethods
   await ensureFedexCarrier(order, fedexMethods);
 
   // An already packed shipment only needs its label retried.
-  const packed: any = order.statusId && order.statusId !== "SHIPMENT_APPROVED" ? {} : await api({
+  const alreadyPacked = order.statusId === "SHIPMENT_PACKED" || order.statusId === "SHIPMENT_SHIPPED";
+  const packed: any = alreadyPacked ? {} : await api({
     url: `/poorti/shipments/${encodeURIComponent(order.shipmentId)}/pack`,
     method: "POST",
     data: {
@@ -500,7 +505,7 @@ onSessionCleared(() => {
 
 export function useFedexSetup() {
   const { carriers, hydrated } = useCarriers();
-  const { isConfigured, shippingGatewayAuths, shippingCarrierConfigs, status } = useUnigate();
+  const { isConfigured, shippingGatewayAuths, shippingCarrierConfigs } = useUnigate();
   const { fetchShippingMethodsFor } = useProductStoreShippingMethodsLive();
 
   const carrier = computed(() => carriers.value.find((row: any) => row.partyId === FEDEX_CARRIER_PARTY_ID));
@@ -532,14 +537,12 @@ export function useFedexSetup() {
     FEDEX_SETUP_SETUP_STEP_IDS.filter((id) => stepStatuses.value[id] === "complete").length);
 
   return {
-    carriersHydrated: hydrated,
-    // Statuses are only reliable once the Unigate reads have settled.
-    loaded: computed(() => status.value.config !== "pending" && status.value.auths !== "pending" && status.value.carrierConfigs !== "pending"),
     isUnigateConfigured: isConfigured,
     fedexAuths,
     resolveAuth: (productStoreId: string, chosenAuthId?: string) =>
       resolveFedexAuth(shippingGatewayAuths.value, shippingCarrierConfigs.value, productStoreId, chosenAuthId),
-    mappedAuthId: (productStoreId: string) => mappedFedexAuthId(shippingCarrierConfigs.value, productStoreId),
+    mappedAuthId: (productStoreId: string) =>
+      mappedFedexAuthId(shippingCarrierConfigs.value, productStoreId, shippingGatewayAuths.value),
     /** Other stores that use the same credentials, which a change to them affects. */
     storesSharingAuth: (authId: string | undefined, productStoreId: string) => authId
       ? [...new Set(fedexConfigs.value.filter((config) => config.gatewayAuthId === authId && config.productStoreId !== productStoreId)
@@ -547,7 +550,6 @@ export function useFedexSetup() {
       : [],
     fedexConfigs,
     mappedStoreIds,
-    carrier,
     stepStatuses,
     completedCount,
     totalStepCount: FEDEX_SETUP_SETUP_STEP_IDS.length,

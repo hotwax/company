@@ -4568,7 +4568,6 @@
   "FedEx is connected.": "FedEx is connected.",
   "FedEx labels are requested through Unigate, so it must be connected first.": "FedEx labels are requested through Unigate, so it must be connected first.",
   "Link a product store to FedEx first, then come back to test it.": "Link a product store to FedEx first, then come back to test it.",
-  "Packing an order asks FedEx for a real label, moves the order to packed and sets its carrier to FedEx. Pick a test order.": "Packing an order asks FedEx for a real label, moves the order to packed and sets its carrier to FedEx. Pick a test order.",
   "Prove the connection by generating a real label.": "Prove the connection by generating a real label.",
   "Review the outcome of every step.": "Review the outcome of every step.",
   "Unigate connection": "Unigate connection",
@@ -4615,5 +4614,7 @@
   "This order already has a shipment, but it can't be matched to this ship group. Continue it in Fulfillment.": "This order already has a shipment, but it can't be matched to this ship group. Continue it in Fulfillment.",
   "Choose which FedEx credentials this store uses.": "Choose which FedEx credentials this store uses.",
   "FedEx credentials": "FedEx credentials",
-  "These credentials are also used by {stores}. Changing them affects those stores.": "These credentials are also used by {stores}. Changing them affects those stores."
+  "These credentials are also used by {stores}. Changing them affects those stores.": "These credentials are also used by {stores}. Changing them affects those stores.",
+  "FedEx setup progress": "FedEx setup progress",
+  "Generating a label sets the order's carrier to FedEx, then picks and packs it. Pick a test order.": "Generating a label sets the order's carrier to FedEx, then picks and packs it. Pick a test order."
 }

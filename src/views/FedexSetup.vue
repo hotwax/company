@@ -10,7 +10,7 @@
 
     <ion-content>
       <main class="onboarding-layout">
-        <aside class="desktop-steps" aria-label="FedEx setup progress">
+        <aside class="desktop-steps" :aria-label="translate('FedEx setup progress')">
           <ion-list lines="none">
             <ion-list-header>
               <ion-label>
@@ -30,7 +30,7 @@
           <ion-item class="mobile-step-picker" lines="none">
             <ion-select :label="translate('Setup step')" label-placement="stacked" interface="popover" :value="currentStepId" @ion-change="selectStep(String($event.detail.value || ''))">
               <ion-select-option v-for="(item, index) in FEDEX_SETUP_STEPS" :key="item.id" :value="item.id">
-                {{ index + 1 }}. {{ translate(item.label) }} — {{ translate(STATUS[stepStatuses[item.id]].label) }}
+                {{ index + 1 }}. {{ translate(item.label) }} — {{ translate(FEDEX_SETUP_STATUS[stepStatuses[item.id]].label) }}
               </ion-select-option>
             </ion-select>
             <ion-note slot="end" class="mobile-progress-count" role="status">{{ completedCount }} / {{ totalStepCount }}</ion-note>
@@ -43,8 +43,8 @@
                   <ion-card-title>{{ translate(currentStep.label) }}</ion-card-title>
                   <ion-card-subtitle>{{ translate(currentStep.summary) }}</ion-card-subtitle>
                 </div>
-                <ion-badge :color="STATUS[stepStatuses[currentStepId]].color">
-                  {{ translate(STATUS[stepStatuses[currentStepId]].label) }}
+                <ion-badge :color="FEDEX_SETUP_STATUS[stepStatuses[currentStepId]].color">
+                  {{ translate(FEDEX_SETUP_STATUS[stepStatuses[currentStepId]].label) }}
                 </ion-badge>
               </div>
             </ion-card-header>
@@ -139,7 +139,7 @@
             <ion-card-content v-else-if="currentStepId === 'label'" class="form-stack">
               <ion-note v-if="!mappedStoreIds.length">{{ translate("Link a product store to FedEx first, then come back to test it.") }}</ion-note>
               <template v-else>
-                <ion-note>{{ translate("Packing an order asks FedEx for a real label, moves the order to packed and sets its carrier to FedEx. Pick a test order.") }}</ion-note>
+                <ion-note>{{ translate("Generating a label sets the order's carrier to FedEx, then picks and packs it. Pick a test order.") }}</ion-note>
                 <ion-select v-model="labelStoreId" fill="outline" label-placement="stacked" interface="popover" :label="translate('Product store')" data-testid="fedex-label-store">
                   <ion-select-option v-for="storeId in mappedStoreIds" :key="storeId" :value="storeId">{{ storeName(storeId) }}</ion-select-option>
                 </ion-select>
@@ -156,7 +156,7 @@
               <ion-list lines="full">
                 <ion-item v-for="item in reviewSteps" :key="item.id" button :detail="false" @click="selectStep(item.id)">
                   <ion-label>{{ translate(item.label) }}<p>{{ translate(item.summary) }}</p></ion-label>
-                  <ion-badge slot="end" :color="STATUS[stepStatuses[item.id]].color">{{ translate(STATUS[stepStatuses[item.id]].label) }}</ion-badge>
+                  <ion-badge slot="end" :color="FEDEX_SETUP_STATUS[stepStatuses[item.id]].color">{{ translate(FEDEX_SETUP_STATUS[stepStatuses[item.id]].label) }}</ion-badge>
                 </ion-item>
               </ion-list>
               <ion-note :color="isReady ? 'success' : 'warning'">
@@ -187,8 +187,8 @@ import { addOutline, documentTextOutline, openOutline, trashOutline } from "ioni
 import { commonUtil, logger, translate } from "@common";
 import router from "@/router";
 import {
-  FEDEX_SETUP_REQUIRED_STEP_IDS, FEDEX_SETUP_STEPS,
-  type FedexSetupStepId, type FedexSetupStepStatus,
+  FEDEX_SETUP_REQUIRED_STEP_IDS, FEDEX_SETUP_STATUS, FEDEX_SETUP_STEPS,
+  type FedexSetupStepId,
 } from "@/config/fedexSetup";
 import { FEDEX_REGISTRATION_URL, fedexFormFromConfigs, useFedexSetup } from "@/composables/useFedexSetup";
 import { useFacilities } from "@/composables/useFacilities";
@@ -197,13 +197,6 @@ import { useUnigate } from "@/composables/useUnigate";
 import FedexStepList from "@/components/fedex/FedexStepList.vue";
 import UnigateConnectionModal from "@/components/unigate/UnigateConnectionModal.vue";
 import SampleLabelOrdersModal from "@/components/fedex/SampleLabelOrdersModal.vue";
-
-const STATUS: Record<FedexSetupStepStatus, { label: string; color: string }> = {
-  "not-started": { label: "Not started", color: "medium" },
-  "in-progress": { label: "In progress", color: "primary" },
-  complete: { label: "Complete", color: "success" },
-  attention: { label: "Needs attention", color: "warning" },
-};
 
 const {
   isUnigateConfigured, fedexAuths, resolveAuth, mappedAuthId, storesSharingAuth, fedexConfigs, mappedStoreIds, stepStatuses,

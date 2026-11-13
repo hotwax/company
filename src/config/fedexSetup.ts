@@ -26,3 +26,11 @@ export const FEDEX_SETUP_STEP_IDS = FEDEX_SETUP_STEPS.map((step) => step.id)
 export const FEDEX_SETUP_SETUP_STEP_IDS = FEDEX_SETUP_STEP_IDS.filter((id) => id !== "readiness")
 /** The sample label proves the connection but is not required to finish. */
 export const FEDEX_SETUP_REQUIRED_STEP_IDS = FEDEX_SETUP_SETUP_STEP_IDS.filter((id) => id !== "label")
+
+/** Label and badge colour for each status. */
+export const FEDEX_SETUP_STATUS: Record<FedexSetupStepStatus, { label: string, color: string }> = {
+  "not-started": { label: "Not started", color: "medium" },
+  "in-progress": { label: "In progress", color: "primary" },
+  complete: { label: "Complete", color: "success" },
+  attention: { label: "Needs attention", color: "warning" }
+}

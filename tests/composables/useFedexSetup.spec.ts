@@ -53,6 +53,13 @@ describe("resolveFedexAuth", () => {
     expect(resolveFedexAuth(auths, [config("S2", "A2")], "S2")?.shippingGatewayAuthId).toBe("A2");
   });
 
+  it("lets a store whose link points at a deleted auth choose again", async () => {
+    const { resolveFedexAuth, mappedFedexAuthId } = await import("@/composables/useFedexSetup");
+    const auths = [auth("A1"), auth("A2")];
+    expect(mappedFedexAuthId([config("S1", "GONE")], "S1", auths)).toBeUndefined();
+    expect(resolveFedexAuth(auths, [config("S1", "GONE")], "S1", "A2")?.shippingGatewayAuthId).toBe("A2");
+  });
+
   it("uses the only FedEx auth for an unlinked store, and nothing when there are several", async () => {
     const { resolveFedexAuth } = await import("@/composables/useFedexSetup");
     expect(resolveFedexAuth([auth("A1"), auth("X", "UPS")], [], "S1")?.shippingGatewayAuthId).toBe("A1");
@@ -67,7 +74,7 @@ describe("useFedexSetup", () => {
   it("creates the carrier, the auth (key as username, secret as public key) and the store link in order", async () => {
     const { saveFedexSetup } = await import("@/composables/useFedexSetup");
     await saveFedexSetup(form, { configs: [], carrierExists: false });
-    expect(h.calls).toEqual(["carrier", "refresh", "auth:FEDEX:k:s", "config:new:-:SERVER_ID:123"]);
+    expect(h.calls).toEqual(["carrier", "auth:FEDEX:k:s", "config:new:-:SERVER_ID:123"]);
   });
 
   it("updates existing records in place and keeps the saved credentials when the fields are blank", async () => {

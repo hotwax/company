@@ -17,9 +17,9 @@
         <ion-note slot="start" aria-hidden="true">{{ ordinal(step.id) }}</ion-note>
         <ion-label>
           {{ translate(step.label) }}
-          <p>{{ translate(STATUS[stepStatuses[step.id]].label) }}</p>
+          <p>{{ translate(FEDEX_SETUP_STATUS[stepStatuses[step.id]].label) }}</p>
         </ion-label>
-        <ion-icon slot="end" aria-hidden="true" :color="STATUS[stepStatuses[step.id]].color" :icon="STATUS[stepStatuses[step.id]].icon" />
+        <ion-icon slot="end" aria-hidden="true" :color="FEDEX_SETUP_STATUS[stepStatuses[step.id]].color" :icon="ICONS[stepStatuses[step.id]]" />
       </ion-item>
     </template>
   </ion-list>
@@ -31,6 +31,7 @@ import { IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonNote } from "@io
 import { alertCircleOutline, checkmarkCircleOutline, ellipseOutline, timeOutline } from "ionicons/icons";
 import {
   FEDEX_SETUP_GROUPS,
+  FEDEX_SETUP_STATUS,
   FEDEX_SETUP_STEPS,
   type FedexSetupStepId,
   type FedexSetupStepStatus,
@@ -45,12 +46,11 @@ defineEmits<{
   (event: "select-step", stepId: FedexSetupStepId): void
 }>();
 
-// The label and colour for each status.
-const STATUS = {
-  "not-started": { label: "Not started", color: "medium", icon: ellipseOutline },
-  "in-progress": { label: "In progress", color: "primary", icon: timeOutline },
-  complete: { label: "Complete", color: "success", icon: checkmarkCircleOutline },
-  attention: { label: "Needs attention", color: "warning", icon: alertCircleOutline },
+const ICONS: Record<FedexSetupStepStatus, string> = {
+  "not-started": ellipseOutline,
+  "in-progress": timeOutline,
+  complete: checkmarkCircleOutline,
+  attention: alertCircleOutline,
 };
 
 const stepsByGroup = (groupId: string) => FEDEX_SETUP_STEPS.filter((step) => step.group === groupId);
