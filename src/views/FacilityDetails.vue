@@ -2051,7 +2051,7 @@ async function generateLatLong() {
       geoPoint.value.latitude = result.latitude;
       geoPoint.value.longitude = result.longitude;
     } else {
-      throw resp;
+      commonUtil.showToast(translate("Unable to find the latitude and longitude for the entered zip code."));
     }
   } catch (err) {
     const serverError = commonUtil.getErrorMessage(err);
