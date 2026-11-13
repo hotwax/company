@@ -4595,5 +4595,19 @@
   "Missing": "Missing",
   "None": "None",
   "Save credentials": "Save credentials",
-  "Update credentials": "Update credentials"
+  "Update credentials": "Update credentials",
+  "Product store and account number are required.": "Product store and account number are required.",
+  "API key and secret are required.": "API key and secret are required.",
+  "Enter both the API key and the secret, or leave both blank to keep the saved ones.": "Enter both the API key and the secret, or leave both blank to keep the saved ones.",
+  "Each facility needs both a facility and an account number.": "Each facility needs both a facility and an account number.",
+  "A facility can only have one FedEx account.": "A facility can only have one FedEx account.",
+  "This shipment has no route segment to update, so its carrier can't be set to FedEx.": "This shipment has no route segment to update, so its carrier can't be set to FedEx.",
+  "This order has no items to pick.": "This order has no items to pick.",
+  "The order was picked but no shipment came back.": "The order was picked but no shipment came back.",
+  "Carriers are still loading. Try again in a moment.": "Carriers are still loading. Try again in a moment.",
+  "Failed to set the order's carrier to FedEx.": "Failed to set the order's carrier to FedEx.",
+  "Failed to check the order's shipments.": "Failed to check the order's shipments.",
+  "Failed to pick the order.": "Failed to pick the order.",
+  "FedEx did not return a label for this order. Check the credentials and account number.": "FedEx did not return a label for this order. Check the credentials and account number.",
+  "The label came from {carrier}, not FedEx.": "The label came from {carrier}, not FedEx."
 }

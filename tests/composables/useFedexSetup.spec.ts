@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@common", () => ({
   api: (...a: any[]) => h.api(...a),
+  translate: (key: string, values: Record<string, string> = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name]),
   commonUtil: { hasError: (r: any) => Boolean(r?.error) },
   logger: { error: vi.fn() },
   useSolrSearch: () => ({ prepareSolrQuery: (q: any) => q, runSolrQuery: (q: any) => h.api({ solr: q }) }),

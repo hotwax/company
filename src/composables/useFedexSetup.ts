@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import { api, commonUtil, useSolrSearch } from "@common";
+import { api, commonUtil, translate, useSolrSearch } from "@common";
 import { getResponseErrorMessage } from "@/utils";
 import type { SampleLabel } from "@/utils/fedexLabel";
 import { refreshAfterMutation } from "@/db/appDbSync";
@@ -91,24 +91,24 @@ export async function saveFedexSetup(
     .filter((row) => row.facilityId || row.accountNumber);
 
   if(!form.productStoreId || !form.accountNumber.trim()) {
-    throw new Error("Product store and account number are required.");
+    throw new Error(translate("Product store and account number are required."));
   }
   if(!current.authId && (!apiKey || !secretKey)) {
-    throw new Error("API key and secret are required.");
+    throw new Error(translate("API key and secret are required."));
   }
   if(Boolean(apiKey) !== Boolean(secretKey)) {
-    throw new Error("Enter both the API key and the secret, or leave both blank to keep the saved ones.");
+    throw new Error(translate("Enter both the API key and the secret, or leave both blank to keep the saved ones."));
   }
   if(facilityAccounts.some((row) => !row.facilityId || !row.accountNumber)) {
-    throw new Error("Each facility needs both a facility and an account number.");
+    throw new Error(translate("Each facility needs both a facility and an account number."));
   }
   if(new Set(facilityAccounts.map((row) => row.facilityId)).size !== facilityAccounts.length) {
-    throw new Error("A facility can only have one FedEx account.");
+    throw new Error(translate("A facility can only have one FedEx account."));
   }
 
   const tenant = await fetchUnigateRemoteConfig(true);
   if(!tenant?.internalId || !tenant?.sendUrl) {
-    throw new Error("Configure the Unigate connection before setting up FedEx.");
+    throw new Error(translate("Configure the Unigate connection before setting up FedEx."));
   }
 
   if(!current.carrierExists) {
@@ -201,7 +201,7 @@ export async function fetchSampleLabelOrders(params: {
   if(params.queryString?.trim()) {query.keyword = params.queryString.trim();}
 
   const response: any = await api({ url: "/poorti/shipments", method: "GET", params: query });
-  if(commonUtil.hasError(response)) {throw failure(response, "Failed to load orders.");}
+  if(commonUtil.hasError(response)) {throw failure(response, translate("Failed to load orders."));}
 
   const loaded: any[] = response.data?.shipments ?? [];
   const total = Number(response.data?.shipmentCount ?? loaded.length);
@@ -252,7 +252,7 @@ export async function fetchOrdersWithoutShipment(params: {
   } as any);
 
   const response: any = await solr.runSolrQuery(payload);
-  if(commonUtil.hasError(response)) {throw failure(response, "Failed to load orders.");}
+  if(commonUtil.hasError(response)) {throw failure(response, translate("Failed to load orders."));}
 
   const groups: any[] = response.data?.grouped?.orderItemShipGroupIdentifier?.groups ?? [];
   return groups.map((group) => {
@@ -284,7 +284,7 @@ async function readSegments(shipmentId: string): Promise<any[]> {
     method: "GET",
     params: { shipmentId, pageSize: 10 },
   });
-  if(commonUtil.hasError(response)) {throw failure(response, "Failed to read the shipping label.");}
+  if(commonUtil.hasError(response)) {throw failure(response, translate("Failed to read the shipping label."));}
 
   const body = response.data?.shipmentPackageRouteSegDetails ?? response.data;
   const rows: any[] = Array.isArray(body) ? body : [];
@@ -319,7 +319,7 @@ async function ensureFedexCarrier(order: SampleLabelOrder, fedexMethods: any[]):
   const segments = await readSegments(order.shipmentId);
   const segment = segments[0];
   if(!segment?.shipmentRouteSegmentId) {
-    throw new Error("This shipment has no route segment to update, so its carrier can't be set to FedEx.");
+    throw new Error(translate("This shipment has no route segment to update, so its carrier can't be set to FedEx."));
   }
 
   const current = methods.find((method) => method.shipmentMethodTypeId === segment.shipmentMethodTypeId);
@@ -337,7 +337,7 @@ async function ensureFedexCarrier(order: SampleLabelOrder, fedexMethods: any[]):
       isTrackingRequired: method?.isTrackingRequired || segment.isTrackingRequired || "Y",
     },
   });
-  if(commonUtil.hasError(updated)) {throw failure(updated, "Failed to set the order's carrier to FedEx.");}
+  if(commonUtil.hasError(updated)) {throw failure(updated, translate("Failed to set the order's carrier to FedEx."));}
 }
 
 /** The search index lags, so an order may already be picked; use its shipment and pick only if none exists. */
@@ -347,7 +347,7 @@ async function withShipment(order: SampleLabelOrder): Promise<SampleLabelOrder> 
     method: "GET",
     params: { orderId: order.orderId, shipmentTypeId: "SALES_SHIPMENT", pageSize: 20 },
   });
-  if(commonUtil.hasError(response)) {throw failure(response, "Failed to check the order's shipments.");}
+  if(commonUtil.hasError(response)) {throw failure(response, translate("Failed to check the order's shipments."));}
 
   const existing = (response.data?.shipments ?? []).filter((shipment: any) =>
     shipment.statusId !== "SHIPMENT_CANCELLED" &&
@@ -360,7 +360,7 @@ async function withShipment(order: SampleLabelOrder): Promise<SampleLabelOrder> 
 
 /** Picks the order as Fulfillment does when creating a picklist, and returns the new shipment id. */
 async function pickOrder(order: SampleLabelOrder): Promise<string> {
-  if(!order.items?.length) {throw new Error("This order has no items to pick.");}
+  if(!order.items?.length) {throw new Error(translate("This order has no items to pick."));}
 
   const response: any = await api({
     url: "/poorti/createOrderFulfillmentWave",
@@ -374,10 +374,10 @@ async function pickOrder(order: SampleLabelOrder): Promise<string> {
       orderItems: order.items,
     },
   });
-  if(commonUtil.hasError(response)) {throw failure(response, "Failed to pick the order.");}
+  if(commonUtil.hasError(response)) {throw failure(response, translate("Failed to pick the order."));}
 
   const shipmentId = response.data?.shipmentIds?.[0];
-  if(!shipmentId) {throw new Error("The order was picked but no shipment came back.");}
+  if(!shipmentId) {throw new Error(translate("The order was picked but no shipment came back."));}
   return shipmentId;
 }
 
@@ -404,7 +404,7 @@ export async function generateSampleLabel(source: SampleLabelOrder, fedexMethods
   if(commonUtil.hasError(packed)) {
     // Prefer the gateway message stored on the segment over the generic pack error.
     const stored = (await readLabel(order.shipmentId).catch(() => null))?.gatewayMessage;
-    throw stored ? new Error(stored) : failure(packed, "Failed to pack the order.");
+    throw stored ? new Error(stored) : failure(packed, translate("Failed to pack the order."));
   }
 
   let label = await readLabel(order.shipmentId);
@@ -418,11 +418,11 @@ export async function generateSampleLabel(source: SampleLabelOrder, fedexMethods
   }
 
   if(!label || !hasLabel(label)) {
-    throw new Error(label?.gatewayMessage || "FedEx did not return a label for this order. Check the credentials and account number.");
+    throw new Error(label?.gatewayMessage || translate("FedEx did not return a label for this order. Check the credentials and account number."));
   }
 
   if(label.carrierPartyId && label.carrierPartyId !== FEDEX_CARRIER_PARTY_ID) {
-    throw new Error(`The label came from ${label.carrierPartyId}, not FedEx.`);
+    throw new Error(translate("The label came from {carrier}, not FedEx.", { carrier: label.carrierPartyId }));
   }
 
   return label;
@@ -502,7 +502,7 @@ export function useFedexSetup() {
     totalStepCount: FEDEX_SETUP_SETUP_STEP_IDS.length,
     saveSetup: (form: FedexSetupForm) => {
       // Before hydration the carrier looks missing and would be created again.
-      if(!hydrated.value) {return Promise.reject(new Error("Carriers are still loading. Try again in a moment."));}
+      if(!hydrated.value) {return Promise.reject(new Error(translate("Carriers are still loading. Try again in a moment.")));}
       return saveFedexSetup(form, {
         authId: auth.value?.shippingGatewayAuthId,
         configs: shippingCarrierConfigs.value,
