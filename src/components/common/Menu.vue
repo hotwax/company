@@ -295,7 +295,6 @@ const settingsPages: Array<{ title: string; url: string; childRoutes?: string[];
     title: "Document Templates",
     url: "/document-templates",
     childRoutes: ["/document-templates/"],
-    permission: Actions.APP_DOCUMENT_TEMPLATES_VIEW,
     iosIcon: documentTextOutline,
     mdIcon: documentTextOutline,
   },

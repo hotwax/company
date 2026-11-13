@@ -8,7 +8,8 @@
         <ion-title>{{ translate("Choose an order to preview with") }}</ion-title>
       </ion-toolbar>
       <ion-toolbar>
-        <ion-searchbar ref="searchbar" :value="keyword" :debounce="350" :placeholder="translate('Order name, order ID or external ID')"
+        <ion-searchbar ref="searchbar" :value="keyword" :debounce="350"
+          :placeholder="sourceParameter === 'orderId' ? translate('Transfer order name or ID') : translate('Order name, order ID or external ID')"
           data-testid="preview-order-search" @ionInput="runSearch(String($event.detail.value || ''))" />
       </ion-toolbar>
     </ion-header>
@@ -32,7 +33,7 @@
               <ion-label class="ion-text-wrap">
                 {{ order.orderName || order.orderId }}
                 <p>
-                  {{ [document.kind === "picklist" ? translate("Pick list {id}", { id: document.sourceId }) : translate("Shipment {id}", { id: document.sourceId }),
+                  {{ [documentLabel(document),
                     document.statusId ? seed.statusDescription(document.statusId) : "", order.facilityName, order.customerName].filter(Boolean).join(" · ") }}
                 </p>
               </ion-label>
@@ -51,9 +52,9 @@ import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonLabe
 import { alertCircleOutline, closeOutline } from "ionicons/icons";
 import { computed, ref } from "vue";
 import { usePreviewOrderSearch } from "@/composables/useDocumentTemplates";
-import type { SampleDocument } from "@/utils/documentTemplates";
+import type { SampleDocument, SourceParameter } from "@/utils/documentTemplates";
 
-const props = defineProps<{ isOpen: boolean; documentTypeId: string; selectedId?: string }>();
+const props = defineProps<{ isOpen: boolean; sourceParameter: SourceParameter; selectedId?: string }>();
 const emit = defineEmits<{
   (e: "close"): void;
   (e: "select", document: SampleDocument): void;
@@ -63,19 +64,27 @@ const seed = useSeedData();
 const search = usePreviewOrderSearch();
 const keyword = ref("");
 const searchbar = ref<any>(null);
-const isPicklist = computed(() => props.documentTypeId === "PICKLIST");
 const choices = computed(() => search.orders.value.flatMap(order => order.documents.map(document => ({ order, document }))));
 const emptyMessage = computed(() => {
-  if(search.documentsError.value) {return isPicklist.value ? translate("Pick lists could not be loaded.") : translate("Shipments could not be loaded.");}
-  if(isPicklist.value) {
+  if(props.sourceParameter === "orderId") {
+    return keyword.value ? translate("No approved transfer order matches {keyword}.", { keyword: keyword.value }) : translate("No approved transfer orders.");
+  }
+  const isPicklist = props.sourceParameter === "picklistId";
+  if(search.documentsError.value) {return isPicklist ? translate("Pick lists could not be loaded.") : translate("Shipments could not be loaded.");}
+  if(isPicklist) {
     return keyword.value ? translate("No approved order matching {keyword} is on a pick list.", { keyword: keyword.value }) : translate("No approved orders are on a pick list.");
   }
   return keyword.value ? translate("No approved order matching {keyword} has a shipment.", { keyword: keyword.value }) : translate("No approved orders have a shipment.");
 });
 
+function documentLabel(document: SampleDocument) {
+  if(document.kind === "picklist") {return translate("Pick list {id}", { id: document.sourceId });}
+  return document.kind === "order" ? translate("Transfer order {id}", { id: document.sourceId }) : translate("Shipment {id}", { id: document.sourceId });
+}
+
 function runSearch(value: string) {
   keyword.value = value.trim();
-  void search.search(props.documentTypeId, keyword.value);
+  void search.search(props.sourceParameter, keyword.value);
 }
 
 function onPresent() {

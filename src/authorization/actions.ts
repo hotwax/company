@@ -31,7 +31,7 @@ export default {
   APP_COMMERCE_VIEW: "COMMERCEUSER_VIEW",
   APP_CARRIERS_VIEW: "CARRIER_SETUP_VIEW",
   APP_NOTIFICATIONS_VIEW: "COMMON_ADMIN",
-  APP_DOCUMENT_TEMPLATES_VIEW: "DOCUMENT_TEMPLATE_VIEW OR DOCUMENT_TEMPLATE_ADMIN",
-  // Previewing runs the template, so it needs the admin permission as well as publishing.
+  // Template editing follows the OMS's artifact group DOCUMENT_TEMPLATE_EDIT (useDocumentTemplateAccess); this permission
+  // decides only on an OMS that predates the document-templates REST root.
   APP_DOCUMENT_TEMPLATES_ADMIN: "DOCUMENT_TEMPLATE_ADMIN"
 } as const satisfies Record<string, string>

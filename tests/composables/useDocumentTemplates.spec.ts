@@ -13,7 +13,7 @@ vi.mock("@common", () => ({
 vi.mock("@/db/companyDb", () => ({ companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) } }));
 vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: (...args: any[]) => mocks.refreshAfterMutation(...args) }));
 
-import { committedResult, usePreviewOrderSearch, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useSampleDocuments } from "@/composables/useDocumentTemplates";
+import { committedResult, useDocumentTemplateAccess, usePreviewOrderSearch, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useSampleDocuments } from "@/composables/useDocumentTemplates";
 
 const run = <T>(factory: () => T) => { const scope = effectScope(); return { scope, state: scope.run(factory)! }; };
 
@@ -32,7 +32,7 @@ describe("document template preview", () => {
 
     await state.preview("PACKING_SLIP", { templateName: "holiday-2026", versionName: "" }, "100051");
 
-    expect(mocks.api).toHaveBeenNthCalledWith(1, { url: "poorti/documentTemplates/PACKING_SLIP/preview", method: "post", data: { templateName: "holiday-2026", versionName: undefined, sourceId: "100051" } });
+    expect(mocks.api).toHaveBeenNthCalledWith(1, { url: "document-templates/PACKING_SLIP/preview", method: "post", data: { templateName: "holiday-2026", versionName: undefined, sourceId: "100051" } });
     expect(mocks.api).toHaveBeenNthCalledWith(2, { baseURL: "https://maarg.example.test", url: "/fop/apps/pdf/PrintPackingSlip?shipmentId=100051", method: "get", responseType: "blob" });
     expect(state.pdfUrl.value).toBe("blob:preview");
     expect(state.result.value).toMatchObject({ rendered: true, pageCount: 1, versionName: "02", errors: [], templateErrors: [{ line: 9 }] });
@@ -55,6 +55,69 @@ describe("document template preview", () => {
   });
 });
 
+describe("document template REST root", () => {
+  it("retries a 404 on the poorti/documentTemplates paths of an OMS that predates document-templates", async () => {
+    mocks.api.mockRejectedValueOnce({ response: { status: 404 } }).mockResolvedValueOnce({ data: { templateName: "x", versionName: "01" } });
+    const { scope, state } = run(() => useDocumentTemplateSave());
+
+    await state.save("PICKLIST", { templateName: "x", templateText: "<a/>" });
+
+    expect(mocks.api.mock.calls.map(([request]) => request.url)).toEqual(["document-templates/PICKLIST/templates", "poorti/documentTemplates/PICKLIST/templates"]);
+    scope.stop();
+  });
+
+  it("does not retry a refusal that is not a 404, such as a user without template editing access", async () => {
+    const refusal = { response: { status: 403 } };
+    mocks.api.mockRejectedValueOnce(refusal);
+    const { scope, state } = run(() => useDocumentTemplateSave());
+
+    await expect(state.save("PICKLIST", { templateName: "x", templateText: "<a/>" })).rejects.toBe(refusal);
+    expect(mocks.api).toHaveBeenCalledTimes(1);
+    scope.stop();
+  });
+});
+
+describe("document template access", () => {
+  it("turns editing on when the OMS answers a GET on the REST root", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { documentTypes: [{ documentTypeId: "PICKLIST" }] } });
+    const legacy = vi.fn(() => false);
+    const { scope, state } = run(() => useDocumentTemplateAccess(legacy));
+
+    expect(await state.check()).toBe(true);
+    expect(mocks.api).toHaveBeenCalledWith({ url: "document-templates", method: "get" });
+    expect(state.canEdit.value).toBe(true);
+    expect(legacy).not.toHaveBeenCalled();
+    scope.stop();
+  });
+
+  it("keeps editing off for a user the OMS refuses, without asking the old permission", async () => {
+    mocks.api.mockRejectedValueOnce({ response: { status: 403 } });
+    const legacy = vi.fn(() => true);
+    const { scope, state } = run(() => useDocumentTemplateAccess(legacy));
+
+    expect(await state.check()).toBe(false);
+    expect(state.checked.value).toBe(true);
+    expect(legacy).not.toHaveBeenCalled();
+    scope.stop();
+  });
+
+  it("falls back to the DOCUMENT_TEMPLATE_ADMIN permission on an OMS without the REST root", async () => {
+    mocks.api.mockRejectedValueOnce({ response: { status: 404 } });
+    const { scope, state } = run(() => useDocumentTemplateAccess(() => true));
+
+    expect(await state.check()).toBe(true);
+    scope.stop();
+  });
+
+  it("keeps editing off after a failure that is not a refusal", async () => {
+    mocks.api.mockRejectedValueOnce(new Error("network"));
+    const { scope, state } = run(() => useDocumentTemplateAccess(() => true));
+
+    expect(await state.check()).toBe(false);
+    scope.stop();
+  });
+});
+
 describe("document template publish", () => {
   it("sends the live version the screen showed and refreshes the stored templates", async () => {
     mocks.api.mockResolvedValueOnce({ data: { liveVersionName: "16", previousLiveVersionName: "15" } });
@@ -63,7 +126,7 @@ describe("document template publish", () => {
     const published = await state.publish("PACKING_SLIP", { templateName: "holiday-2026", versionName: "02", expectedLiveVersionName: "15" });
 
     expect(published.liveVersionName).toBe("16");
-    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PACKING_SLIP/publish", method: "post", data: { templateName: "holiday-2026", versionName: "02", expectedLiveVersionName: "15" } });
+    expect(mocks.api).toHaveBeenCalledWith({ url: "document-templates/PACKING_SLIP/publish", method: "post", data: { templateName: "holiday-2026", versionName: "02", expectedLiveVersionName: "15" } });
     expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("documentTemplate", {});
     scope.stop();
   });
@@ -117,7 +180,7 @@ describe("sample documents to preview with", () => {
     ] } } } }).mockResolvedValueOnce({ data: { data: { orders: { edges: [{ node: { orderId: "M108436", orderName: "#973026" } }] } } } });
     const { scope, state } = run(() => useSampleDocuments());
 
-    await state.load("PACKING_SLIP");
+    await state.load("shipmentId");
 
     const shipmentsCall = mocks.api.mock.calls[0][0];
     expect(shipmentsCall).toMatchObject({ url: "graphql", method: "post", data: { operationName: "SampleShipments", variables: { first: 20 } } });
@@ -135,7 +198,7 @@ describe("sample documents to preview with", () => {
       .mockRejectedValueOnce(new Error("offline"));
     const { scope, state } = run(() => useSampleDocuments());
 
-    await state.load("PACKING_SLIP_AND_LABEL");
+    await state.load("shipmentId");
 
     expect(state.samples.value.map(sample => sample.sourceId)).toEqual(["1"]);
     expect(state.error.value).toBe(false);
@@ -149,7 +212,7 @@ describe("sample documents to preview with", () => {
     ] });
     const { scope, state } = run(() => useSampleDocuments());
 
-    await state.load("PICKLIST");
+    await state.load("picklistId");
 
     expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/picklists", method: "get", params: { pageSize: 20, orderByField: "-picklistDate" } });
     expect(state.samples.value.map(sample => sample.sourceId)).toEqual(["P2", "P1"]);
@@ -158,11 +221,29 @@ describe("sample documents to preview with", () => {
     scope.stop();
   });
 
+  it("offers recent approved transfer orders for a document printed from an order", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { orders: [
+      { orderId: "TO2", orderName: "Store 12 restock", orderStatusId: "ORDER_APPROVED", facilityId: "WH", orderDate: 1793000000000 },
+      { orderId: "TO1", orderStatusId: "ORDER_APPROVED" },
+    ], ordersCount: 2 } });
+    const { scope, state } = run(() => useSampleDocuments());
+
+    await state.load("orderId");
+
+    expect(mocks.api).toHaveBeenCalledWith({ url: "oms/transferOrders", method: "get", params: { keyword: undefined, orderStatusId: "ORDER_APPROVED",
+      limit: 20, orderBy: "-orderDate", fieldsToSelect: "orderId,orderName,orderStatusId,facilityId,orderDate" } });
+    expect(state.samples.value).toEqual([
+      { sourceId: "TO2", kind: "order", statusId: "ORDER_APPROVED", facilityId: "WH", orderId: "TO2", orderName: "Store 12 restock", date: 1793000000000 },
+      { sourceId: "TO1", kind: "order", statusId: "ORDER_APPROVED", facilityId: undefined, orderId: "TO1", orderName: undefined, date: undefined },
+    ]);
+    scope.stop();
+  });
+
   it("reports an error instead of an empty list when the lookup fails", async () => {
     mocks.api.mockResolvedValueOnce({ data: { errors: [{ message: "denied" }], data: null } });
     const { scope, state } = run(() => useSampleDocuments());
 
-    await state.load("PACKING_SLIP");
+    await state.load("shipmentId");
 
     expect(state.error.value).toBe(true);
     expect(state.samples.value).toEqual([]);
@@ -207,7 +288,7 @@ describe("document template save", () => {
 
     const saved = await state.save("PICKLIST", { templateName: "pick-list-copy", templateText: "<fo:root/>", expectedVersionName: "02" });
 
-    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PICKLIST/templates", method: "post",
+    expect(mocks.api).toHaveBeenCalledWith({ url: "document-templates/PICKLIST/templates", method: "post",
       data: { templateName: "pick-list-copy", templateText: "<fo:root/>", expectedVersionName: "02" } });
     expect(saved.versionName).toBe("03");
     expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("documentTemplate", {});
@@ -234,7 +315,7 @@ describe("document template delete", () => {
 
     await state.remove("PICKLIST", "pick-list-copy", "02");
 
-    expect(mocks.api).toHaveBeenCalledWith({ url: "poorti/documentTemplates/PICKLIST/templates/pick-list-copy", method: "delete", params: { expectedVersionName: "02" } });
+    expect(mocks.api).toHaveBeenCalledWith({ url: "document-templates/PICKLIST/templates/pick-list-copy", method: "delete", params: { expectedVersionName: "02" } });
     expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("documentTemplate", {});
     expect(state.deleting.value).toBe(false);
     scope.stop();
@@ -263,7 +344,7 @@ describe("preview order search", () => {
     });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PACKING_SLIP", " 595 ");
+    await state.search("shipmentId", " 595 ");
 
     const bucketCalls = mocks.api.mock.calls.map(([request]) => request).filter((request: any) => request.method === "get");
     expect(bucketCalls.map((request: any) => request.url)).toEqual(["oms/orders/salesOrders/open", "oms/orders/salesOrders/inflight", "oms/orders/salesOrders/packed"]);
@@ -289,7 +370,7 @@ describe("preview order search", () => {
     });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PICKLIST", "");
+    await state.search("picklistId", "");
 
     const lookups = mocks.api.mock.calls.map(([request]) => request).filter((request: any) => request.url === "poorti/shipmentPicklists");
     expect(lookups.map((request: any) => request.params)).toEqual([
@@ -309,7 +390,7 @@ describe("preview order search", () => {
     });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PICKLIST", "");
+    await state.search("picklistId", "");
 
     expect(mocks.api.mock.calls[0][0].params.keyword).toBeUndefined();
     expect(state.orders.value).toEqual([expect.objectContaining({ orderId: "M1", stage: "packed", documents: [] })]);
@@ -318,11 +399,25 @@ describe("preview order search", () => {
     scope.stop();
   });
 
+  it("searches approved transfer orders by keyword for a document printed from an order, each order its own document", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { orders: [{ orderId: "TO7", orderName: "Store 7", orderStatusId: "ORDER_APPROVED", orderDate: 5000 }] } });
+    const { scope, state } = run(() => usePreviewOrderSearch());
+
+    await state.search("orderId", " TO7 ");
+
+    expect(mocks.api).toHaveBeenCalledTimes(1);
+    expect(mocks.api.mock.calls[0][0]).toMatchObject({ url: "oms/transferOrders", params: { keyword: "TO7", orderStatusId: "ORDER_APPROVED", limit: 20 } });
+    expect(state.orders.value).toEqual([{ orderId: "TO7", orderName: "Store 7", orderDate: 5000, stage: "open",
+      documents: [expect.objectContaining({ sourceId: "TO7", kind: "order", orderName: "Store 7" })] }]);
+    expect(state.error.value).toBe(false);
+    scope.stop();
+  });
+
   it("reports an error when an order list cannot be read", async () => {
     mocks.api.mockResolvedValue({ data: { errors: "Not authorized" } });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PACKING_SLIP", "5955");
+    await state.search("shipmentId", "5955");
 
     expect(state.orders.value).toEqual([]);
     expect(state.error.value).toBe(true);
@@ -377,7 +472,7 @@ describe("preview document lookup paging", () => {
     });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PACKING_SLIP", "");
+    await state.search("shipmentId", "");
 
     const pages = mocks.api.mock.calls.map(([request]) => request).filter((request: any) => request.url === "graphql");
     expect(pages.map((request: any) => request.data.variables.after)).toEqual([null, "c1"]);
@@ -392,7 +487,7 @@ describe("preview document lookup paging", () => {
     });
     const { scope, state } = run(() => usePreviewOrderSearch());
 
-    await state.search("PACKING_SLIP", "");
+    await state.search("shipmentId", "");
 
     expect(state.documentsError.value).toBe(true);
     expect(state.orders.value[0].documents).toEqual([]);

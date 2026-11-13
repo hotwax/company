@@ -3,7 +3,7 @@ import { computed, onScopeDispose, ref } from "vue";
 import { companyDb } from "@/db/companyDb";
 import { refreshAfterMutation } from "@/db/appDbSync";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
-import type { DocumentTemplate, DocumentTemplateVersion, PreviewOrder, PreviewResult, SampleDocument, TemplateSelection, TemplateText } from "@/utils/documentTemplates";
+import type { DocumentTemplate, DocumentTemplateVersion, PreviewOrder, PreviewResult, SampleDocument, SourceParameter, TemplateSelection, TemplateText } from "@/utils/documentTemplates";
 
 /**
  * Document templates: the packing slip and pick list templates printing uses (Poorti
@@ -12,9 +12,10 @@ import type { DocumentTemplate, DocumentTemplateVersion, PreviewOrder, PreviewRe
  *     and their libraries are the class C `documentTemplate` domain, which the screens fetch when they
  *     open and after a publish and read from the local table; version history is a server ledger, read
  *     when shown (like app version history).
- *   - Writes stay on `poorti/documentTemplates`: `templates` saves a named template as a new revision
+ *   - Writes go to the `document-templates` REST root, open only to the user groups the OMS grants artifact group
+ *     DOCUMENT_TEMPLATE_EDIT (on an OMS that predates it, the same paths under `poorti/documentTemplates`): `templates` saves a named template as a new revision
  *     (never the live one, so saving never changes printing) and deletes one with all its revisions; preview renders a template for one shipment
- *     or picklist, and the PDF is fetched from the print URL the server returns, through the app's session;
+ *     or picklist, and the PDF is fetched from the preview URL the server returns, through the app's session;
  *     publish and rollback go through `publish`, which checks the live version the screen showed.
  */
 
@@ -37,7 +38,53 @@ async function reconcileAfterWrite<T>(pk: Record<string, unknown>, result: T): P
 
 /** The committed write's result from a `CacheReconciliationError` thrown after it. */
 export const committedResult = <T>(error: unknown): T | undefined => (error as { result?: T })?.result;
-const templatesUrl = (documentTypeId: string) => `poorti/documentTemplates/${encodeURIComponent(documentTypeId)}`;
+/**
+ * A write to the document template REST root, `document-templates/{documentTypeId}{path}`. An OMS that predates that
+ * root (hotwax-poorti#484) has the same paths under `poorti/documentTemplates`, so a 404 is retried there; any other
+ * refusal, such as a user without template editing access, is not.
+ */
+async function templatesApi(documentTypeId: string, path: string, config: Record<string, unknown>): Promise<any> {
+  const url = (root: string) => `${root}/${encodeURIComponent(documentTypeId)}${path}`;
+  try {
+    return await api({ ...config, url: url("document-templates") });
+  } catch(error: any) {
+    if(statusOf(error) !== 404) {throw error;}
+    return api({ ...config, url: url("poorti/documentTemplates") });
+  }
+}
+
+const statusOf = (error: any): number | undefined => error?.response?.status ?? error?.status;
+
+/**
+ * Whether this user may save, preview, publish and delete templates. The OMS answers it: a GET on the
+ * `document-templates` root succeeds only for the user groups it grants artifact group DOCUMENT_TEMPLATE_EDIT and
+ * refuses everyone else with a 403. An OMS that predates the root answers 404; there the DOCUMENT_TEMPLATE_ADMIN
+ * permission still decides
+ * (`legacyCanEdit`). Until the answer arrives, and after any other failure, editing stays off.
+ */
+export function useDocumentTemplateAccess(legacyCanEdit: () => boolean) {
+  const canEdit = ref(false);
+  const checked = ref(false);
+
+  async function check(): Promise<boolean> {
+    try {
+      const resp: any = await api({ url: "document-templates", method: "get" });
+      canEdit.value = !commonUtil.hasError(resp);
+    } catch(error: any) {
+      const status = statusOf(error);
+      if(status === 404) {
+        canEdit.value = legacyCanEdit();
+      } else {
+        if(status !== 403) {logger.error("Failed to check document template access", error);}
+        canEdit.value = false;
+      }
+    }
+    checked.value = true;
+    return canEdit.value;
+  }
+
+  return { canEdit, checked, check };
+}
 const VERSIONS_QUERY = `query DocumentTemplateVersions($documentTypeId: ID!, $templateName: String) {
   documentTemplateVersions(documentTypeId: $documentTypeId, templateName: $templateName) {
     versionName previousVersionName versionDate userId isCurrent
@@ -51,11 +98,29 @@ const TEXT_QUERY = `query DocumentTemplateText($documentTypeId: ID!, $templateNa
     location templateText
   }
 }`;
-const SAMPLE_COUNT = 20;
-
 /** Moqui REST returns dates as epoch millis, GraphQL as ISO strings. */
 const toMillis = (value: unknown): number | undefined =>
   typeof value === "number" ? value : typeof value === "string" && value ? Date.parse(value) : undefined;
+const SAMPLE_COUNT = 20;
+// Transfer orders over the OMS REST list the Fulfillment and Transfers apps read; approved ones are the ones picked.
+const TRANSFER_ORDER_FIELDS = "orderId,orderName,orderStatusId,facilityId,orderDate";
+
+async function approvedTransferOrders(keyword: string, limit: number): Promise<any[]> {
+  const resp: any = await api({
+    url: "oms/transferOrders",
+    method: "get",
+    params: { keyword: keyword || undefined, orderStatusId: "ORDER_APPROVED", limit, orderBy: "-orderDate", fieldsToSelect: TRANSFER_ORDER_FIELDS },
+  });
+  if(commonUtil.hasError(resp) || !Array.isArray(resp?.data?.orders)) {throw resp;}
+
+  return resp.data.orders.filter((row: any) => row?.orderId);
+}
+
+const transferOrderDocument = (row: any): SampleDocument => ({
+  sourceId: row.orderId, kind: "order", statusId: row.orderStatusId, facilityId: row.facilityId || undefined,
+  orderId: row.orderId, orderName: row.orderName || undefined, date: toMillis(row.orderDate),
+});
+
 const SAMPLE_SHIPMENTS_QUERY = `query SampleShipments($first: Int!) {
   shipments(query: "statusId:SHIPMENT_SHIPPED,SHIPMENT_PACKED", sortKey: SHIPPED_DATE, reverse: true, first: $first) {
     edges { node { shipmentId statusId primaryOrderId originFacilityId } }
@@ -215,7 +280,7 @@ export function useDocumentTemplateSave() {
   async function save(documentTypeId: string, payload: { templateName: string; templateText?: string; copyFromLive?: boolean; expectedVersionName?: string }) {
     saving.value = true;
     try {
-      const resp: any = await api({ url: `${templatesUrl(documentTypeId)}/templates`, method: "post", data: payload });
+      const resp: any = await templatesApi(documentTypeId, "/templates", { method: "post", data: payload });
       if(commonUtil.hasError(resp)) {throw resp;}
       // The library list shows each template's latest revision.
       return await reconcileAfterWrite({ documentTypeId, templateName: payload.templateName },
@@ -240,8 +305,7 @@ export function useDocumentTemplateDelete() {
   async function remove(documentTypeId: string, templateName: string, expectedVersionName: string) {
     deleting.value = true;
     try {
-      const resp: any = await api({
-        url: `${templatesUrl(documentTypeId)}/templates/${encodeURIComponent(templateName)}`,
+      const resp: any = await templatesApi(documentTypeId, `/templates/${encodeURIComponent(templateName)}`, {
         method: "delete",
         params: { expectedVersionName },
       });
@@ -257,8 +321,9 @@ export function useDocumentTemplateDelete() {
 
 /**
  * Recent real documents to preview a template with, so nobody has to know an id: shipped or packed
- * shipments for packing slips (newest shipped first, with their order's name), recent pick lists for
- * pick lists. Read from the OMS GraphQL endpoint.
+ * shipments for packing slips (newest shipped first, with their order's name, from the OMS GraphQL
+ * endpoint), recent pick lists for pick lists, recent approved transfer orders for documents printed
+ * from an order.
  */
 export function useSampleDocuments() {
   const samples = ref<SampleDocument[]>([]);
@@ -307,12 +372,14 @@ export function useSampleDocuments() {
     }));
   }
 
-  async function load(documentTypeId: string) {
+  async function load(sourceParameter: SourceParameter) {
     const current = ++request;
     loading.value = true;
     error.value = false;
     try {
-      const rows = documentTypeId === "PICKLIST" ? await picklistSamples() : await shipmentSamples();
+      const rows = sourceParameter === "picklistId" ? await picklistSamples()
+        : sourceParameter === "orderId" ? (await approvedTransferOrders("", SAMPLE_COUNT)).map(transferOrderDocument)
+        : await shipmentSamples();
       if(current === request) {samples.value = rows;}
     } catch(cause) {
       if(current === request) {
@@ -348,7 +415,8 @@ const SEARCH_PAGE = 20;
  * Finds approved sales orders by keyword (order name, HotWax order id or external id), through the same order lists
  * the fulfillment app reads (open, in progress and packed), so a user can pick the exact order to preview a template
  * with. Each order comes with what a template can render for it: its shipments for packing slips, its pick lists
- * for the pick list. An order that has none yet is still returned, so the screen can say why it cannot be used.
+ * for a pick list. An order that has none yet is still returned, so the screen can say why it cannot be used.
+ * Documents printed from an order (a transfer order pick list) search approved transfer orders instead.
  */
 export function usePreviewOrderSearch() {
   const orders = ref<PreviewOrder[]>([]);
@@ -397,7 +465,7 @@ export function usePreviewOrderSearch() {
     throw new Error(`${operationName} has more than ${LOOKUP_MAX_PAGES * LOOKUP_PAGE} rows`);
   }
 
-  async function documentsFor(documentTypeId: string, orderIds: string[]): Promise<Map<string, SampleDocument[]>> {
+  async function documentsFor(sourceParameter: SourceParameter, orderIds: string[]): Promise<Map<string, SampleDocument[]>> {
     const byOrder = new Map<string, SampleDocument[]>();
     if(!orderIds.length) {return byOrder;}
     const add = (orderId: string, document: SampleDocument) => {
@@ -405,7 +473,7 @@ export function usePreviewOrderSearch() {
       if(!documents.some(existing => existing.sourceId === document.sourceId)) {documents.push(document);}
       byOrder.set(orderId, documents);
     };
-    if(documentTypeId === "PICKLIST") {
+    if(sourceParameter === "picklistId") {
       // Poorti's shipmentPicklists: each of the orders' shipments with the pick lists it is on (released moqui-gql
       // versions have no pick list root).
       const shipments = await allRestRows("poorti/shipmentPicklists", { primaryOrderId: orderIds.join(","), primaryOrderId_op: "in" });
@@ -427,12 +495,25 @@ export function usePreviewOrderSearch() {
     return byOrder;
   }
 
-  async function search(documentTypeId: string, keyword: string) {
+  /** Approved transfer orders: each is the document it prints, so none is left without one. */
+  async function searchTransferOrders(keyword: string): Promise<PreviewOrder[]> {
+    return (await approvedTransferOrders(keyword, SEARCH_PAGE)).map(row => {
+      const document = transferOrderDocument(row);
+      return { orderId: row.orderId, orderName: document.orderName, orderDate: document.date, stage: "open", documents: [document] };
+    });
+  }
+
+  async function search(sourceParameter: SourceParameter, keyword: string) {
     const current = ++request;
     loading.value = true;
     error.value = false;
     documentsError.value = false;
     try {
+      if(sourceParameter === "orderId") {
+        const found = await searchTransferOrders(keyword.trim());
+        if(current === request) {orders.value = found;}
+        return;
+      }
       // The buckets return a row per ship group item; keep one order each, in its furthest stage.
       const pages = await Promise.all(ORDER_BUCKETS.map(async bucket => {
         const resp: any = await api({
@@ -462,7 +543,7 @@ export function usePreviewOrderSearch() {
       const rows = [...found.values()].sort((a, b) => (b.orderDate || 0) - (a.orderDate || 0));
       let documents = new Map<string, SampleDocument[]>();
       try {
-        documents = await documentsFor(documentTypeId, rows.map(order => order.orderId));
+        documents = await documentsFor(sourceParameter, rows.map(order => order.orderId));
       } catch(cause) {
         // Still show the orders: the user learns the order exists and why it cannot be chosen.
         if(current === request) {documentsError.value = true;}
@@ -511,8 +592,7 @@ export function useDocumentTemplatePreview() {
     const current = request;
     loading.value = true;
     try {
-      const resp: any = await api({
-        url: `${templatesUrl(documentTypeId)}/preview`,
+      const resp: any = await templatesApi(documentTypeId, "/preview", {
         method: "post",
         data: { templateName: selection.templateName || undefined, versionName: selection.versionName || undefined, sourceId },
       });
@@ -555,7 +635,7 @@ export function useDocumentTemplatePublish() {
     try {
       let resp: any;
       try {
-        resp = await api({ url: `${templatesUrl(documentTypeId)}/publish`, method: "post", data: payload });
+        resp = await templatesApi(documentTypeId, "/publish", { method: "post", data: payload });
         if(commonUtil.hasError(resp)) {throw resp;}
       } catch(refusal) {
         // Someone else's publish may have made ours stale: show the server's state, but report the refusal.

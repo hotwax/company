@@ -117,7 +117,7 @@
             <!-- Preview -->
             <div v-if="tab === 'preview'" class="tab-body">
               <p v-if="!canAdmin" class="secondary-label" data-testid="document-template-view-only">
-                {{ translate("Previewing runs the template, so it needs template admin access.") }}
+                {{ translate("Previewing runs the template, so it needs template editing access.") }}
               </p>
               <template v-else>
                 <ion-item v-if="dirty" lines="none" data-testid="document-template-preview-unsaved">
@@ -131,7 +131,9 @@
                       {{ chosenSample ? sampleLabel(chosenSample)
                         : samples.loading.value ? translate("Loading…")
                         : samples.error.value ? translate("Recent documents could not be loaded. Choose an order.")
-                        : isPicklist ? translate("No recent pick lists. Choose an order.") : translate("No recent shipments. Choose an order.") }}
+                        : sourceParameter === "picklistId" ? translate("No recent pick lists. Choose an order.")
+                        : sourceParameter === "orderId" ? translate("No recent approved transfer orders. Choose an order.")
+                        : translate("No recent shipments. Choose an order.") }}
                     </p>
                   </ion-label>
                   <ion-button slot="end" fill="outline" data-testid="document-template-choose-order-btn" @click="orderModalOpen = true">
@@ -182,7 +184,7 @@
           </ion-card>
         </section>
       </div>
-      <PreviewOrderModal :is-open="orderModalOpen" :document-type-id="documentTypeId" :selected-id="sampleId" @close="orderModalOpen = false" @select="pickSample" />
+      <PreviewOrderModal :is-open="orderModalOpen" :source-parameter="sourceParameter" :selected-id="sampleId" @close="orderModalOpen = false" @select="pickSample" />
     </ion-content>
   </ion-page>
 </template>
@@ -195,10 +197,10 @@ import { addOutline, alertCircleOutline, arrowUndoOutline, cloudUploadOutline, c
 import { computed, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import { useAuth } from "@/composables/useSecurity";
-import { committedResult, useDocumentTemplate, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useDocumentTemplates, useSampleDocuments } from "@/composables/useDocumentTemplates";
+import { committedResult, useDocumentTemplate, useDocumentTemplateAccess, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useDocumentTemplates, useSampleDocuments } from "@/composables/useDocumentTemplates";
 import PreviewOrderModal from "@/components/document-templates/PreviewOrderModal.vue";
 import TemplateCodeEditor from "@/components/document-templates/TemplateCodeEditor.vue";
-import { errorLine, inlineInclude, isTemplateName, locationFile, publishActionFor, sameSelection, serverErrorMessage, suggestTemplateName, templateErrorFile, type DocumentTemplateVersion, type SampleDocument } from "@/utils/documentTemplates";
+import { errorLine, inlineInclude, isTemplateName, locationFile, publishActionFor, sameSelection, serverErrorMessage, sourceParameterOf, suggestTemplateName, templateErrorFile, type DocumentTemplateVersion, type SampleDocument } from "@/utils/documentTemplates";
 import Actions from "@/authorization/actions";
 import { CACHE_RECONCILIATION_ERROR_MESSAGE, isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 
@@ -207,7 +209,9 @@ type Tab = "code" | "preview";
 const props = defineProps<{ documentTypeId: string }>();
 
 const { hasPermission } = useAuth();
-const canAdmin = computed(() => hasPermission(Actions.APP_DOCUMENT_TEMPLATES_ADMIN));
+// Editing follows the OMS's answer for artifact group DOCUMENT_TEMPLATE_EDIT, checked each time the screen opens.
+const access = useDocumentTemplateAccess(() => hasPermission(Actions.APP_DOCUMENT_TEMPLATES_ADMIN));
+const canAdmin = computed(() => access.canEdit.value);
 const seed = useSeedData();
 
 const { loading, loaded, error, refresh } = useDocumentTemplates();
@@ -235,7 +239,8 @@ const pickedSample = ref<SampleDocument | null>(null);
 const orderModalOpen = ref(false);
 const codeEditor = ref<InstanceType<typeof TemplateCodeEditor> | null>(null);
 
-const isPicklist = computed(() => props.documentTypeId === "PICKLIST");
+// What this document prints from, so previews offer the right documents.
+const sourceParameter = computed(() => sourceParameterOf(props.documentTypeId, documentTemplate.value));
 const dirty = computed(() => !!text.text.value && code.value !== text.text.value.templateText);
 const isLatest = computed(() => !!text.text.value && text.text.value.versionName === text.text.value.currentVersionName);
 const saveErrorLine = computed(() => errorLine(saveError.value));
@@ -279,6 +284,9 @@ function sampleLabel(sample: SampleDocument) {
   if(sample.kind === "picklist") {
     return [translate("Pick list {id}", { id: sample.sourceId }), sample.date ? commonUtil.getDateAndTime(sample.date) : "", status].filter(Boolean).join(" · ");
   }
+  if(sample.kind === "order") {
+    return [translate("Transfer order {name}", { name: sample.orderName || sample.sourceId }), sample.date ? commonUtil.getDateAndTime(sample.date) : "", status].filter(Boolean).join(" · ");
+  }
   const order = sample.orderName ? translate("Order {name}", { name: sample.orderName }) : "";
 
   return [order, translate("Shipment {id}", { id: sample.sourceId }), status].filter(Boolean).join(" · ");
@@ -294,16 +302,26 @@ function pickSample(document: SampleDocument) {
 }
 
 async function reload() {
-  await refresh();
+  await Promise.all([refresh(), access.check()]);
   void revisions.resolveUsernames([documentTemplate.value?.liveUserId, ...(documentTemplate.value?.templates || []).map(row => row.userId)]);
   void loadOpen();
-  if(canAdmin.value) {
-    await samples.load(props.documentTypeId);
-    // Keep the document chosen before (a recent one, or one picked from an order); otherwise start on the newest.
-    const kept = !!sampleId.value && (pickedSample.value?.sourceId === sampleId.value || samples.samples.value.some(sample => sample.sourceId === sampleId.value));
-    if(!kept) {sampleId.value = samples.samples.value[0]?.sourceId || "";}
-  }
+  if(canAdmin.value) {await loadSamples();}
 }
+
+async function loadSamples() {
+  await samples.load(sourceParameter.value);
+  // Keep the document chosen before (a recent one, or one picked from an order); otherwise start on the newest.
+  const kept = !!sampleId.value && (pickedSample.value?.sourceId === sampleId.value || samples.samples.value.some(sample => sample.sourceId === sampleId.value));
+  if(!kept) {sampleId.value = samples.samples.value[0]?.sourceId || "";}
+}
+
+// The type's row can arrive after the first load; a document printed from something else needs other samples.
+watch(sourceParameter, (next, previous) => {
+  if(next === previous || !canAdmin.value) {return;}
+  pickedSample.value = null;
+  sampleId.value = "";
+  void loadSamples();
+});
 
 onIonViewWillEnter(() => {
   void reload();

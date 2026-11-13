@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ response: {} as any, calls: [] as any[], snapshots: [] as any[][] }));
+const state = vi.hoisted(() => ({ response: {} as any, queue: [] as any[], calls: [] as any[], snapshots: [] as any[][] }));
 
 vi.mock("@common/core/workerRemoteApi", () => ({
   workerPost: vi.fn(async (_ctx: any, url: string, data: any) => {
     state.calls.push({ url, data });
-    return state.response;
+    const next = state.queue.length ? state.queue.shift() : state.response;
+    if(next?.rejectWith) {throw next.rejectWith;}
+    return next;
   }),
 }));
 vi.mock("@/db/companyDb", () => ({
@@ -24,6 +26,7 @@ const ctx = { maargUrl: "https://example.test", token: "token" } as any;
 describe("documentTemplateDomain", () => {
   beforeEach(() => {
     state.response = {};
+    state.queue = [];
     state.calls = [];
     state.snapshots = [];
   });
@@ -57,6 +60,27 @@ describe("documentTemplateDomain", () => {
         templates: [{ templateName: "holiday-2026", versionName: "02" }, { templateName: "plain", versionName: "01" }] },
       { documentTypeId: "PICKLIST", liveVersionName: "03", templates: [] },
     ]);
+  });
+
+  it("asks for what each type prints from, and asks again without it on an OMS that does not have the field", async () => {
+    const list = { data: { documentTemplates: [{ documentTypeId: "PICKLIST", liveVersionName: "03" }], documentLibraryTemplates: [] } };
+    const undefinedField = { errors: [{ message: "Validation error (FieldUndefined@[documentTemplates/sourceParameter]) : Field 'sourceParameter' in type 'DocumentTemplate' is undefined" }] };
+
+    state.queue = [undefinedField, list];
+    expect(await documentTemplateDomain.refetchOne!(ctx, {})).toBe(1);
+    expect(state.calls.map(call => call.data.query.includes("sourceParameter"))).toEqual([true, false]);
+
+    // the same refusal as an HTTP error body
+    state.calls = [];
+    state.queue = [{ rejectWith: undefinedField }, list];
+    expect(await documentTemplateDomain.refetchOne!(ctx, {})).toBe(1);
+    expect(state.calls).toHaveLength(2);
+
+    // any other failure is not retried
+    state.calls = [];
+    state.queue = [{ rejectWith: new Error("offline") }];
+    await expect(documentTemplateDomain.refetchOne!(ctx, {})).rejects.toThrow("offline");
+    expect(state.calls).toHaveLength(1);
   });
 
   it("throws on GraphQL errors or an unexpected response instead of pruning the stored rows", async () => {

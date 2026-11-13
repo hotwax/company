@@ -4576,7 +4576,7 @@
   "Make this revision live?": "Make this revision live?",
   "New template from the live one": "New template from the live one",
   "Preview this revision to make it live.": "Preview this revision to make it live.",
-  "Previewing runs the template, so it needs template admin access.": "Previewing runs the template, so it needs template admin access.",
+  "Previewing runs the template, so it needs template editing access.": "Previewing runs the template, so it needs template editing access.",
   "Printing now uses revision {revision} of the live template.": "Printing now uses revision {revision} of the live template.",
   "Printing uses this code. Your changes are saved as a new template, which you can preview and then make live.": "Printing uses this code. Your changes are saved as a new template, which you can preview and then make live.",
   "Restore": "Restore",
@@ -4633,5 +4633,11 @@
   "No approved orders are on a pick list.": "No approved orders are on a pick list.",
   "No approved order matching {keyword} has a shipment.": "No approved order matching {keyword} has a shipment.",
   "Pick lists could not be loaded.": "Pick lists could not be loaded.",
-  "No approved order matching {keyword} is on a pick list.": "No approved order matching {keyword} is on a pick list."
+  "No approved order matching {keyword} is on a pick list.": "No approved order matching {keyword} is on a pick list.",
+  "Transfer order name or ID": "Transfer order name or ID",
+  "No approved transfer order matches {keyword}.": "No approved transfer order matches {keyword}.",
+  "No approved transfer orders.": "No approved transfer orders.",
+  "Transfer order {id}": "Transfer order {id}",
+  "Transfer order {name}": "Transfer order {name}",
+  "No recent approved transfer orders. Choose an order.": "No recent approved transfer orders. Choose an order."
 }

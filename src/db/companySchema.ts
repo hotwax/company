@@ -576,9 +576,10 @@ export const companySchema = defineSchema({
   }),
 
   /**
-   * The printable documents customers can customize (packing slip, packing slip and label, pick list) —
-   * class C, fetched when the Document Templates screens open and after a publish. One row per document
-   * type: its live template's current version, and the named templates in its library.
+   * The printable documents customers can customize (Poorti's packing slip, packing slip and label and pick
+   * list, and any a client adds) — class C, fetched when the Document Templates screens open and after a
+   * publish. One row per document type: its live template's current version, what it prints from
+   * (`sourceParameter`), and the named templates in its library.
    * `liveVersionName` is what a publish passes as `expectedLiveVersionName`.
    */
   documentTemplates: defineEntity({
@@ -589,6 +590,7 @@ export const companySchema = defineSchema({
       liveVersionName: "text",
       liveVersionDate: "date",
       liveUserId: "text",
+      sourceParameter: "text",
       templates: [{ templateName: "text", versionName: "text", versionDate: "date", userId: "text" }],
     },
   }),
