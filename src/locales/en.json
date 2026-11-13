@@ -4609,5 +4609,7 @@
   "Failed to check the order's shipments.": "Failed to check the order's shipments.",
   "Failed to pick the order.": "Failed to pick the order.",
   "FedEx did not return a label for this order. Check the credentials and account number.": "FedEx did not return a label for this order. Check the credentials and account number.",
-  "The label came from {carrier}, not FedEx.": "The label came from {carrier}, not FedEx."
+  "The label came from {carrier}, not FedEx.": "The label came from {carrier}, not FedEx.",
+  "This order has too many items to pick here. Pick it in Fulfillment.": "This order has too many items to pick here. Pick it in Fulfillment.",
+  "Too many items to pick here. Pick it in Fulfillment.": "Too many items to pick here. Pick it in Fulfillment."
 }

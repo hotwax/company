@@ -53,6 +53,8 @@ export interface SampleLabelOrder {
   hasShipment?: boolean;
   /** The gateway's message from an earlier failed label attempt (route segment `gatewayMessage`). */
   labelError?: string;
+  /** The search returned only part of the ship group's items, so picking it would be partial. */
+  hasPartialItems?: boolean;
   /** Order items of the ship group, needed to pick an order that has no shipment yet. */
   items?: { orderId: string; orderItemSeqId: string; shipGroupSeqId: string; productId: string; quantity: number }[];
 }
@@ -264,7 +266,8 @@ export async function fetchOrdersWithoutShipment(params: {
       facilityId: doc.facilityId,
       shipmentMethodTypeId: doc.shipmentMethodTypeId,
       customerName: doc.customerPartyName,
-      itemCount: group.doclist?.docs?.length ?? 0,
+      itemCount: Number(group.doclist?.numFound ?? group.doclist?.docs?.length ?? 0),
+      hasPartialItems: Number(group.doclist?.numFound ?? 0) > (group.doclist?.docs?.length ?? 0),
       shipGroupSeqId: doc.shipGroupSeqId,
       items: (group.doclist?.docs ?? []).map((item: any) => ({
         orderId: item.orderId,
@@ -361,6 +364,7 @@ async function withShipment(order: SampleLabelOrder): Promise<SampleLabelOrder> 
 /** Picks the order as Fulfillment does when creating a picklist, and returns the new shipment id. */
 async function pickOrder(order: SampleLabelOrder): Promise<string> {
   if(!order.items?.length) {throw new Error(translate("This order has no items to pick."));}
+  if(order.hasPartialItems) {throw new Error(translate("This order has too many items to pick here. Pick it in Fulfillment."));}
 
   const response: any = await api({
     url: "/poorti/createOrderFulfillmentWave",

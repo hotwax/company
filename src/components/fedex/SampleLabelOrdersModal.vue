@@ -34,7 +34,9 @@
         <ion-label class="ion-text-wrap">
           <h2>{{ order.orderName || order.orderId }}</h2>
           <p>{{ order.customerName }} · {{ translate("{count} items", { count: order.itemCount }) }}</p>
-          <p v-if="!order.hasShipment">{{ translate("Not picked yet. Generating a label will pick and pack it.") }}</p>
+          <p v-if="!order.hasShipment">
+            {{ order.hasPartialItems ? translate("Too many items to pick here. Pick it in Fulfillment.") : translate("Not picked yet. Generating a label will pick and pack it.") }}
+          </p>
           <p v-if="results[orderKey(order)]?.trackingCode">
             {{ translate("Tracking") }}: {{ results[orderKey(order)].trackingCode }}
           </p>
@@ -55,7 +57,7 @@
           v-else
           slot="end"
           size="small"
-          :disabled="Boolean(activeShipmentId)"
+          :disabled="Boolean(activeShipmentId) || order.hasPartialItems"
           :data-testid="`generate-${orderKey(order)}`"
           @click="generate(order)"
         >

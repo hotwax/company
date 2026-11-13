@@ -225,6 +225,15 @@ describe("useFedexSetup", () => {
     expect(urls()).toContain("/poorti/shipments/retryShippingLabel");
   });
 
+  it("refuses to pick an order whose item list is incomplete", async () => {
+    const { generateSampleLabel } = await import("@/composables/useFedexSetup");
+    h.api.mockResolvedValueOnce({ data: { shipments: [] } });
+    await expect(generateSampleLabel({
+      shipmentId: "", orderId: "O8", itemCount: 3, hasShipment: false, hasPartialItems: true, items: [{} as any],
+    }, methods)).rejects.toThrow(/too many items/);
+    expect(urls()).not.toContain("/poorti/createOrderFulfillmentWave");
+  });
+
   it("shows the stored gateway message when packing fails", async () => {
     const { generateSampleLabel } = await import("@/composables/useFedexSetup");
     h.api
@@ -264,10 +273,14 @@ describe("useFedexSetup", () => {
     expect(h.api.mock.calls[0][0].params).toMatchObject({ statusId: ["SHIPMENT_APPROVED", "SHIPMENT_PACKED"], statusId_op: "in" });
 
     h.api.mockResolvedValueOnce({ data: { grouped: { orderItemShipGroupIdentifier: { groups: [
-      { doclist: { docs: [{ orderId: "O9", shipGroupSeqId: "00001" }] } },
+      { doclist: { numFound: 1, docs: [{ orderId: "O9", shipGroupSeqId: "00001" }] } },
+      { doclist: { numFound: 3, docs: [{ orderId: "O8", shipGroupSeqId: "00001" }] } },
     ] } } } });
     const unshipped = await fetchOrdersWithoutShipment({ productStoreId: "STORE" });
     expect(h.api.mock.calls[1][0].solr.filters["-shipmentMethodTypeId"].value).toEqual(["STOREPICKUP", "POS_COMPLETED"]);
-    expect(unshipped).toMatchObject([{ orderId: "O9", shipGroupSeqId: "00001", hasShipment: false, shipmentId: "" }]);
+    expect(unshipped).toMatchObject([
+      { orderId: "O9", shipGroupSeqId: "00001", hasShipment: false, shipmentId: "", hasPartialItems: false },
+      { orderId: "O8", itemCount: 3, hasPartialItems: true },
+    ]);
   });
 });
