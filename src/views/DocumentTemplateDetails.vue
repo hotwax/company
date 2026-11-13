@@ -117,7 +117,7 @@
             <!-- Preview -->
             <div v-if="tab === 'preview'" class="tab-body">
               <p v-if="!canAdmin" class="secondary-label" data-testid="document-template-view-only">
-                {{ translate("Previewing runs the template, so it needs template admin access.") }}
+                {{ translate("Previewing runs the template, so it needs template editing access.") }}
               </p>
               <template v-else>
                 <ion-item v-if="dirty" lines="none" data-testid="document-template-preview-unsaved">
@@ -197,7 +197,7 @@ import { addOutline, alertCircleOutline, arrowUndoOutline, cloudUploadOutline, c
 import { computed, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import { useAuth } from "@/composables/useSecurity";
-import { committedResult, useDocumentTemplate, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useDocumentTemplates, useSampleDocuments } from "@/composables/useDocumentTemplates";
+import { committedResult, useDocumentTemplate, useDocumentTemplateAccess, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useDocumentTemplates, useSampleDocuments } from "@/composables/useDocumentTemplates";
 import PreviewOrderModal from "@/components/document-templates/PreviewOrderModal.vue";
 import TemplateCodeEditor from "@/components/document-templates/TemplateCodeEditor.vue";
 import { errorLine, inlineInclude, isTemplateName, locationFile, publishActionFor, sameSelection, serverErrorMessage, sourceParameterOf, suggestTemplateName, templateErrorFile, type DocumentTemplateVersion, type SampleDocument } from "@/utils/documentTemplates";
@@ -209,7 +209,9 @@ type Tab = "code" | "preview";
 const props = defineProps<{ documentTypeId: string }>();
 
 const { hasPermission } = useAuth();
-const canAdmin = computed(() => hasPermission(Actions.APP_DOCUMENT_TEMPLATES_ADMIN));
+// Editing follows the OMS's answer for artifact group DOCUMENT_TEMPLATE_EDIT, checked each time the screen opens.
+const access = useDocumentTemplateAccess(() => hasPermission(Actions.APP_DOCUMENT_TEMPLATES_ADMIN));
+const canAdmin = computed(() => access.canEdit.value);
 const seed = useSeedData();
 
 const { loading, loaded, error, refresh } = useDocumentTemplates();
@@ -300,7 +302,7 @@ function pickSample(document: SampleDocument) {
 }
 
 async function reload() {
-  await refresh();
+  await Promise.all([refresh(), access.check()]);
   void revisions.resolveUsernames([documentTemplate.value?.liveUserId, ...(documentTemplate.value?.templates || []).map(row => row.userId)]);
   void loadOpen();
   if(canAdmin.value) {await loadSamples();}

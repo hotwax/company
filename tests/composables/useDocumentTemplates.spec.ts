@@ -13,7 +13,7 @@ vi.mock("@common", () => ({
 vi.mock("@/db/companyDb", () => ({ companyDb: { tables: new Proxy({}, { get: (_target, table) => table }) } }));
 vi.mock("@/db/appDbSync", () => ({ refreshAfterMutation: (...args: any[]) => mocks.refreshAfterMutation(...args) }));
 
-import { committedResult, usePreviewOrderSearch, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useSampleDocuments } from "@/composables/useDocumentTemplates";
+import { committedResult, useDocumentTemplateAccess, usePreviewOrderSearch, useDocumentTemplateDelete, useDocumentTemplatePreview, useDocumentTemplatePublish, useDocumentTemplateSave, useDocumentTemplateText, useDocumentTemplateVersions, useSampleDocuments } from "@/composables/useDocumentTemplates";
 
 const run = <T>(factory: () => T) => { const scope = effectScope(); return { scope, state: scope.run(factory)! }; };
 
@@ -66,13 +66,54 @@ describe("document template REST root", () => {
     scope.stop();
   });
 
-  it("does not retry a refusal that is not a 404, such as a user who is not a template admin", async () => {
+  it("does not retry a refusal that is not a 404, such as a user without template editing access", async () => {
     const refusal = { response: { status: 403 } };
     mocks.api.mockRejectedValueOnce(refusal);
     const { scope, state } = run(() => useDocumentTemplateSave());
 
     await expect(state.save("PICKLIST", { templateName: "x", templateText: "<a/>" })).rejects.toBe(refusal);
     expect(mocks.api).toHaveBeenCalledTimes(1);
+    scope.stop();
+  });
+});
+
+describe("document template access", () => {
+  it("turns editing on when the OMS answers the access route", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { canEdit: true } });
+    const legacy = vi.fn(() => false);
+    const { scope, state } = run(() => useDocumentTemplateAccess(legacy));
+
+    expect(await state.check()).toBe(true);
+    expect(mocks.api).toHaveBeenCalledWith({ url: "document-templates/access", method: "get" });
+    expect(state.canEdit.value).toBe(true);
+    expect(legacy).not.toHaveBeenCalled();
+    scope.stop();
+  });
+
+  it("keeps editing off for a user the OMS refuses, without asking the old permission", async () => {
+    mocks.api.mockRejectedValueOnce({ response: { status: 403 } });
+    const legacy = vi.fn(() => true);
+    const { scope, state } = run(() => useDocumentTemplateAccess(legacy));
+
+    expect(await state.check()).toBe(false);
+    expect(state.checked.value).toBe(true);
+    expect(legacy).not.toHaveBeenCalled();
+    scope.stop();
+  });
+
+  it("falls back to the DOCUMENT_TEMPLATE_ADMIN permission on an OMS without the access route", async () => {
+    mocks.api.mockRejectedValueOnce({ response: { status: 404 } });
+    const { scope, state } = run(() => useDocumentTemplateAccess(() => true));
+
+    expect(await state.check()).toBe(true);
+    scope.stop();
+  });
+
+  it("keeps editing off after a failure that is not a refusal", async () => {
+    mocks.api.mockRejectedValueOnce(new Error("network"));
+    const { scope, state } = run(() => useDocumentTemplateAccess(() => true));
+
+    expect(await state.check()).toBe(false);
     scope.stop();
   });
 });

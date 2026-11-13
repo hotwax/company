@@ -36,9 +36,8 @@ async function fetchDocumentTemplates(ctx: Parameters<typeof workerPost>[0]) {
 
 /**
  * Document templates — class C: fetched when the Document Templates screens open and after a publish
- * (`refreshAfterMutation("documentTemplate", {})`), never at login. Only users with
- * DOCUMENT_TEMPLATE_VIEW or DOCUMENT_TEMPLATE_ADMIN may read them, so a login-time sync would fail for
- * everyone else.
+ * (`refreshAfterMutation("documentTemplate", {})`), never at login: only the screens need them. Any signed-in user
+ * may read them; editing is gated by the OMS (useDocumentTemplateAccess).
  *
  * Read from the OMS GraphQL endpoint (moqui-gql), which agents query too. Its rows are flat, so each
  * library template is grouped under its document type here. The answer covers every document type, so

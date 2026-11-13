@@ -4576,7 +4576,7 @@
   "Make this revision live?": "Make this revision live?",
   "New template from the live one": "New template from the live one",
   "Preview this revision to make it live.": "Preview this revision to make it live.",
-  "Previewing runs the template, so it needs template admin access.": "Previewing runs the template, so it needs template admin access.",
+  "Previewing runs the template, so it needs template editing access.": "Previewing runs the template, so it needs template editing access.",
   "Printing now uses revision {revision} of the live template.": "Printing now uses revision {revision} of the live template.",
   "Printing uses this code. Your changes are saved as a new template, which you can preview and then make live.": "Printing uses this code. Your changes are saved as a new template, which you can preview and then make live.",
   "Restore": "Restore",

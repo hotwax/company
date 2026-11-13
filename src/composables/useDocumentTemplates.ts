@@ -12,8 +12,8 @@ import type { DocumentTemplate, DocumentTemplateVersion, PreviewOrder, PreviewRe
  *     and their libraries are the class C `documentTemplate` domain, which the screens fetch when they
  *     open and after a publish and read from the local table; version history is a server ledger, read
  *     when shown (like app version history).
- *   - Writes go to the `document-templates` REST root, granted to template admins only (on an OMS that predates
- *     it, the same paths under `poorti/documentTemplates`): `templates` saves a named template as a new revision
+ *   - Writes go to the `document-templates` REST root, open only to the user groups the OMS grants artifact group
+ *     DOCUMENT_TEMPLATE_EDIT (on an OMS that predates it, the same paths under `poorti/documentTemplates`): `templates` saves a named template as a new revision
  *     (never the live one, so saving never changes printing) and deletes one with all its revisions; preview renders a template for one shipment
  *     or picklist, and the PDF is fetched from the preview URL the server returns, through the app's session;
  *     publish and rollback go through `publish`, which checks the live version the screen showed.
@@ -41,16 +41,48 @@ export const committedResult = <T>(error: unknown): T | undefined => (error as {
 /**
  * A write to the document template REST root, `document-templates/{documentTypeId}{path}`. An OMS that predates that
  * root (hotwax-poorti#484) has the same paths under `poorti/documentTemplates`, so a 404 is retried there; any other
- * refusal, such as a user who is not a template admin, is not.
+ * refusal, such as a user without template editing access, is not.
  */
 async function templatesApi(documentTypeId: string, path: string, config: Record<string, unknown>): Promise<any> {
   const url = (root: string) => `${root}/${encodeURIComponent(documentTypeId)}${path}`;
   try {
     return await api({ ...config, url: url("document-templates") });
   } catch(error: any) {
-    if(error?.response?.status !== 404 && error?.status !== 404) {throw error;}
+    if(statusOf(error) !== 404) {throw error;}
     return api({ ...config, url: url("poorti/documentTemplates") });
   }
+}
+
+const statusOf = (error: any): number | undefined => error?.response?.status ?? error?.status;
+
+/**
+ * Whether this user may save, preview, publish and delete templates. The OMS answers it: `document-templates/access`
+ * runs only for the user groups it grants artifact group DOCUMENT_TEMPLATE_EDIT and refuses everyone else with a 403.
+ * An OMS that predates the route answers 404; there the DOCUMENT_TEMPLATE_ADMIN permission still decides
+ * (`legacyCanEdit`). Until the answer arrives, and after any other failure, editing stays off.
+ */
+export function useDocumentTemplateAccess(legacyCanEdit: () => boolean) {
+  const canEdit = ref(false);
+  const checked = ref(false);
+
+  async function check(): Promise<boolean> {
+    try {
+      const resp: any = await api({ url: "document-templates/access", method: "get" });
+      canEdit.value = !commonUtil.hasError(resp) && resp?.data?.canEdit === true;
+    } catch(error: any) {
+      const status = statusOf(error);
+      if(status === 404) {
+        canEdit.value = legacyCanEdit();
+      } else {
+        if(status !== 403) {logger.error("Failed to check document template access", error);}
+        canEdit.value = false;
+      }
+    }
+    checked.value = true;
+    return canEdit.value;
+  }
+
+  return { canEdit, checked, check };
 }
 const VERSIONS_QUERY = `query DocumentTemplateVersions($documentTypeId: ID!, $templateName: String) {
   documentTemplateVersions(documentTypeId: $documentTypeId, templateName: $templateName) {
