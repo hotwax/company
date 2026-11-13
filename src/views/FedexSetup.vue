@@ -86,7 +86,9 @@
                 </ion-note>
                 <ion-input v-model="form.accountNumber" fill="outline" label-placement="stacked" :label="translate('FedEx account number')" data-testid="fedex-account" />
                 <ion-input v-model="form.apiKey" fill="outline" label-placement="stacked" :label="translate('API key')" :placeholder="existingAuthId ? translate('Leave blank to keep the saved key') : ''" autocomplete="off" data-testid="fedex-api-key" />
-                <ion-input v-model="form.secretKey" fill="outline" label-placement="stacked" :label="translate('Secret key')" :placeholder="existingAuthId ? translate('Leave blank to keep the saved secret') : ''" autocomplete="off" data-testid="fedex-secret" />
+                <ion-input v-model="form.secretKey" type="password" fill="outline" label-placement="stacked" :label="translate('Secret key')" :placeholder="existingAuthId ? translate('Leave blank to keep the saved secret') : ''" autocomplete="off" data-testid="fedex-secret">
+                  <ion-input-password-toggle slot="end" />
+                </ion-input>
 
                 <ion-item lines="none">
                   <ion-toggle v-model="perFacility" label-placement="start" justify="space-between" data-testid="per-facility">
@@ -178,7 +180,7 @@
 import { computed, reactive, ref } from "vue";
 import {
   IonBadge, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent,
-  IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonNote, IonPage,
+  IonHeader, IonIcon, IonInput, IonInputPasswordToggle, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonNote, IonPage,
   IonProgressBar, IonSelect, IonSelectOption, IonSpinner, IonTitle, IonToggle, IonToolbar, modalController, onIonViewWillEnter,
 } from "@ionic/vue";
 import { addOutline, documentTextOutline, openOutline, trashOutline } from "ionicons/icons";
