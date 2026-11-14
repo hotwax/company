@@ -4639,5 +4639,8 @@
   "No approved transfer orders.": "No approved transfer orders.",
   "Transfer order {id}": "Transfer order {id}",
   "Transfer order {name}": "Transfer order {name}",
-  "No recent approved transfer orders. Choose an order.": "No recent approved transfer orders. Choose an order."
+  "No recent approved transfer orders. Choose an order.": "No recent approved transfer orders. Choose an order.",
+  "Nothing is on hold in this tab.": "Nothing is on hold in this tab.",
+  "Held by system task {workEffortId}. Cancel the task to send this to Shopify.": "Held by system task {workEffortId}. Cancel the task to send this to Shopify.",
+  "Nothing has synced in this tab yet.": "Nothing has synced in this tab yet."
 }

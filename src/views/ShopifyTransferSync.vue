@@ -233,9 +233,13 @@
             <ion-segment-button value="synced">
               <ion-label>{{ translate("Synced") }}</ion-label>
             </ion-segment-button>
+            <!-- Creation has no suppression purpose, so nothing there can be on hold. -->
+            <ion-segment-button v-if="activeTab !== 'create'" value="onHold">
+              <ion-label>{{ translate("On hold") }}</ion-label>
+            </ion-segment-button>
           </ion-segment>
 
-          <ShopifyTransferDeliveryStatus v-if="activeTab === 'create'" :shop-id="shopId" stage="create" :direction="direction" :checked="deliveryChecked" :error="failingDomains?.shopifyTransferDelivery" />
+          <ShopifyTransferDeliveryStatus v-if="activeTab === 'create'" :shop-id="shopId" stage="create" :direction="direction === 'synced' ? 'synced' : 'pending'" :checked="deliveryChecked" :error="failingDomains?.shopifyTransferDelivery" />
           <ShopifyTransferStagingErrors
             v-if="activeTab === 'errors'"
             :key="shopId"
@@ -249,10 +253,11 @@
             @open-transfer="openTransfer"
             @refresh="retry"
           />
-          <template v-else-if="direction === 'synced'">
-            <ion-card v-if="syncedError">
+          <!-- Synced history and on-hold activity are both read on demand and share one layout. -->
+          <template v-else-if="direction !== 'pending'">
+            <ion-card v-if="listError">
               <ion-card-content class="ion-text-wrap">
-                <ion-icon :icon="warningOutline" color="danger" /> {{ syncedError }}
+                <ion-icon :icon="warningOutline" color="danger" /> {{ listError }}
               </ion-card-content>
             </ion-card>
             <ion-accordion-group v-else-if="presentationRows.length" class="transfer-row-accordion" expand="inset">
@@ -268,7 +273,7 @@
                       <p>{{ translate("OMS to Shopify") }}</p>
                     </template>
                     <template v-else>
-                      {{ formatDateTime(row.syncedAt) || translate("Not available") }}
+                      {{ formatDateTime(row.hold ? row.hold.since : row.syncedAt) || translate("Not available") }}
                       <p>{{ translate(row.status) }}</p>
                     </template>
                   </ion-label>
@@ -300,6 +305,13 @@
                   </ion-button>
                 </ion-item>
                 <ion-list slot="content" class="transfer-row-content" lines="full">
+                  <ion-item v-if="row.hold">
+                    <ion-label class="ion-text-wrap">
+                      {{ row.hold.name || translate("On hold") }}
+                      <p v-if="row.hold.description">{{ row.hold.description }}</p>
+                      <p>{{ translate("Held by system task {workEffortId}. Cancel the task to send this to Shopify.", { workEffortId: row.hold.workEffortId }) }}</p>
+                    </ion-label>
+                  </ion-item>
                   <ion-item v-if="row.occurredAt">
                     <ion-label>{{ translate("OMS recorded") }}</ion-label>
                     <ion-label slot="end">{{ formatDateTime(row.occurredAt) || translate("Not available") }}</ion-label>
@@ -332,13 +344,13 @@
                 </ion-list>
               </ion-accordion>
             </ion-accordion-group>
-            <ion-card v-else-if="!syncedLoading">
-              <ion-card-content>{{ translate("Nothing has synced in this tab yet.") }}</ion-card-content>
+            <ion-card v-else-if="!listLoading">
+              <ion-card-content>{{ translate(direction === "onHold" ? "Nothing is on hold in this tab." : "Nothing has synced in this tab yet.") }}</ion-card-content>
             </ion-card>
-            <div v-if="syncedLoading" class="ion-text-center ion-padding">
+            <div v-if="listLoading" class="ion-text-center ion-padding">
               <ion-spinner name="crescent" />
             </div>
-            <ion-button v-else-if="syncedHasMore" expand="block" fill="outline" @click="loadMoreSynced()">
+            <ion-button v-else-if="direction === 'synced' && syncedHasMore" expand="block" fill="outline" @click="loadMoreSynced()">
               {{ translate("Load more") }}
             </ion-button>
           </template>
@@ -686,6 +698,7 @@ import {
   useShopifyNativeTransferSync,
   useShopifyPendingCounts,
   useShopifyPendingSegment,
+  useShopifyOnHoldSegments,
   useShopifySyncedSegment,
   useShopifyTransferSyncJobs,
   useShopifyTransferSyncLaunch,
@@ -923,9 +936,13 @@ const {
   load: loadSynced,
   loadMore: loadMoreSyncedPage,
 } = useShopifySyncedSegment();
+const { rows: onHoldRows, loading: onHoldLoading, error: onHoldError, load: loadOnHold } = useShopifyOnHoldSegments();
+const listError = computed(() => direction.value === "onHold" ? onHoldError.value : syncedError.value);
+const listLoading = computed(() => direction.value === "onHold" ? onHoldLoading.value : syncedLoading.value);
 
 const rawTransferRows = computed<Record<string, unknown>[]>(() =>
-  activeTab.value === "errors" ? [] : direction.value === "synced" ? syncedRows.value : segmentRows.value);
+  activeTab.value === "errors" ? [] : direction.value === "synced" ? syncedRows.value
+    : direction.value === "onHold" ? onHoldRows.value : segmentRows.value);
 const { enrichment, load: loadEnrichment } = useShopifyTransferSyncEnrichment();
 // `adminUrl` is decorated here rather than inside buildTransferSyncPresentation: the shop domain is
 // view state, and the presentation helper stays pure and shop-agnostic.
@@ -952,9 +969,19 @@ function openOutstanding(next: PendingSegment) {
   activeTab.value = next;
 }
 
+/** Reads the list the current direction shows for the current tab; outstanding comes from the cache. */
+function loadDirection() {
+  if(activeTab.value === "errors") {return;}
+  if(direction.value === "synced") {void loadSynced(shopId.value, segment.value);}
+  if(direction.value === "onHold") {
+    const tab = activeSegmentTab.value;
+    void loadOnHold(shopId.value, tab ? [tab.key, ...(tab.also ? [tab.also] : [])] : []);
+  }
+}
+
 function setDirection(next: SyncDirection) {
   direction.value = next || "pending";
-  if(activeTab.value !== "errors" && direction.value === "synced") {void loadSynced(shopId.value, segment.value);}
+  loadDirection();
 }
 
 function loadMoreSynced() {
@@ -962,8 +989,10 @@ function loadMoreSynced() {
 }
 
 // Switching tab while looking at history re-reads that tab's history, not the previous tab's.
+// Creation has no on-hold list, so arriving there from On hold shows its outstanding work.
 watch(activeTab, () => {
-  if(activeTab.value !== "errors" && direction.value === "synced") {void loadSynced(shopId.value, segment.value);}
+  if(activeTab.value === "create" && direction.value === "onHold") {direction.value = "pending";}
+  loadDirection();
 });
 
 // Shopify topic prefixes this flow owns. The vocabulary itself stays in the connector — these

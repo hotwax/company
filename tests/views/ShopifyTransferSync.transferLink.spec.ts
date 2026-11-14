@@ -95,6 +95,7 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     currentDate: ref("2026-09-01T00:00:00.000Z"), counts: ref({}), loading: ref(false),
     saving: ref(false), error: ref(""), load: vi.fn(), save: vi.fn(),
   }),
+  useShopifyOnHoldSegments: () => ({ rows: ref([]), loading: ref(false), error: ref(""), load: vi.fn() }),
   useShopifySyncedSegment: () => ({
     rows: ref([{ segment: "create", orderId: "128253", shopifyInventoryTransferId: "4604788917", orderItemSeqId: "01", quantity: 1 }]), total: ref(1), loading: ref(false), error: ref(""),
     hasMore: ref(false), load: vi.fn(), loadMore: vi.fn(),
