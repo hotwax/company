@@ -14,9 +14,13 @@ vi.mock("@/workers/domains/shopifyTransferSyncDomain", () => ({
   SYNCED_SEGMENT_ENDPOINTS: {
     shipment: "sob/shopify/transferSync/syncedShipment",
   },
+  ON_HOLD_SEGMENT_ENDPOINTS: {
+    cancellation: "sob/shopify/transferSync/onHoldCancellation",
+    itemChange: "sob/shopify/transferSync/onHoldItemChange",
+  },
 }));
 
-import { fetchCurrentShopifyTransfer, useShopifySyncedSegment } from "@/composables/useShopifyTransferSync";
+import { fetchCurrentShopifyTransfer, useShopifyOnHoldSegments, useShopifySyncedSegment } from "@/composables/useShopifyTransferSync";
 
 describe("fetchCurrentShopifyTransfer", () => {
   const id = 'gid://shopify/InventoryTransfer/123';
@@ -70,5 +74,51 @@ describe("useShopifySyncedSegment", () => {
       syncedDate: "2026-08-31T13:44:13Z",
       segment: "shipment",
     }]);
+  });
+});
+
+describe("useShopifyOnHoldSegments", () => {
+  beforeEach(() => {
+    api.mockReset();
+  });
+
+  it("reads every segment of a tab and tags each row with its segment", async () => {
+    api.mockImplementation(async ({ url }: any) => ({
+      data: url.endsWith("onHoldCancellation")
+        ? [{ orderId: "M1", orderStatusId: "OS1", holdWorkEffortId: "WE1" }]
+        : [{ orderId: "M1", orderItemChangeId: "C1", holdWorkEffortId: "WE2" }],
+    }));
+    const onHold = useShopifyOnHoldSegments();
+
+    await onHold.load("10000", ["cancellation", "itemChange"]);
+
+    expect(api.mock.calls.map(([request]: any) => request.url)).toEqual([
+      "sob/shopify/transferSync/onHoldCancellation",
+      "sob/shopify/transferSync/onHoldItemChange",
+    ]);
+    expect(api.mock.calls[0][0].params).toMatchObject({ shopId: "10000", pageIndex: 0 });
+    expect(onHold.rows.value.map((row: any) => [row.segment, row.holdWorkEffortId])).toEqual([
+      ["cancellation", "WE1"],
+      ["itemChange", "WE2"],
+    ]);
+  });
+
+  it("reads nothing for a segment that cannot be on hold", async () => {
+    const onHold = useShopifyOnHoldSegments();
+
+    await onHold.load("10000", ["create"]);
+
+    expect(api).not.toHaveBeenCalled();
+    expect(onHold.rows.value).toEqual([]);
+  });
+
+  it("shows a read failure instead of an empty list", async () => {
+    api.mockRejectedValue(new Error("boom"));
+    const onHold = useShopifyOnHoldSegments();
+
+    await onHold.load("10000", ["cancellation"]);
+
+    expect(onHold.error.value).toBe("boom");
+    expect(onHold.rows.value).toEqual([]);
   });
 });

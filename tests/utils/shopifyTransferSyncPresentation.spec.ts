@@ -311,3 +311,36 @@ function emptyEnrichment(): TransferSyncEnrichment {
     shopifyShipmentIdsByOmsShipmentId: {},
   };
 }
+
+describe("buildTransferSyncPresentation on hold", () => {
+  const emptyEnrichment = (): TransferSyncEnrichment => ({
+    ordersById: {}, creationOccurredAtByOrderId: {}, facilityNamesById: {},
+    receiptsByOrderId: {}, receiverNamesById: {}, shopifyShipmentIdsByOmsShipmentId: {},
+  });
+
+  it("marks on-hold rows and carries the suppression task that holds them", () => {
+    const hold = {
+      holdWorkEffortId: "102875",
+      holdName: "connector686 Fashion Island reconciliation 181907",
+      holdDescription: "Suppress historical duplicate shipment transition permanently.",
+      holdUpdatedStamp: "2026-11-10T11:12:00Z",
+    };
+
+    const rows = buildTransferSyncPresentation([
+      { segment: "shipment", orderId: "TO13382", shipmentId: "S1", shipmentStatusId: "181907", statusDate: "2026-11-01T10:00:00Z", ...hold },
+      { segment: "receipt", orderId: "TO13382", shipmentId: "S1", orderItemSeqId: "00001", datetimeReceived: "2026-11-02T10:00:00Z", quantityAccepted: 1, ...hold },
+    ], "onHold", emptyEnrichment());
+
+    const expected = { workEffortId: "102875", name: hold.holdName, description: hold.holdDescription, since: hold.holdUpdatedStamp };
+    expect(rows.map((row) => row.status)).toEqual(["On hold", "On hold"]);
+    expect(rows.map((row) => row.hold)).toEqual([expected, expected]);
+  });
+
+  it("leaves rows from the other lists without a hold", () => {
+    const rows = buildTransferSyncPresentation(
+      [{ segment: "shipment", orderId: "TO1", shipmentStatusId: "SS1" }], "pending", emptyEnrichment());
+
+    expect(rows[0].status).toBe("Outstanding");
+    expect(rows[0].hold).toBeUndefined();
+  });
+});

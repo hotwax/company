@@ -282,6 +282,20 @@ describe("Shopify transfer sync worker domain", () => {
     expect(mod.segmentEndpoint("receipt", "synced")).toBe("sob/shopify/transferSync/syncedReceipt");
   });
 
+  it("gives every segment but creation its own on-hold resource", async () => {
+    const mod: any = await import("@/workers/domains/shopifyTransferSyncDomain");
+    const held = (mod.PENDING_SEGMENTS as string[]).map((segment) => mod.segmentEndpoint(segment, "onHold"));
+
+    // Creation has no suppression purpose, so nothing there can be on hold.
+    expect(held).toEqual([
+      undefined,
+      "sob/shopify/transferSync/onHoldShipment",
+      "sob/shopify/transferSync/onHoldReceipt",
+      "sob/shopify/transferSync/onHoldCancellation",
+      "sob/shopify/transferSync/onHoldItemChange",
+    ]);
+  });
+
   it("does nothing without a shop, rather than pruning on an unscoped read", async () => {
     const domain = await loadDomain();
 

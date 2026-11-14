@@ -108,6 +108,7 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     load: vi.fn(),
     save: vi.fn(),
   }),
+  useShopifyOnHoldSegments: () => ({ rows: ref([]), loading: ref(false), error: ref(""), load: vi.fn() }),
   useShopifySyncedSegment: () => ({
     rows: ref([]),
     total: ref(0),
