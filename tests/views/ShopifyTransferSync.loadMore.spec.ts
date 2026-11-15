@@ -77,7 +77,10 @@ vi.mock("@/composables/useServiceJobs", () => ({
 let cached: { counts: any; orderCounts: any };
 let nativeSync: any;
 
-vi.mock("@/composables/useShopifyTransferSync", () => ({
+vi.mock("@/composables/useShopifyTransferSync", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
   useShopifyPendingCounts: () => {
     cached = { counts: ref({ create: 120, shipment: 4 }), orderCounts: ref({ create: 10, shipment: 2 }) };
 
@@ -146,7 +149,8 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     error: ref(""),
     refresh: vi.fn(),
   }),
-}));
+  };
+});
 
 vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
   useShopifyTransferSyncEnrichment: () => ({

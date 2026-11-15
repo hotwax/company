@@ -56,9 +56,13 @@ vi.mock("@/composables/useShopify", () => ({
   useShopifyShop: () => ({ record: ref({ shopId: "SHOP", name: "Shop" }) }),
 }));
 
+
 vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyTransferSyncJobs: () => ({ cards }),
-  useShopifyNativeTransferSync: () => ({ enabled: nativeSyncEnabled, load: vi.fn() }),
+  useShopifyNativeTransferSync: () => ({ enabled: nativeSyncEnabled }),
+  useShopifyTransferDetach: () => ({ fetchOwner: () => ownerLookup.value(), detach: vi.fn() }),
+  useShopifyTransferUpdateCheck: () => ({ check: vi.fn() }),
+  useShopifyTransferDelivery: () => ({ logsFor: () => [] }),
 }));
 
 vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
@@ -68,17 +72,8 @@ vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
   }),
 }));
 
-vi.mock("@/composables/useShopifyTransferDetach", () => ({
-  useShopifyTransferDetach: () => ({ fetchOwner: () => ownerLookup.value(), detach: vi.fn() }),
-}));
 
-vi.mock("@/composables/useShopifyTransferUpdateCheck", () => ({
-  useShopifyTransferUpdateCheck: () => ({ check: vi.fn() }),
-}));
 
-vi.mock("@/composables/useShopifyTransferDelivery", () => ({
-  useShopifyTransferDelivery: () => ({ logsFor: () => [] }),
-}));
 
 const stubs = {
   ServiceJobDetailsModal: true,

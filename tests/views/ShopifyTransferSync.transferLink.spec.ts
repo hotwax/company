@@ -83,7 +83,10 @@ vi.mock("@/utils/shopifyTransferSync", async () => ({
   isTransferSyncMonitoringLoaded: () => true,
 }));
 
-vi.mock("@/composables/useShopifyTransferSync", () => ({
+vi.mock("@/composables/useShopifyTransferSync", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
   useShopifyPendingCounts: () => ({
     counts: ref({ create: 0 }), orderCounts: ref({}), creationOrderCount: ref(0), total: ref(0), hydrated: ref(true),
   }),
@@ -108,7 +111,8 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     loading: ref(false), error: ref(""), refresh: vi.fn(),
   }),
   registerMissingTransferWebhook: vi.fn(),
-}));
+  };
+});
 
 async function mountView() {
   const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
