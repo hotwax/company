@@ -112,6 +112,20 @@ describe("useShopifyOnHoldSegments", () => {
     expect(onHold.rows.value).toEqual([]);
   });
 
+  it("pages until a short page is returned when a segment has more than a full page", async () => {
+    api.mockImplementation(async ({ params }: any) => ({
+      data: params.pageIndex === 0
+        ? Array.from({ length: 100 }, (_, i) => ({ orderId: `TO${i}`, holdWorkEffortId: `WE${i}` }))
+        : [{ orderId: "TO100", holdWorkEffortId: "WE100" }],
+    }));
+    const onHold = useShopifyOnHoldSegments();
+
+    await onHold.load("10000", ["cancellation"]);
+
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(onHold.rows.value).toHaveLength(101);
+  });
+
   it("shows a read failure instead of an empty list", async () => {
     api.mockRejectedValue(new Error("boom"));
     const onHold = useShopifyOnHoldSegments();

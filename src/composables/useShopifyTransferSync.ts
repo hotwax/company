@@ -336,10 +336,11 @@ export function useShopifySyncedSegment() {
 }
 
 const ON_HOLD_PAGE_SIZE = 100;
+const MAX_ON_HOLD_PAGES = 50;
 
 /**
  * On-hold rows for a tab's segments, read on demand like synced history. A hold is an operator's
- * deliberate, rare decision, so every segment of the tab is read whole (one page each) and merged;
+ * deliberate, rare decision, so every segment of the tab is read whole (paginated until complete) and merged;
  * the combined Cancellations tab therefore shows item-change holds too, which synced history cannot.
  */
 export function useShopifyOnHoldSegments() {
@@ -352,16 +353,27 @@ export function useShopifyOnHoldSegments() {
     if(!shopId || !reads.length) {rows.value = []; return;}
     loading.value = true;
     error.value = "";
+    rows.value = [];
     try {
       const pages = await Promise.all(reads.map(async (segment) => {
-        const resp: any = await api({
-          url: ON_HOLD_SEGMENT_ENDPOINTS[segment],
-          method: "GET",
-          params: { shopId, orderByField: "-holdUpdatedStamp", pageIndex: 0, pageSize: ON_HOLD_PAGE_SIZE },
-        });
-        if(commonUtil.hasError(resp)) {throw new Error("On-hold transfer activity could not be read.");}
-        return (Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []))
-          .map((row: any) => ({ ...row, segment }));
+        let pageIndex = 0;
+        const all: any[] = [];
+        while (pageIndex < MAX_ON_HOLD_PAGES) {
+          const resp: any = await api({
+            url: ON_HOLD_SEGMENT_ENDPOINTS[segment],
+            method: "GET",
+            params: { shopId, orderByField: "-holdUpdatedStamp", pageIndex, pageSize: ON_HOLD_PAGE_SIZE },
+          });
+          if(commonUtil.hasError(resp)) {throw new Error("On-hold transfer activity could not be read.");}
+          const page: any[] = (Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []))
+            .map((row: any) => ({ ...row, segment }));
+          all.push(...page);
+          if (page.length < ON_HOLD_PAGE_SIZE) {
+            break;
+          }
+          pageIndex++;
+        }
+        return all;
       }));
       rows.value = pages.flat();
     } catch (err: any) {

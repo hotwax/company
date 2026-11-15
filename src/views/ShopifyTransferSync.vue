@@ -1280,6 +1280,7 @@ function startTransferSyncDomains() {
   viewSyncBaselineAt.value = serviceState.syncedAt.shopifyTransferSync ?? 0;
   void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
   void loadWebhookReconciliation();
+  loadDirection();
 }
 
 async function retry() {
