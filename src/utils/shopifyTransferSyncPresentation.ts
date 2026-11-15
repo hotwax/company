@@ -1,4 +1,4 @@
-export type TransferSyncDirection = "pending" | "synced";
+export type TransferSyncDirection = "pending" | "synced" | "onHold";
 
 export interface TransferSyncOrderItem {
   orderItemSeqId?: string;
@@ -37,13 +37,42 @@ export interface TransferSyncPresentationRow {
   shopifyTransferId?: string;
   title: string;
   detail: string;
-  status: "Outstanding" | "Synced";
+  status: TransferSyncStatus;
   omsShipmentId?: string;
   shopifyShipmentIds?: string[];
   shipmentEventStatus?: string;
   occurredAt?: string;
   syncedAt?: string;
   syncDurationMs?: number;
+  /** The open SYSTEM_TASK suppression task keeping this artifact from Shopify (on hold rows only). */
+  hold?: TransferSyncHold;
+}
+
+export type TransferSyncStatus = "Outstanding" | "Synced" | "On hold";
+
+export interface TransferSyncHold {
+  workEffortId: string;
+  name?: string;
+  description?: string;
+  since?: string;
+}
+
+function statusFor(direction: TransferSyncDirection): TransferSyncStatus {
+  if(direction === "onHold") {return "On hold";}
+  return direction === "pending" ? "Outstanding" : "Synced";
+}
+
+/** The suppression task the on-hold views join onto each row; absent on every other list. */
+function holdFor(row: Record<string, unknown> | undefined): Pick<TransferSyncPresentationRow, "hold"> {
+  const workEffortId = String(row?.holdWorkEffortId ?? "");
+  if(!workEffortId) {return {};}
+  const text = (value: unknown) => String(value ?? "") || undefined;
+  return { hold: {
+    workEffortId,
+    name: text(row?.holdName),
+    description: text(row?.holdDescription),
+    since: text(row?.holdCreatedDate ?? row?.holdUpdatedStamp),
+  } };
 }
 
 export function formatSyncDuration(durationMs: number | undefined): string {
@@ -123,7 +152,7 @@ function creationSummary(
       transferRoute(order, enrichment.facilityNamesById),
       `${items.length} item lines, ${totalQuantity} units`,
     ),
-    status: direction === "pending" ? "Outstanding" : "Synced",
+    status: statusFor(direction),
     ...syncTiming(enrichment.creationOccurredAtByOrderId[orderId] ?? "", latestSyncedAt),
   };
 }
@@ -139,6 +168,7 @@ function receiptSummary(
   transferId: string | undefined,
   direction: TransferSyncDirection,
   enrichment: TransferSyncEnrichment,
+  hold?: TransferSyncHold,
 ): TransferSyncPresentationRow {
   const accepted = receipts.reduce((sum, receipt) => sum + Number(receipt.quantityAccepted ?? 0), 0);
   const rejected = receipts.reduce((sum, receipt) => sum + Number(receipt.quantityRejected ?? 0), 0);
@@ -156,8 +186,9 @@ function receiptSummary(
       `Received by ${receiverName}`,
       `${accepted} accepted, ${rejected} rejected, ${lineCount} lines`,
     ),
-    status: direction === "pending" ? "Outstanding" : "Synced",
+    status: statusFor(direction),
     ...syncTiming(occurredAt, syncedAt),
+    ...(hold ? { hold } : {}),
   };
 }
 
@@ -177,7 +208,7 @@ function actionSummary(
   const orderId = String(row.orderId ?? "");
   if(!orderId) {return undefined;}
   const order = enrichment.ordersById[orderId];
-  const status = direction === "pending" ? "Outstanding" : "Synced";
+  const status = statusFor(direction);
   const transferId = shopifyTransferId(row);
 
   if(segment === "shipment") {
@@ -194,6 +225,7 @@ function actionSummary(
       shipmentEventStatus: "Shipped",
       shopifyShipmentIds: enrichment.shopifyShipmentIdsByOmsShipmentId[omsShipmentId] ?? [],
       ...rowTiming(row),
+      ...holdFor(row),
     };
   }
   if(segment === "cancellation") {
@@ -205,6 +237,7 @@ function actionSummary(
       detail: transferRoute(order, enrichment.facilityNamesById),
       status,
       ...rowTiming(row),
+      ...holdFor(row),
     };
   }
   if(segment === "itemChange") {
@@ -222,6 +255,7 @@ function actionSummary(
       ),
       status,
       ...rowTiming(row),
+      ...holdFor(row),
     };
   }
   return undefined;
@@ -254,6 +288,7 @@ export function buildTransferSyncPresentation(
     occurredAt: string;
     syncedAt: string;
     shopifyTransferId?: string;
+    hold?: TransferSyncHold;
   }>();
 
   for(const row of rows) {
@@ -283,6 +318,7 @@ export function buildTransferSyncPresentation(
       occurredAt: String(row.happenedAt ?? row.occurredAt ?? receivedAt),
       syncedAt: String(row.syncedDate ?? ""),
       shopifyTransferId: shopifyTransferId(row),
+      ...holdFor(row),
     };
     if(!actionReceipts.length) {
       group.receipts.push(receipt ?? {
@@ -306,6 +342,7 @@ export function buildTransferSyncPresentation(
     group.shopifyTransferId,
     direction,
     enrichment,
+    group.hold,
   ));
   const actionRows = rows.map((row) => actionSummary(row, direction, enrichment)).filter(Boolean) as TransferSyncPresentationRow[];
   return [...creationRows, ...receiptRows, ...actionRows];

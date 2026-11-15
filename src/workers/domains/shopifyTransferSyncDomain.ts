@@ -45,9 +45,22 @@ export const SYNCED_SEGMENT_ENDPOINTS = {
 } as const;
 
 export type PendingSegment = keyof typeof PENDING_SEGMENT_ENDPOINTS;
-export type SyncDirection = "pending" | "synced";
 
-export function segmentEndpoint(segment: PendingSegment, direction: SyncDirection): string {
+/**
+ * What an open SYSTEM_TASK suppression task keeps from Shopify. The pending views leave these out,
+ * so pending, synced and on hold never share a row. Creation has no suppression purpose, so no list.
+ */
+export const ON_HOLD_SEGMENT_ENDPOINTS: Partial<Record<PendingSegment, string>> = {
+  shipment: "sob/shopify/transferSync/onHoldShipment",
+  receipt: "sob/shopify/transferSync/onHoldReceipt",
+  cancellation: "sob/shopify/transferSync/onHoldCancellation",
+  itemChange: "sob/shopify/transferSync/onHoldItemChange",
+};
+
+export type SyncDirection = "pending" | "synced" | "onHold";
+
+export function segmentEndpoint(segment: PendingSegment, direction: SyncDirection): string | undefined {
+  if(direction === "onHold") {return ON_HOLD_SEGMENT_ENDPOINTS[segment];}
   return direction === "pending"
     ? PENDING_SEGMENT_ENDPOINTS[segment]
     : SYNCED_SEGMENT_ENDPOINTS[segment];

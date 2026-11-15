@@ -2,7 +2,7 @@ import { api, commonUtil, useLiveEntity } from "@common";
 import { companyDb } from "@/db/companyDb";
 import { computed, ref } from "vue";
 import { refreshAfterMutation } from "@/db/appDbSync";
-import { PENDING_SEGMENT_ENDPOINTS, type PendingSegment, SYNCED_SEGMENT_ENDPOINTS } from "@/workers/domains/shopifyTransferSyncDomain";
+import { ON_HOLD_SEGMENT_ENDPOINTS, PENDING_SEGMENT_ENDPOINTS, type PendingSegment, SYNCED_SEGMENT_ENDPOINTS } from "@/workers/domains/shopifyTransferSyncDomain";
 import {
   type ReconciliationSummary,
   type WebhookReconciliationRow,
@@ -333,6 +333,58 @@ export function useShopifySyncedSegment() {
     load,
     loadMore: (shopId: string, segment: PendingSegment) => load(shopId, segment, true),
   };
+}
+
+const ON_HOLD_PAGE_SIZE = 100;
+const MAX_ON_HOLD_PAGES = 50;
+
+/**
+ * On-hold rows for a tab's segments, read on demand like synced history. A hold is an operator's
+ * deliberate, rare decision, so every segment of the tab is read whole (paginated until complete) and merged;
+ * the combined Cancellations tab therefore shows item-change holds too, which synced history cannot.
+ */
+export function useShopifyOnHoldSegments() {
+  const rows = ref<any[]>([]);
+  const loading = ref(false);
+  const error = ref("");
+
+  async function load(shopId: string, segments: PendingSegment[]) {
+    const reads = segments.filter((segment) => ON_HOLD_SEGMENT_ENDPOINTS[segment]);
+    if(!shopId || !reads.length) {rows.value = []; return;}
+    loading.value = true;
+    error.value = "";
+    rows.value = [];
+    try {
+      const pages = await Promise.all(reads.map(async (segment) => {
+        let pageIndex = 0;
+        const all: any[] = [];
+        while (pageIndex < MAX_ON_HOLD_PAGES) {
+          const resp: any = await api({
+            url: ON_HOLD_SEGMENT_ENDPOINTS[segment],
+            method: "GET",
+            params: { shopId, orderByField: "-holdUpdatedStamp", pageIndex, pageSize: ON_HOLD_PAGE_SIZE },
+          });
+          if(commonUtil.hasError(resp)) {throw new Error("On-hold transfer activity could not be read.");}
+          const page: any[] = (Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []))
+            .map((row: any) => ({ ...row, segment }));
+          all.push(...page);
+          if (page.length < ON_HOLD_PAGE_SIZE) {
+            break;
+          }
+          pageIndex++;
+        }
+        return all;
+      }));
+      rows.value = pages.flat();
+    } catch (err: any) {
+      error.value = err?.message || "On-hold transfer activity could not be read.";
+      rows.value = [];
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  return { rows, loading, error, load };
 }
 
 
