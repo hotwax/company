@@ -66,6 +66,7 @@ vi.mock("@/composables/useServiceJobs", () => ({
 }));
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
+  useShopifyTransferDelivery: () => ({ logsFor: () => [] }),
   useShopifyPendingCounts: () => ({
     counts: ref({}),
     orderCounts: ref({}),
@@ -99,6 +100,7 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     load: vi.fn(),
     loadMore: vi.fn(),
   }),
+  useShopifyTransferSyncEnrichment: () => ({ enrichment: ref({}), load: vi.fn(), }),
   useShopifyTransferSyncJobs: () => ({
     cards: ref([
       {
@@ -110,6 +112,10 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
       },
     ]),
     ensure: vi.fn(),
+  }),
+  useShopifyTransferSyncEnrichment: () => ({
+    enrichment: ref({}),
+    load: vi.fn(),
   }),
   useShopifyWebhookReconciliation: () => ({
     rows: ref([]),
@@ -130,12 +136,6 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
   }),
 }));
 
-vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
-  useShopifyTransferSyncEnrichment: () => ({
-    enrichment: ref({}),
-    load: vi.fn(),
-  }),
-}));
 
 vi.mock("@/composables/useShopify", () => ({
   useShopifyShop: () => ({ record: ref({ shopId: "1000", myshopifyDomain: "test-shop.myshopify.com" }) }),

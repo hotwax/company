@@ -4,7 +4,7 @@ import { flushPromises, mount, enableAutoUnmount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ref, computed } from "vue";
 import { api } from "@common";
-import { sendPendingFulfillment } from "@/composables/useFulfillmentSend";
+import { sendPendingFulfillment } from "@/composables/useShopifyFulfillment";
 import { cartOutline, sendOutline } from "ionicons/icons";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import FulfillmentDiagnosis from "@/components/shopify-fulfillment/FulfillmentDiagnosis.vue";

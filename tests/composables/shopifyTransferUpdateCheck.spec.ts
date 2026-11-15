@@ -3,9 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ api: vi.fn(), choices: vi.fn(), snapshot: vi.fn() }));
 vi.mock("@common", () => ({ api: state.api, commonUtil: { hasError: (response: any) => Boolean(response.error) } }));
 vi.mock("@/composables/useShopify", () => ({ useTransferMappingResolution: () => ({ fetchChoices: state.choices }) }));
-vi.mock("@/composables/useShopifyTransferSync", () => ({ fetchCurrentShopifyTransfer: state.snapshot }));
+vi.mock("@/composables/useShopifyTransferSync", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/composables/useShopifyTransferSync")>();
+  return {
+    ...actual,
+    fetchCurrentShopifyTransfer: state.snapshot
+  };
+});
 import { resolveTransferStagingIssue, transferStagingIssues } from "@/utils/shopifyTransferStagingErrors";
-import { useShopifyTransferUpdateCheck } from "@/composables/useShopifyTransferUpdateCheck";
+import { useShopifyTransferUpdateCheck } from "@/composables/useShopifyTransferSync";
 
 describe("live update item comparison", () => {
   beforeEach(() => {

@@ -59,24 +59,12 @@ vi.mock("@/composables/useShopify", () => ({
 vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyTransferSyncJobs: () => ({ cards }),
   useShopifyNativeTransferSync: () => ({ enabled: nativeSyncEnabled, load: vi.fn() }),
-}));
-
-vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
   fetchTransferSyncSummary: vi.fn(async () => summaryResult.value),
   useShopifyTransferSyncEnrichment: () => ({
     enrichment: ref({ ordersById: {} }), load: vi.fn().mockResolvedValue(undefined), loading: ref(false), error: ref(""),
   }),
-}));
-
-vi.mock("@/composables/useShopifyTransferDetach", () => ({
   useShopifyTransferDetach: () => ({ fetchOwner: () => ownerLookup.value(), detach: vi.fn() }),
-}));
-
-vi.mock("@/composables/useShopifyTransferUpdateCheck", () => ({
   useShopifyTransferUpdateCheck: () => ({ check: vi.fn() }),
-}));
-
-vi.mock("@/composables/useShopifyTransferDelivery", () => ({
   useShopifyTransferDelivery: () => ({ logsFor: () => [] }),
 }));
 

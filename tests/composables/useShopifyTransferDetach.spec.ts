@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock("@common", () => ({ api: state.api, commonUtil: { hasError: (response: any) => Boolean(response?.error) } }));
-import { useShopifyTransferDetach } from "@/composables/useShopifyTransferDetach";
+import { useShopifyTransferDetach } from "@/composables/useShopifyTransferSync";
 
 describe("detaching a transfer from native sync", () => {
   beforeEach(() => {vi.clearAllMocks();});
