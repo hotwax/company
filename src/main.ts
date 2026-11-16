@@ -69,4 +69,20 @@ initialiseConfig({
 
 router.isReady().then(() => {
   app.mount('#app')
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistration === 'function') {
+    navigator.serviceWorker.getRegistration().then((registration) => {
+      if (registration) {
+        const scriptURL =
+          registration.active?.scriptURL ||
+          registration.installing?.scriptURL ||
+          registration.waiting?.scriptURL ||
+          '';
+        if (!scriptURL.includes('firebase-messaging')) {
+          registration.unregister()
+        }
+      }
+    }).catch(() => {
+      // Ignore background unregistration failures
+    })
+  }
 })

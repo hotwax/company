@@ -82,6 +82,7 @@ export default defineConfig(({ mode }) => {
     legacy(),
     VitePWA({
       registerType: "autoUpdate",
+      injectRegister: false,
       selfDestroying: true,
       manifest: manifest as any,
       devOptions: {
