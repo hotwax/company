@@ -13,7 +13,7 @@
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { IonApp, IonRouterOutlet, IonSplitPane, loadingController } from '@ionic/vue'
 import Menu from '@/components/common/Menu.vue'
-import { emitter, FastTravel, translate } from '@common'
+import { emitter, FastTravel, translate, useSessionChangeAlert } from '@common'
 import { Settings } from 'luxon'
 import { useAuth } from '@common/composables/useAuth'
 import { useUserStore } from '@/store/user'
@@ -22,6 +22,10 @@ import { useInventorySyncArea } from '@/composables/useInventorySyncArea'
 import router from "@/router"
 
 const userStore = useUserStore()
+
+// A login elsewhere (another instance, Maarg or user) replaced the shared session cookies: the
+// framework stops the sync and asks the user to reload.
+useSessionChangeAlert()
 
 // Entering a shop's inventory sync pages starts that area's pollers; leaving them (logout included)
 // stops them. Synchronous, so the area re-takes the worker on each move before the outgoing page's

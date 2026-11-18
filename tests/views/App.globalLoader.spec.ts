@@ -66,6 +66,7 @@ vi.mock("@common", () => ({
     emit: (event: string, payload?: any) => { (harness.handlers[event] || []).forEach((handler) => handler(payload)); },
   },
   FastTravel: harness.stub("FastTravel"),
+  useSessionChangeAlert: () => ({ checkSession: () => {} }),
   translate: (value: string) => value,
 }));
 
