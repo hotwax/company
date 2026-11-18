@@ -22,6 +22,7 @@ vi.mock("@common", () => ({
   emitter: { on: vi.fn(), off: vi.fn(), emit: vi.fn() },
   FastTravel: stub("FastTravel"),
   translate: (value: string) => value,
+  useSessionChangeAlert: () => ({ checkSession: () => {} }),
 }));
 vi.mock("@/components/common/Menu.vue", () => ({ default: stub("Menu") }));
 vi.mock("@common/composables/useAuth", () => ({ useAuth: () => ({ isAuthenticated: ref(false) }) }));
