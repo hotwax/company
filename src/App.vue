@@ -19,9 +19,13 @@ import { useAuth } from '@common/composables/useAuth'
 import { useUserStore } from '@/store/user'
 import { startAppDbSync } from '@/db/appDbSync'
 import { useInventorySyncArea } from '@/composables/useInventorySyncArea'
+import { useOmsInstanceChangeAlert } from '@/composables/useOmsInstanceChangeAlert'
 import router from "@/router"
 
 const userStore = useUserStore()
+
+// A login in another tab or app switched the shared session to another instance and stopped the sync.
+useOmsInstanceChangeAlert()
 
 // Entering a shop's inventory sync pages starts that area's pollers; leaving them (logout included)
 // stops them. Synchronous, so the area re-takes the worker on each move before the outgoing page's
