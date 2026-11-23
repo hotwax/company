@@ -47,7 +47,9 @@ The requirements are three setup stories in mantle-netsuite-connector:
 - [Setting up inventory for a new client](https://github.com/hotwax/mantle-netsuite-connector/blob/main/docs/inventory/setting-up-inventory.md)
 
 The setup story switches on the jobs one store at a time (step 10). So the user first chooses a
-store, then works on that store's flows. The NetSuite connection is shared by all stores.
+store, then works on that store's flows. The NetSuite connection is shared by all stores. Each
+flow of a store has its own go-live date. HotWax moves it when a new version of that flow's sync is
+released.
 
 The screens follow the app's Shopify area, so users meet patterns they already know:
 
@@ -117,7 +119,8 @@ Opened by the Customer Success Manager.
 | Question, in order | Where the page answers it |
 |---|---|
 | Is this flow ready to switch on? | While setup is open, the step list on the left, as on Shopify's Inventory sync. For Orders: shipping methods, payment methods, departments, special items, go-live date. Each step is marked done or missing |
-| What date does it start from? | A "Key dates" card with this store's go-live date, as on Shopify's Order sync |
+| What date does it start from? | A "Key dates" card with this flow's go-live date for this store, as on Shopify's Order sync |
+| Why did the date move? | The "Key dates" card keeps each earlier date, with who moved it, when and why, such as "new return sync released" |
 | Is it on? | An "Activate" button. The jobs are created paused first. An administrator activates them for this store only, and they start in the right order |
 | Is it working? | After activation, metric cards: last run, pending sync, failed to sync, and pending sync for more than one day |
 | What went wrong? | The flow's records that failed to sync (4.5), each with its error, and its job runs |
@@ -156,3 +159,4 @@ Opened by the Customer Success Manager, every day.
 2. One status call per flow and store: on or off, last run, pending sync, failed to sync, and missing setup.
 3. NetSuite lists for the mapping dropdowns, read through SuiteQL.
 4. A list of records that failed to sync, per flow and store, with send again and resolve.
+5. Save a flow's go-live date for a store with a reason, keeping each earlier date.
