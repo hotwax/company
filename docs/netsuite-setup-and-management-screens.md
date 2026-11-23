@@ -132,7 +132,10 @@ the gift card.
 
 Opened by the Customer Success Manager, or the client's NetSuite Admin.
 
-Mappings are shared by all stores. Whether any mapping must differ by store is an open question.
+Mappings are shared by all stores. One OMS value has one NetSuite match, and every store uses it.
+For example, the shipping method "Ground" maps to "UPS Ground (2830)" for every store. So this page
+has no store choice. When a store's flow checks its setup, it counts the OMS values that still have
+no match.
 
 | Question, in order | Where the page answers it |
 |---|---|
