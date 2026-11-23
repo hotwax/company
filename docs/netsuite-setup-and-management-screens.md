@@ -17,13 +17,13 @@ and what is broken.
 - NetSuite location ids are set one facility at a time, on each facility's page.
 - Jobs are switched on in a generic job screen, in an order that lives in a document.
 - After go-live there is one count card, which shows "Unavailable", and the order push rules. Records
-  NetSuite refused cannot be seen.
+  that failed to sync cannot be seen.
 
 ### 1.3 Success criteria
 
 - A Customer Success Manager sets up a new client without leaving the Company app.
 - Any colleague sees the same setup state, because it is read from the server.
-- A refused record is found, fixed and sent again from the app.
+- A record that failed to sync is found, fixed and sent again from the app.
 
 ## 2. Scope
 
@@ -54,9 +54,9 @@ The screens follow the app's Shopify area, so users meet patterns they already k
 
 They also take three habits from Celigo, the tool many NetSuite clients use for Shopify and NetSuite:
 
-- Each flow shows at a glance whether it is on, when it last ran, and how many records failed.
+- Each flow shows at a glance whether it is on, when it last ran, and how many records failed to sync.
 - Values are mapped by picking NetSuite's own records by name, not by typing internal ids.
-- Each failed record can be sent again, or resolved with a note.
+- Each record that failed to sync can be sent again, or resolved with a note.
 
 What the current NetSuite page settings feed today:
 
@@ -85,8 +85,8 @@ Opened by the Customer Success Manager, during setup and every day.
 | Question, in order | Where the page answers it |
 |---|---|
 | Is the OMS connected to NetSuite? | Top card: "Connected to sandbox 4054670-sb1, tested 22 Nov", or "Not connected", with a Connect button |
-| Which flows are on, and is any in trouble? | One status card per flow, in sections: "Products and Inventory" (Products, Stock, Transfers), "Orders and fulfillment" (Orders, Shipments from NetSuite), "Returns". Each card shows On, Paused or Setup required, the last run, what is waiting, and what was refused today |
-| What still needs setting up? | A "Setup required" badge on the flow card, with the count of missing items, such as "2 of 6 missing" |
+| Which flows are on, and is any in trouble? | One status card per flow, in sections: "Products and Inventory" (Products, Stock, Transfers), "Orders and fulfillment" (Orders, Shipments from NetSuite), "Returns". Each card shows On, Paused or Setup required, the last run, what is pending sync, and what failed to sync today |
+| What still needs setting up? | A "Setup required" badge on the flow card, with the count of missing steps, such as "2 of 6 missing" |
 | Where do I change a setting? | The "Configuration" section: Connection, Product stores and subsidiaries, File server (SFTP), NetSuite catalog |
 
 ### 4.2 Connection
@@ -112,8 +112,8 @@ Opened by the Customer Success Manager.
 | Is this flow ready to switch on? | While setup is open, the step list on the left, as on Shopify's Inventory sync. For Orders: shipping methods, payment methods, departments, special items, go-live date. Each step is marked done or missing |
 | What date does it start from? | A "Key dates" card with the go-live date, as on Shopify's Order sync |
 | Is it on? | An "Activate" button. The jobs are created paused first. An administrator activates them, and they start in the right order |
-| Is it working? | After activation, metric cards: last run, waiting, refused, and older than one day |
-| What went wrong? | The flow's refused records (4.5) and its job runs |
+| Is it working? | After activation, metric cards: last run, pending sync, failed to sync, and pending sync for more than one day |
+| What went wrong? | The flow's records that failed to sync (4.5), each with its error, and its job runs |
 
 ### 4.4 Mapping page
 
@@ -128,7 +128,7 @@ Opened by the Customer Success Manager, or the client's NetSuite Admin.
 | What is the NetSuite match? | A dropdown of NetSuite's own records by name and id, read live from NetSuite, such as "Standard (2830)" |
 | Is a saved match still valid? | A warning on a row whose NetSuite record is gone or inactive |
 
-### 4.5 Refused records
+### 4.5 Failed to sync
 
 One per flow.
 
@@ -136,14 +136,14 @@ Opened by the Customer Success Manager, every day.
 
 | Question, in order | Where the page answers it |
 |---|---|
-| Which records did NetSuite refuse? | A list: the record, such as an order id, when it was sent, and NetSuite's message |
+| Which records failed to sync? | A list: the record, such as an order id, when it was sent, and the error |
 | What do I do about each one? | "Send again" after the data is fixed, or "Resolve" with a note when no resend is needed |
-| Is anything stuck without an error? | A "Waiting more than one day" filter |
+| Is anything pending sync for too long? | A "Pending sync more than one day" filter |
 
 ## 5. What the server must add
 
 1. A REST endpoint that saves the NetSuite login and tests the connection. Today this exists only
    in the Moqui admin screen.
-2. One status call per flow: on or off, last run, waiting, refused, and missing setup.
+2. One status call per flow: on or off, last run, pending sync, failed to sync, and missing setup.
 3. NetSuite lists for the mapping dropdowns, read through SuiteQL.
-4. A list of single refused records, with send again and resolve.
+4. A list of records that failed to sync, with send again and resolve.
