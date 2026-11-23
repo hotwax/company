@@ -5,7 +5,7 @@
 ### 1.1 Objective
 
 One NetSuite area in the Company app, where a Customer Success Manager sets up a client's NetSuite
-integration and checks every day that it works.
+integration one store at a time, and checks every day that it works.
 
 ### 1.2 Problem
 
@@ -16,6 +16,8 @@ and what is broken.
 - The NetSuite login is entered in an old Moqui admin screen, outside the Company app.
 - NetSuite location ids are set one facility at a time, on each facility's page.
 - Jobs are switched on in a generic job screen, in an order that lives in a document.
+- A client with several stores, such as US, Canada and EU, cannot see one store's setup apart from
+  the others.
 - After go-live there is one count card, which shows "Unavailable", and the order push rules. Records
   that failed to sync cannot be seen.
 
@@ -44,6 +46,9 @@ The requirements are three setup stories in mantle-netsuite-connector:
 - [Setting up products for a new client](https://github.com/hotwax/mantle-netsuite-connector/blob/main/docs/product-data/setting-up-products.md)
 - [Setting up inventory for a new client](https://github.com/hotwax/mantle-netsuite-connector/blob/main/docs/inventory/setting-up-inventory.md)
 
+The setup story switches on the jobs one store at a time (step 10). So the user first chooses a
+store, then works on that store's flows. The NetSuite connection is shared by all stores.
+
 The screens follow the app's Shopify area, so users meet patterns they already know:
 
 - The Shopify connection page has a "Configuration" section, then one section per area, with a
@@ -67,10 +72,10 @@ What the current NetSuite page settings feed today:
 | Shipping methods, Payment method, Departments | Current order, deposit and return code | Mapping pages under their flows |
 | SFTP | NetSuite scripts that write files | Configuration |
 | Inventory variances | The store adjustment job (the reasons only) | Stock flow |
-| Product Store and subsidiary | Only the old order file feed | Rework as Configuration, Product stores, for more than one store |
+| Product Store and subsidiary | Only the old order file feed | Rework as the chosen store's subsidiary |
 | Price level | Only the old order file feed | Check whether the current push needs it |
-| Discounts | Only Gorjana's old return sync | Rework to save the default discount item the current push reads |
-| Sales Channel | No reader found in the connector or Gorjana code | Check before keeping |
+| Discounts | Only one client's old return sync | Rework to save the default discount item the current push reads |
+| Sales Channel | No reader found in the connector or client code | Check before keeping |
 
 ## 4. The screens
 
@@ -78,16 +83,18 @@ Each screen says who opens it, what they want to know in that order, and where t
 
 ### 4.1 NetSuite home
 
-Replaces today's NetSuite page. Same layout as the Shopify connection page.
+Replaces today's NetSuite page. Same layout as the Shopify connection page, with a store choice
+above the flows.
 
 Opened by the Customer Success Manager, during setup and every day.
 
 | Question, in order | Where the page answers it |
 |---|---|
-| Is the OMS connected to NetSuite? | Top card: "Connected to sandbox 4054670-sb1, tested 22 Nov", or "Not connected", with a Connect button |
-| Which flows are on, and is any in trouble? | One status card per flow, in sections: "Products and Inventory" (Products, Stock, Transfers), "Orders and fulfillment" (Orders, Shipments from NetSuite), "Returns". Each card shows On, Paused or Setup required, the last run, what is pending sync, and what failed to sync today |
-| What still needs setting up? | A "Setup required" badge on the flow card, with the count of missing steps, such as "2 of 6 missing" |
-| Where do I change a setting? | The "Configuration" section: Connection, Product stores and subsidiaries, File server (SFTP), NetSuite catalog |
+| Is the OMS connected to NetSuite? | Top card, shared by all stores: "Connected to sandbox 1234567-sb1, tested 22 Nov", or "Not connected", with a Connect button |
+| Which store am I working on? | A store choice under the top card, such as US, Canada or EU. A client with one store sees no choice |
+| Which flows of this store are on, and is any in trouble? | One status card per flow of the chosen store, in sections: "Products and Inventory" (Products, Stock, Transfers), "Orders and fulfillment" (Orders, Shipments from NetSuite), "Returns". Each card shows On, Paused or Setup required, the last run, what is pending sync, and what failed to sync today |
+| What still needs setting up for this store? | A "Setup required" badge on the flow card, with the count of missing steps, such as "2 of 6 missing" |
+| Where do I change a setting? | The "Configuration" section, shared by all stores: Connection, File server (SFTP), NetSuite catalog. The chosen store's subsidiary sits above its flows |
 
 ### 4.2 Connection
 
@@ -103,15 +110,15 @@ Opened by the Customer Success Manager, with the client's NetSuite Admin.
 
 ### 4.3 Flow page
 
-One layout for every flow. Orders is the example.
+One layout for every flow, for the chosen store. Orders is the example.
 
 Opened by the Customer Success Manager.
 
 | Question, in order | Where the page answers it |
 |---|---|
 | Is this flow ready to switch on? | While setup is open, the step list on the left, as on Shopify's Inventory sync. For Orders: shipping methods, payment methods, departments, special items, go-live date. Each step is marked done or missing |
-| What date does it start from? | A "Key dates" card with the go-live date, as on Shopify's Order sync |
-| Is it on? | An "Activate" button. The jobs are created paused first. An administrator activates them, and they start in the right order |
+| What date does it start from? | A "Key dates" card with this store's go-live date, as on Shopify's Order sync |
+| Is it on? | An "Activate" button. The jobs are created paused first. An administrator activates them for this store only, and they start in the right order |
 | Is it working? | After activation, metric cards: last run, pending sync, failed to sync, and pending sync for more than one day |
 | What went wrong? | The flow's records that failed to sync (4.5), each with its error, and its job runs |
 
@@ -122,6 +129,8 @@ the gift card.
 
 Opened by the Customer Success Manager, or the client's NetSuite Admin.
 
+Mappings are shared by all stores. Whether any mapping must differ by store is an open question.
+
 | Question, in order | Where the page answers it |
 |---|---|
 | Which OMS values still have no NetSuite match? | A list of OMS values, unmatched first, with a count at the top: "3 of 10 not mapped" |
@@ -130,7 +139,7 @@ Opened by the Customer Success Manager, or the client's NetSuite Admin.
 
 ### 4.5 Failed to sync
 
-One per flow.
+One per flow, for the chosen store.
 
 Opened by the Customer Success Manager, every day.
 
@@ -144,6 +153,6 @@ Opened by the Customer Success Manager, every day.
 
 1. A REST endpoint that saves the NetSuite login and tests the connection. Today this exists only
    in the Moqui admin screen.
-2. One status call per flow: on or off, last run, pending sync, failed to sync, and missing setup.
+2. One status call per flow and store: on or off, last run, pending sync, failed to sync, and missing setup.
 3. NetSuite lists for the mapping dropdowns, read through SuiteQL.
-4. A list of records that failed to sync, with send again and resolve.
+4. A list of records that failed to sync, per flow and store, with send again and resolve.
