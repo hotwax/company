@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ detach: vi.fn(), translate: vi.fn() }));
 vi.mock("@common", () => ({ translate: state.translate }));
-vi.mock("@/composables/useShopifyTransferDetach", () => ({
+vi.mock("@/composables/useShopifyTransferSync", () => ({
+  useShopifyTransferDelivery: () => ({ logsFor: () => [] }),
   DETACH_FAILED: "The transfer could not be detached.",
   useShopifyTransferDetach: () => ({ detach: state.detach }),
 }));

@@ -72,6 +72,7 @@ vi.mock("@/composables/useServiceJobs", () => ({
 }));
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
+  useShopifyTransferDelivery: () => ({ logsFor: () => [] }),
   useShopifyPendingCounts: () => ({
     counts: ref({}),
     orderCounts: ref({}),
@@ -115,9 +116,6 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
   }),
 }));
 
-vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
-  useShopifyTransferSyncEnrichment: () => ({ enrichment: ref({}), load: vi.fn() }),
-}));
 
 // Unlike the sibling specs, the readiness gate itself is NOT stubbed: it is the thing under test.
 vi.mock("@/utils/shopifyTransferSync", async () => ({

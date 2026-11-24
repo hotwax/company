@@ -1,4 +1,4 @@
-import type { TransferUpdateCheck } from "@/composables/useShopifyTransferUpdateCheck";
+import type { TransferUpdateCheck } from "@/composables/useShopifyTransferSync";
 import { toMillis } from "@common/db/storage/projection";
 
 export type TransferStager = "create" | "update";

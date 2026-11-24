@@ -75,7 +75,7 @@ import {
 } from "@ionic/vue";
 import { closeOutline, warningOutline } from "ionicons/icons";
 import { ref } from "vue";
-import { DETACH_FAILED, type TransferDetachResult, useShopifyTransferDetach } from "@/composables/useShopifyTransferDetach";
+import { DETACH_FAILED, type TransferDetachResult, useShopifyTransferDetach } from "@/composables/useShopifyTransferSync";
 
 const props = defineProps<{ isOpen: boolean; shopId: string; orderId: string; orderName?: string }>();
 const emit = defineEmits<{
