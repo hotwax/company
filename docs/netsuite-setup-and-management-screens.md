@@ -213,6 +213,77 @@ Four counts for each step, for this store:
 
 Each count links to its list (4.5).
 
+#### Layout
+
+The page has two modes, as Shopify's Inventory sync and Order sync pages do. The title bar shows
+the flow and the store, such as "Orders · US", with the flow's state as a badge.
+
+During setup, the page shows "Setup required" and splits in two, as Inventory sync's first-time
+setup does:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ ←  Orders · US                                  [Setup required] │
+├──────────────────────┬───────────────────────────────────────────┤
+│ Progress             │ Go-live date                       [Done] │
+│ 5 of 8 setup steps   │ Orders and payments before this date      │
+│ complete             │ never go to NetSuite.                     │
+│                      │                                           │
+│ 1 Choose steps    ✓  │ Orders placed after 1 Dec 2026     [Edit] │
+│ 2 Go-live date    ✓  │ Also: only orders from the web            │
+│ 3 NetSuite login  ✓  │ sales channel              Set by HotWax  │
+│ 4 Product ids     !  │                                           │
+│ 5 Locations       ✓  │ Date history                              │
+│ 6 Mappings        !  │ 1 Dec 2026: set by Priya, 24 Nov,         │
+│ 7 Templates       ✓  │ first go-live                             │
+│ 8 Switch on       ○  │                          [Back]  [Next]   │
+└──────────────────────┴───────────────────────────────────────────┘
+```
+
+- The left side is the step list. Steps 1 and 2 are the store's choices. Steps 3 to 7 are the
+  setup list. Step 8 is the "Switch on" button.
+- Each step shows done (✓), missing (!) or not started (○). A missing step is a warning, not a block.
+- The right side is one card for the chosen step, with "Back" and "Next".
+- On a phone, the step list becomes a step picker above the card.
+
+After switch-on, the badge shows "On" and a "Pause" button. The page shows, top to bottom:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ ←  Orders · US                                   [On]  [Pause]   │
+├──────────────────────────────────────────────────────────────────┤
+│ ! Switched on with 2 setup items missing: 14 products have no    │
+│   NetSuite id, 1 payment method has no match.                    │
+│                                                                  │
+│ Steps                                          Last run 10:30    │
+│ Step                     Failed  Stuck  >1 day  Not picked       │
+│ Customer                   0       0      0        0             │
+│ Sales order                3       0     12        2             │
+│ Payment                    0       0      5        0             │
+│ Exchange payment           0       0      0        0             │
+│ Refund                     0       0      0        0             │
+│ Store shipment             0       0      0        0             │
+│ Cancelled line [Shared by all stores]                            │
+│                            0       0      0        –             │
+│ Order change · off         –       –      –        –             │
+│ Order moved · off          –       –      –        –             │
+│                                                                  │
+│ Key dates                       │ Setup                          │
+│ Go-live: orders placed after    │ Product ids       14 missing   │
+│ 1 Dec 2026               [Edit] │ Mappings           1 missing   │
+│ Switched on: Priya, 1 Dec 2026  │ Login, locations,              │
+│                                 │ templates               Done   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- The banner shows only while a setup item is missing.
+- The steps card has one row per step and the four counts. A count above zero is colored: red for
+  "Failed", amber for the others. Each count opens its list (4.5).
+- A step the store does not send is greyed out, with "off" and dashes.
+- A step shared by all stores carries the "Shared by all stores" label. Its "Not picked" count is a
+  dash, because it has no store rules.
+- "Key dates" and "Setup" sit side by side, and stack on a phone.
+
 ### 4.4 Mapping page
 
 One layout for shipping methods, payment methods, discounts, tax codes and special items such as
