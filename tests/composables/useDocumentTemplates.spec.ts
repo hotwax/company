@@ -335,6 +335,41 @@ describe("document template delete", () => {
 describe("preview order search", () => {
   const bucket = (orders: any[]) => ({ data: { orders, ordersCount: orders.length } });
 
+  it("uses the same configured source for the default preview sample", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { configured: true, sources: [
+      { sourceId: "P1", orderId: "M1", orderName: "#1001" },
+    ] } });
+    const { scope, state } = run(() => useSampleDocuments());
+    await state.load("picklistId", "CUSTOM_PICK_TICKET");
+    expect(mocks.api).toHaveBeenCalledTimes(1);
+    expect(state.samples.value).toMatchObject([{ sourceId: "P1", kind: "picklist" }]);
+    scope.stop();
+  });
+
+  it("uses the configured document source without querying shipment buckets", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { configured: true, sources: [
+      { sourceId: "P1", orderId: "M1", orderName: "#1001", date: 2000 },
+    ] } });
+    const { scope, state } = run(() => usePreviewOrderSearch());
+    await state.search("picklistId", "#1001", "CUSTOM_PICK_TICKET");
+    expect(mocks.api).toHaveBeenCalledTimes(1);
+    expect(mocks.api).toHaveBeenCalledWith(expect.objectContaining({
+      url: "document-templates/CUSTOM_PICK_TICKET/preview-sources",
+      params: { keyword: "#1001", limit: 20 },
+    }));
+    expect(state.orders.value[0].documents[0]).toMatchObject({ sourceId: "P1", kind: "picklist" });
+    scope.stop();
+  });
+
+  it("does not fall back to shipment picklists when a configured provider has no matches", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { configured: true, sources: [] } });
+    const { scope, state } = run(() => usePreviewOrderSearch());
+    await state.search("picklistId", "", "CUSTOM_PICK_TICKET");
+    expect(mocks.api).toHaveBeenCalledTimes(1);
+    expect(state.orders.value).toEqual([]);
+    scope.stop();
+  });
+
   it("searches approved orders by keyword in the open, picked and packed lists, one row per order with its shipments", async () => {
     mocks.api.mockImplementation(async (request: any) => {
       if(request.url === "oms/orders/salesOrders/open") {return bucket([{ orderId: "M1", orderName: "#5955", firstName: "Ada", lastName: "L", facilityName: "Central", orderDate: 2000 }]);}

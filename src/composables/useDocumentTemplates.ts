@@ -55,6 +55,24 @@ async function templatesApi(documentTypeId: string, path: string, config: Record
 
 const statusOf = (error: any): number | undefined => error?.response?.status ?? error?.status;
 
+async function configuredPreviewSources(documentTypeId: string | undefined, sourceParameter: SourceParameter,
+  keyword: string, limit: number): Promise<SampleDocument[] | null> {
+  if(!documentTypeId) {return null;}
+  try {
+    const resp: any = await api({ url: `document-templates/${encodeURIComponent(documentTypeId)}/preview-sources`,
+      method: "get", params: { keyword: keyword || undefined, limit } });
+    if(resp.status === 404) {return null;}
+    if(commonUtil.hasError(resp) || typeof resp.data?.configured !== "boolean") {throw resp;}
+    if(!resp.data.configured) {return null;}
+    if(!Array.isArray(resp.data.sources)) {throw resp;}
+    const kind = sourceParameter === "picklistId" ? "picklist" : sourceParameter === "orderId" ? "order" : "shipment";
+    return resp.data.sources.map((row: SampleDocument) => ({ ...row, kind, date: toMillis(row.date) }));
+  } catch(error) {
+    if(statusOf(error) === 404) {return null;}
+    throw error;
+  }
+}
+
 /**
  * Whether this user may save, preview, publish and delete templates. The OMS answers it: a GET on the
  * `document-templates` root succeeds only for the user groups it grants artifact group DOCUMENT_TEMPLATE_EDIT and
@@ -372,14 +390,15 @@ export function useSampleDocuments() {
     }));
   }
 
-  async function load(sourceParameter: SourceParameter) {
+  async function load(sourceParameter: SourceParameter, documentTypeId?: string) {
     const current = ++request;
     loading.value = true;
     error.value = false;
     try {
-      const rows = sourceParameter === "picklistId" ? await picklistSamples()
+      const rows = await configuredPreviewSources(documentTypeId, sourceParameter, "", SAMPLE_COUNT)
+        ?? (sourceParameter === "picklistId" ? await picklistSamples()
         : sourceParameter === "orderId" ? (await approvedTransferOrders("", SAMPLE_COUNT)).map(transferOrderDocument)
-        : await shipmentSamples();
+        : await shipmentSamples());
       if(current === request) {samples.value = rows;}
     } catch(cause) {
       if(current === request) {
@@ -503,12 +522,25 @@ export function usePreviewOrderSearch() {
     });
   }
 
-  async function search(sourceParameter: SourceParameter, keyword: string) {
+  async function search(sourceParameter: SourceParameter, keyword: string, documentTypeId?: string) {
     const current = ++request;
     loading.value = true;
     error.value = false;
     documentsError.value = false;
     try {
+      const configured = await configuredPreviewSources(documentTypeId, sourceParameter, keyword.trim(), SEARCH_PAGE);
+      if(configured !== null) {
+        const byOrder = new Map<string, PreviewOrder>();
+        for(const document of configured) {
+          const orderId = document.orderId || document.sourceId;
+          const order: PreviewOrder = byOrder.get(orderId) ?? { orderId, orderName: document.orderName, orderDate: document.date,
+            stage: sourceParameter === "picklistId" ? "picked" : "open", documents: [] };
+          order.documents.push(document);
+          byOrder.set(orderId, order);
+        }
+        if(current === request) {orders.value = [...byOrder.values()];}
+        return;
+      }
       if(sourceParameter === "orderId") {
         const found = await searchTransferOrders(keyword.trim());
         if(current === request) {orders.value = found;}
