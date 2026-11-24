@@ -110,20 +110,108 @@ Opened by the Customer Success Manager, with the client's NetSuite Admin.
 | Is the login right? | Four fields (account id, consumer key, certificate id, private key) and a "Test connection" button. The result shows next to the button |
 | Can the OMS see what it needs? | After a good test, the page lists any HotWax script or field that the client's NetSuite does not have, by name, such as `custbody_hc_order_id` |
 
-### 4.3 Flow page
+### 4.3 Flow page: Orders
 
-One layout for every flow, for the chosen store. Orders is the example.
+The Orders flow page, for the chosen store. It is the first flow page. The other flows use the same
+layout when their turn comes.
 
-Opened by the Customer Success Manager.
+The flow and its steps are in
+[NetSuite flows: Orders](https://github.com/hotwax/mantle-netsuite-connector/blob/docs/netsuite-flows/docs/netsuite-flows/netsuite-flows.md#orders).
+Each step is one job. It sends the records that are ready, in one batch.
+
+Opened by the Customer Success Manager: during setup, and every day after go-live.
+
+Example: the store is US. Its Orders flow goes live on 1 December 2026. The client sends customers,
+but does not move orders between locations.
 
 | Question, in order | Where the page answers it |
 |---|---|
-| Is this flow ready to switch on? | While setup is open, the step list on the left, as on Shopify's Inventory sync. For Orders: shipping methods, payment methods, departments, special items, go-live date. Each step is marked done or missing |
-| What date does it start from? | A "Key dates" card with this flow's go-live date for this store, as on Shopify's Order sync |
-| Why did the date move? | The "Key dates" card keeps each earlier date, with who moved it, when and why, such as "new return sync released" |
-| Is it on? | An "Activate" button. The jobs are created paused first. An administrator activates them for this store only, and they start in the right order |
-| Is it working? | After activation, metric cards: last run, pending sync, failed to sync, and pending sync for more than one day |
-| What went wrong? | The flow's records that failed to sync (4.5), each with its error, and its job runs |
+| What does this store send? | The step list. Each step shows its name, what it sends, and whether it is required or the client's choice. The user turns each optional step on or off for this store |
+| From which date? | A "Key dates" card, with one sentence: "Orders placed after 1 Dec 2026". The user changes the date here |
+| Why did the date move? | The "Key dates" card keeps each earlier date, with who moved it, when and why, such as "new order sync released" |
+| What else does this store pick? | Under the date, any other condition of the store's rules, read-only. Example: "Only orders from the web sales channel" |
+| Is setup complete? | The setup list. Each item is marked done or missing, with a link to the page that fixes it |
+| Is it on? | A "Switch on" button. It shows the missing setup items as warnings, but does not block |
+| Is it working? | After switch-on, four counts for each step, each linking to its list (4.5) |
+
+#### The step list
+
+| Step | What it sends | Required? | Store's rules |
+|---|---|---|---|
+| Customer | The buyer, before the first order | Client's choice | Order rules |
+| Sales order | The order | Required | Order rules |
+| Payment | The payment, as a customer deposit | Required | Payment rules |
+| Exchange payment | The payment of an exchange order | With exchanges | Payment rules |
+| Refund | Money back for a cancelled order | Client's choice | Payment rules |
+| Store shipment | A store hands over or ships the order | Client's choice | Order rules |
+| Cancelled line | Closes a cancelled item's line | Client's choice | None: shared by all stores |
+| Order change | A change to an order NetSuite has | Client's choice | None: shared by all stores |
+| Order moved | The order moves to another location | Client's choice | None: shared by all stores |
+
+The last three steps have no store rules. One job serves every store. So the page marks them
+"Shared by all stores". Switching one on or off for this store changes it for every store, and the
+page says so before it acts.
+
+Without the Customer step, each order goes to one NetSuite customer per selling facility. The page
+says this next to the step.
+
+#### The go-live date
+
+The flow has one go-live date for the store. The store's rules are kept in two rule groups: order
+rules and payment rules. A rule group is the store's list of conditions for a step. The date is one
+condition in each group.
+
+So when the user changes the date, the page writes it into both groups, as one change with one
+reason. The history keeps both groups' earlier dates as one entry.
+
+A condition the page cannot write as a sentence is shown read-only, as stored. Only HotWax changes it.
+
+#### The setup list
+
+The items from the flow's "Before switching on" list:
+
+1. The NetSuite login is saved and tested. All stores share it. Link: Connection (4.2).
+2. Products have NetSuite item ids. Shows how many do not. Link: the Products flow.
+3. Stores and warehouses have NetSuite location ids. Shows which do not.
+4. Shipping methods, payment methods, tax codes and special items are mapped. Shows how many OMS
+   values have no match. Link: Mapping page (4.4).
+5. Each chosen step has its template, the root node that builds the record for NetSuite.
+6. The go-live date is set. Done on this page.
+7. The store's jobs exist, paused. The page creates them when the steps are chosen.
+
+A missing item is a warning. The Customer Success Manager may still switch the flow on, because
+some data in NetSuite or the OMS may not apply to this flow.
+
+#### Switching on
+
+The "Switch on" button starts the jobs of the chosen steps in this order:
+
+1. The send and poll jobs, which carry each batch to NetSuite and read its answer. They are shared
+   by all stores, so this happens only once.
+2. Customer, when chosen.
+3. Sales order.
+4. Payment, then Refund and Exchange payment.
+5. Store shipment, Cancelled line, Order change and Order moved, when chosen.
+
+The order is a safe default, not a rule. A step finds nothing until the step before it has a
+NetSuite id. Example: a payment waits until its order is in NetSuite.
+
+The page records who switched the flow on, when, and which setup items were missing.
+
+A "Pause" button stops the store's jobs. Shared jobs keep running while another store uses them.
+
+#### Is it working
+
+Four counts for each step, for this store:
+
+| Count | What it means | Example |
+|---|---|---|
+| Failed to sync | NetSuite would not take the record. Each one keeps its error | Order 1001: "Invalid item 2411-101-G" |
+| Stuck | A batch took the record and has no answer after one day | Payment of order 1002, sent 3 Dec |
+| Pending sync more than one day | The record is due but still waits | Order 1003 waits for a NetSuite item id |
+| Not picked | The record is due and placed after the go-live date, but the store's other rules leave it out. It never goes | Order 1004, from a sales channel the rules leave out |
+
+Each count links to its list (4.5).
 
 ### 4.4 Mapping page
 
@@ -153,13 +241,18 @@ Opened by the Customer Success Manager, every day.
 |---|---|
 | Which records failed to sync? | A list: the record, such as an order id, when it was sent, and the error |
 | What do I do about each one? | "Send again" after the data is fixed, or "Resolve" with a note when no resend is needed |
-| Is anything pending sync for too long? | A "Pending sync more than one day" filter |
+| Is anything pending sync for too long? | Filters for the other three counts on the flow page: "Stuck", "Pending sync more than one day" and "Not picked" |
 
 ## 5. What the server must add
 
 1. A REST endpoint that saves the NetSuite login and tests the connection. Today this exists only
    in the Moqui admin screen.
-2. One status call per flow and store: on or off, last run, pending sync, failed to sync, and missing setup.
+2. One status call per flow and store: on or off, last run, missing setup, and the four counts per step: failed to sync,
+   stuck, pending sync more than one day, and not picked.
 3. NetSuite lists for the mapping dropdowns, read through SuiteQL.
 4. A list of records that failed to sync, per flow and store, with send again and resolve.
-5. Save a flow's go-live date for a store with a reason, keeping each earlier date.
+5. Save a flow's go-live date for a store with a reason, keeping each earlier date. For Orders it writes the date
+   into both rule groups, order rules and payment rules, as one change.
+6. Save a store's choice of optional steps, and create the store's jobs for them, paused.
+7. Switch a flow on or off for a store, in the step order, and record who did it and which setup items were missing.
+   A job shared by all stores starts once and stops only when no store uses it.
