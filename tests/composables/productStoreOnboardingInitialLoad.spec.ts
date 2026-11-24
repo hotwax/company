@@ -25,6 +25,7 @@ import {
 } from "@/db/appDbSync"
 
 vi.mock("@/composables/useShopify", () => ({
+  useShopifyShopLocations: () => ({ locations: { value: [] }, hydrated: { value: "idle" }, load: () => {} }),
   PRODUCT_SYNC_FEATURE: { activePollMs: 10_000 },
   PRODUCT_SYNC_REQUEST_MESSAGE_TYPE: "BulkQueryShopifyProductUpdates",
   PRODUCT_SYNC_RUN_WINDOW: 200,

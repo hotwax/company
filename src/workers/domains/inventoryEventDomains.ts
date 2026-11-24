@@ -1,6 +1,6 @@
 import { INVENTORY_EVENT_DOMAINS, INVENTORY_SYNC_DOMAIN_LABELS } from "@/config/appSyncConfig";
 import { companyDb } from "@/db/companyDb";
-import type { AppDbTables } from "@common/db/model/defineAppDb";
+import type { AppDbTables } from "@common/db/schema/defineAppDb";
 import type { EntityClient } from "@common/db/storage/dbClient";
 import { canonicalKey, entityKeyOf, toMillis } from "@common/db/storage/projection";
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
