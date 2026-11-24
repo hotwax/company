@@ -284,6 +284,26 @@ After switch-on, the badge shows "On" and a "Pause" button. The page shows, top 
   dash, because it has no store rules.
 - "Key dates" and "Setup" sit side by side, and stack on a phone.
 
+#### Screens in the app
+
+The flow's workflow lives in the app's code, not in the database. No data row lists a flow's
+steps, their order, or what each step shows. The screens know them.
+
+The page follows the app's Product sync pattern:
+
+1. One route per flow and store: `/netsuite/stores/:productStoreId/orders`.
+2. The page loads one of two sub-screens. Before switch-on it loads the setup view. After switch-on
+   it loads the monitoring view.
+3. The setup view holds the 8 setup steps as a fixed list in code. Each step is its own component.
+   Picking a step loads its component beside the list.
+4. The monitoring view holds the 9 Orders steps as a fixed list in code. Each row is its own
+   component, and asks the server for its own counts.
+5. A count opens that step's "Failed to sync" list (4.5), on its own route. A small detail, such as
+   one record's error, opens in a modal.
+
+Inventory sync puts its setup and monitoring in one large view. The Orders page keeps them apart,
+as Product sync does.
+
 ### 4.4 Mapping page
 
 One layout for shipping methods, payment methods, discounts, tax codes and special items such as
@@ -318,12 +338,57 @@ Opened by the Customer Success Manager, every day.
 
 1. A REST endpoint that saves the NetSuite login and tests the connection. Today this exists only
    in the Moqui admin screen.
-2. One status call per flow and store: on or off, last run, missing setup, and the four counts per step: failed to sync,
-   stuck, pending sync more than one day, and not picked.
+2. One counts call per step, for one store: on or off, last run, and the four counts: failed to sync, stuck, pending
+   sync more than one day, and not picked. Sales order is the first; see 5.1.
 3. NetSuite lists for the mapping dropdowns, read through SuiteQL.
 4. A list of records that failed to sync, per flow and store, with send again and resolve.
 5. Save a flow's go-live date for a store with a reason, keeping each earlier date. For Orders it writes the date
    into both rule groups, order rules and payment rules, as one change.
 6. Save a store's choice of optional steps, and create the store's jobs for them, paused.
-7. Switch a flow on or off for a store, in the step order, and record who did it and which setup items were missing.
-   A job shared by all stores starts once and stops only when no store uses it.
+7. Switch a store's jobs on or off, in the order the page sends them, and record who did it and which setup items
+   were missing. A job shared by all stores starts once and stops only when no store uses it.
+
+### 5.1 Sales order counts
+
+The first counts call. The other steps follow the same pattern, one at a time.
+
+Example: the Sales order row asks for store US. The answer is: on, last run 10:30, failed to sync
+3, stuck 0, pending sync more than one day 12, not picked 2.
+
+How the server answers:
+
+1. It finds the store's sales order job: the job for `create#NetSuiteSalesOrderBatch` whose
+   `productStoreId` setting is the store. The job's settings name its rule group and its due view.
+   A client may name its own due view.
+2. It counts orders, not rows. A due view can hold more than one row for one order, such as one
+   per ship group.
+3. Each count:
+
+| Count | Orders counted |
+|---|---|
+| Failed to sync | The sync record holds an error and no NetSuite order id |
+| Stuck | The sync record has no NetSuite order id and no error, and its batch was sent over one day ago |
+| Pending sync more than one day | In the due view for the store, picked by the store's rules, and placed over one day ago |
+| Not picked | In the due view for the store, placed after the go-live date, and picked by no rule |
+
+4. The go-live date is the earliest order date in the store's active rules. When a rule has no
+   date, "Not picked" is left empty.
+5. "On" means the job is not paused and is inside its from and thru dates. "Last run" is the job's
+   newest run.
+
+What is built:
+
+- In oms: one service that turns a rule group into one condition, the rules joined by "or".
+  `find#IdsByRuleGroup` and the counts both use it, so the jobs and the page read rules the same
+  way.
+- In mantle-netsuite-connector:
+  - A view that joins the sales order sync record (`NetSuiteSalesOrderDetail`) to its order, for
+    the store, and to its batch message, for the date the batch was sent.
+  - A view that joins a job to its settings, to find the store's job.
+  - A read-only service and a REST call for the counts, such as
+    `GET netsuite/salesOrders/counts?productStoreId=STORE`.
+
+The call reads only. It claims, writes and sends nothing.
+
+The design was reviewed by the Moqui architect on 24 Nov 2026. How fast the counts run on
+production data is not tested yet.
