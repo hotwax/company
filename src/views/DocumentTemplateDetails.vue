@@ -184,7 +184,7 @@
           </ion-card>
         </section>
       </div>
-      <PreviewOrderModal :is-open="orderModalOpen" :source-parameter="sourceParameter" :selected-id="sampleId" @close="orderModalOpen = false" @select="pickSample" />
+      <PreviewOrderModal :is-open="orderModalOpen" :source-parameter="sourceParameter" :document-type-id="documentTypeId" :selected-id="sampleId" @close="orderModalOpen = false" @select="pickSample" />
     </ion-content>
   </ion-page>
 </template>
@@ -309,7 +309,7 @@ async function reload() {
 }
 
 async function loadSamples() {
-  await samples.load(sourceParameter.value);
+  await samples.load(sourceParameter.value, props.documentTypeId);
   // Keep the document chosen before (a recent one, or one picked from an order); otherwise start on the newest.
   const kept = !!sampleId.value && (pickedSample.value?.sourceId === sampleId.value || samples.samples.value.some(sample => sample.sourceId === sampleId.value));
   if(!kept) {sampleId.value = samples.samples.value[0]?.sourceId || "";}

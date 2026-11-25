@@ -54,7 +54,7 @@ import { computed, ref } from "vue";
 import { usePreviewOrderSearch } from "@/composables/useDocumentTemplates";
 import type { SampleDocument, SourceParameter } from "@/utils/documentTemplates";
 
-const props = defineProps<{ isOpen: boolean; sourceParameter: SourceParameter; selectedId?: string }>();
+const props = defineProps<{ isOpen: boolean; sourceParameter: SourceParameter; documentTypeId?: string; selectedId?: string }>();
 const emit = defineEmits<{
   (e: "close"): void;
   (e: "select", document: SampleDocument): void;
@@ -84,7 +84,7 @@ function documentLabel(document: SampleDocument) {
 
 function runSearch(value: string) {
   keyword.value = value.trim();
-  void search.search(props.sourceParameter, keyword.value);
+  void search.search(props.sourceParameter, keyword.value, props.documentTypeId);
 }
 
 function onPresent() {
