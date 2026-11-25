@@ -26,10 +26,10 @@
           <ion-label class="ion-text-wrap secondary-label">{{ emptyMessage }}</ion-label>
         </ion-item>
 
-        <!-- One choice per document a template can render; orders with nothing to render are left out. -->
-        <ion-radio-group v-if="choices.length && !search.loading.value && !search.error.value" :value="selectedId" @ionChange="pick($event.detail.value)">
-          <ion-item v-for="{ order, document } in choices" :key="document.sourceId" :data-testid="`preview-document-${document.sourceId}`">
-            <ion-radio :value="document.sourceId" label-placement="end" justify="start">
+        <!-- A picklist can be shared by several orders, so each order/document pair is a separate choice. -->
+        <ion-radio-group v-if="choices.length && !search.loading.value && !search.error.value" :value="selectedChoiceId" @ionChange="pick($event.detail.value)">
+          <ion-item v-for="{ order, document, id } in choices" :key="id" :data-testid="`preview-document-${document.sourceId}`">
+            <ion-radio :value="id" label-placement="end" justify="start">
               <ion-label class="ion-text-wrap">
                 {{ order.orderName || order.orderId }}
                 <p>
@@ -54,7 +54,7 @@ import { computed, ref } from "vue";
 import { usePreviewOrderSearch } from "@/composables/useDocumentTemplates";
 import type { SampleDocument, SourceParameter } from "@/utils/documentTemplates";
 
-const props = defineProps<{ isOpen: boolean; sourceParameter: SourceParameter; documentTypeId?: string; selectedId?: string }>();
+const props = defineProps<{ isOpen: boolean; sourceParameter: SourceParameter; documentTypeId?: string; selectedDocument?: SampleDocument | null }>();
 const emit = defineEmits<{
   (e: "close"): void;
   (e: "select", document: SampleDocument): void;
@@ -64,7 +64,14 @@ const seed = useSeedData();
 const search = usePreviewOrderSearch();
 const keyword = ref("");
 const searchbar = ref<any>(null);
-const choices = computed(() => search.orders.value.flatMap(order => order.documents.map(document => ({ order, document }))));
+const choiceId = (orderId: string, sourceId: string) => JSON.stringify([orderId, sourceId]);
+const selectedChoiceId = computed(() => {
+  const document = props.selectedDocument;
+  return document ? choiceId(document.orderId || document.sourceId, document.sourceId) : undefined;
+});
+const choices = computed(() => search.orders.value.flatMap(order => order.documents.map(document => ({
+  order, document, id: choiceId(order.orderId, document.sourceId),
+}))));
 const emptyMessage = computed(() => {
   if(props.sourceParameter === "orderId") {
     return keyword.value ? translate("No approved transfer order matches {keyword}.", { keyword: keyword.value }) : translate("No approved transfer orders.");
@@ -94,9 +101,12 @@ function onPresent() {
 }
 
 // Choosing a radio applies it: the preview re-renders and the modal closes.
-function pick(sourceId: string) {
-  const choice = choices.value.find(row => row.document.sourceId === sourceId);
-  if(choice) {emit("select", { ...choice.document, orderName: choice.order.orderName || choice.order.orderId });}
+function pick(id: string) {
+  const choice = choices.value.find(row => row.id === id);
+  if(choice) {
+    const { order, document } = choice;
+    emit("select", { ...document, orderId: order.orderId, orderName: order.orderName || order.orderId });
+  }
 }
 </script>
 
