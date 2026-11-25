@@ -184,7 +184,7 @@
           </ion-card>
         </section>
       </div>
-      <PreviewOrderModal :is-open="orderModalOpen" :source-parameter="sourceParameter" :document-type-id="documentTypeId" :selected-id="sampleId" @close="orderModalOpen = false" @select="pickSample" />
+      <PreviewOrderModal :is-open="orderModalOpen" :source-parameter="sourceParameter" :document-type-id="documentTypeId" :selected-document="chosenSample" @close="orderModalOpen = false" @select="pickSample" />
     </ion-content>
   </ion-page>
 </template>
