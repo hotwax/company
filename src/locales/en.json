@@ -1804,6 +1804,7 @@
   "In flight and failed": "In flight and failed",
   "In progress": "In progress",
   "In store pickup": "In store pickup",
+  "Finished in the last 24 hours, across the latest {count} imports": "Finished in the last 24 hours, across the latest {count} imports",
   "In the last 24 hours": "In the last 24 hours",
   "in {days}d": "in {days}d",
   "in {hours}h": "in {hours}h",

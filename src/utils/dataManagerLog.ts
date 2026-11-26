@@ -1,3 +1,5 @@
+import { toEpochMillis } from "./appPermissionTime";
+
 /**
  * DataManagerLog — domain model + behaviors (pure, Vue-free).
  *
@@ -32,6 +34,15 @@ export interface DataManagerLog {
   logFileContentId?: string;
   productStoreId?: string;
   lastUpdatedStamp?: string | number;
+}
+
+export function countFailedRecordsInLastDay(logs: readonly DataManagerLog[], now: number): number {
+  const since = now - 24 * 60 * 60 * 1000;
+  return logs.reduce((sum, log) => {
+    const finished = toEpochMillis(log.finishDateTime);
+    if (finished === undefined || finished < since || finished > now) return sum;
+    return sum + Number(log.failedRecordCount || 0);
+  }, 0);
 }
 
 /** The reconciled outcome of one import run. */

@@ -265,7 +265,7 @@
         <ion-item>
           <ion-label>
             {{ translate("Error records")}}
-            <p>{{ translate("In the last 24 hours") }}</p>
+            <p>{{ translate("Finished in the last 24 hours, across the latest {count} imports", { count: errorLookbackCount }) }}</p>
           </ion-label>
           <ion-label slot="end"><AnimatedNumber :value="Number(errorRecordCount) || 0" /></ion-label>
         </ion-item>

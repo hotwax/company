@@ -4,6 +4,7 @@ import {
   DATA_MANAGER_LOG_STATUS_IDS,
   aggregateCounts,
   correlateByMessage,
+  countFailedRecordsInLastDay,
   isTerminal,
   logOutcome,
   logState,
@@ -110,5 +111,20 @@ describe("aggregateCounts + correlateByMessage", () => {
     expect(correlateByMessage(logs, "SM_A")).toHaveLength(1);
     expect(correlateByMessage(logs, "SM_A")[0].systemMessageId).toBe("SM_A");
     expect(correlateByMessage(logs, "")).toEqual([]);
+  });
+});
+
+describe("countFailedRecordsInLastDay", () => {
+  it("ages out historical failures while keeping completed imports within the window", () => {
+    const now = Date.parse("2026-11-26T12:00:00Z");
+    const logs = [
+      makeLog({ finishDateTime: "2026-11-16T01:07:35Z", failedRecordCount: 7789 }),
+      makeLog({ finishDateTime: "2026-11-25T12:00:00Z", failedRecordCount: 2 }),
+      makeLog({ finishDateTime: now, failedRecordCount: 3 }),
+      makeLog({ finishDateTime: undefined, failedRecordCount: 4 }),
+      makeLog({ finishDateTime: now + 1_000, failedRecordCount: 5 }),
+    ];
+    expect(countFailedRecordsInLastDay(logs, now)).toBe(5);
+    expect(countFailedRecordsInLastDay(logs.slice(0, 3), now + 1)).toBe(3);
   });
 });

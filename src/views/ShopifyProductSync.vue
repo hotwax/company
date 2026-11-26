@@ -665,6 +665,7 @@ import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTime
 import { getSafeSyncRunQueryId } from "@/utils/syncRunRoute";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation } from "@/db/appDbSync";
 import { useServiceJob, useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
+import { countFailedRecordsInLastDay } from "@/utils/dataManagerLog";
 import { useDataManager, useRecentDataManagerLogs } from "@/composables/useDataManager";
 import { useProductUpdateHistories } from "@/composables/useProductUpdateHistory";
 import {
@@ -877,9 +878,6 @@ const pendingUpdateRequestsCount = computed(() => spinePendingRequests.value.len
 const updateFilesToProcessCount = ref(0);
 const pendingUpdateRequestsLastCreatedAt = computed(() =>
   spinePendingRequests.value[0]?.initDate || spinePendingRequests.value[0]?.lastUpdatedStamp || "");
-const errorRecordCount = computed(() => {
-  return recentMdmLogs.value.reduce((acc: number, log: any) => acc + Number(log.failedRecordCount || 0), 0);
-});
 const syncJobAuditHistory = ref<any[]>([]);
 const syncJobAuditUsers = ref<Record<string, any>>({});
 const latestPauseAuditByJobName = ref<Record<string, any>>({});
@@ -968,6 +966,7 @@ const isWebhookSupported = ref(false);
  * therefore no refresh indicator and no loading flash between updates.
  */
 const currentTimeMs = ref(Date.now());
+const errorRecordCount = computed(() => countFailedRecordsInLastDay(recentMdmLogs.value, currentTimeMs.value));
 let labelClock: number | undefined;
 
 const SYNC_OWNER = createSyncDomainOwner("shopifyProductSyncView");
