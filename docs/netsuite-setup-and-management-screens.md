@@ -4,8 +4,10 @@
 
 ### 1.1 Objective
 
-One NetSuite area in the Company app, where a Customer Success Manager sets up a client's NetSuite
-integration one store at a time, and checks every day that it works.
+One NetSuite area in the Company app, where a Customer Success Manager sees all of a client's
+NetSuite subsidiaries. A subsidiary is one company of the client inside its NetSuite account, such
+as US or Canada. Each subsidiary has one OMS product store. The Customer Success Manager sets up
+the integration one subsidiary at a time, and checks every day that it works.
 
 ### 1.2 Problem
 
@@ -16,8 +18,8 @@ and what is broken.
 - The NetSuite login is entered in an old Moqui admin screen, outside the Company app.
 - NetSuite location ids are set one facility at a time, on each facility's page.
 - Jobs are switched on in a generic job screen, in an order that lives in a document.
-- A client with several stores, such as US, Canada and EU, cannot see one store's setup apart from
-  the others.
+- A client with several subsidiaries, such as US, Canada and EU, each with its own OMS store,
+  cannot see one subsidiary's setup apart from the others.
 - After go-live there is one count card, which shows "Unavailable", and the order push rules. Records
   that failed to sync cannot be seen.
 
@@ -31,7 +33,7 @@ and what is broken.
 
 ### 2.1 In scope
 
-The five screens below, and the server additions they need.
+The six screens below, and the server additions they need.
 
 ### 2.2 Out of scope
 
@@ -46,10 +48,11 @@ The requirements are three setup stories in mantle-netsuite-connector:
 - [Setting up products for a new client](https://github.com/hotwax/mantle-netsuite-connector/blob/main/docs/product-data/setting-up-products.md)
 - [Setting up inventory for a new client](https://github.com/hotwax/mantle-netsuite-connector/blob/main/docs/inventory/setting-up-inventory.md)
 
-The setup story switches on the jobs one store at a time (step 10). So the user first chooses a
-store, then works on that store's flows. The NetSuite connection is shared by all stores. Each
-flow of a store has its own go-live date. HotWax moves it when a new version of that flow's sync is
-released.
+A client has more than one subsidiary in NetSuite. Each subsidiary has one product store in the
+OMS. The setup story switches on the jobs one store at a time (step 10). So the user first chooses
+a subsidiary, then works on its store's flows. The NetSuite connection is shared by all
+subsidiaries. Each flow of a store has its own go-live date. HotWax moves it when a new version of
+that flow's sync is released.
 
 The screens follow the app's Shopify area, so users meet patterns they already know:
 
@@ -74,7 +77,7 @@ What the current NetSuite page settings feed today:
 | Shipping methods, Payment method, Departments | Current order, deposit and return code | Mapping pages under their flows |
 | SFTP | NetSuite scripts that write files | Configuration |
 | Inventory variances | The store adjustment job (the reasons only) | Stock flow |
-| Product Store and subsidiary | Only the old order file feed | Rework as the chosen store's subsidiary |
+| Product Store and subsidiary | Only the old order file feed | Rework as the link between each subsidiary and its store, on the NetSuite home |
 | Price level | Only the old order file feed | Check whether the current push needs it |
 | Discounts | Only one client's old return sync | Rework to save the default discount item the current push reads |
 | Sales Channel | No reader found in the connector or client code | Check before keeping |
@@ -85,20 +88,105 @@ Each screen says who opens it, what they want to know in that order, and where t
 
 ### 4.1 NetSuite home
 
-Replaces today's NetSuite page. Same layout as the Shopify connection page, with a store choice
-above the flows.
+Replaces today's NetSuite page. It lists the client's subsidiaries. The user picks one to work on.
 
 Opened by the Customer Success Manager, during setup and every day.
 
+#### The story: working on a client's NetSuite subsidiaries
+
+1. The client's NetSuite Admin gives the Customer Success Manager the NetSuite account and its
+   login.
+2. The Customer Success Manager records the login once. All subsidiaries share it.
+3. The Customer Success Manager reviews the client's subsidiaries, as NetSuite lists them. Example:
+   US (1), Canada (5), EU (7).
+4. The Customer Success Manager links each subsidiary to its OMS product store. Example: US (1) to
+   "US Store".
+5. Company marks a subsidiary with no linked store as "No store linked".
+6. Every day, the Customer Success Manager reviews all subsidiaries together, to see which one has
+   failures.
+7. The Customer Success Manager chooses one subsidiary and opens it.
+8. Company shows that subsidiary's flows: on, paused or setup required, and what failed to sync
+   today.
+
+Step 1 happens outside the app. Step 2 is the Connection page (4.3). Steps 3 to 7 happen on this
+page. Step 8 is the subsidiary page (4.2).
+
 | Question, in order | Where the page answers it |
 |---|---|
-| Is the OMS connected to NetSuite? | Top card, shared by all stores: "Connected to sandbox 1234567-sb1, tested 22 Nov", or "Not connected", with a Connect button |
-| Which store am I working on? | A store choice under the top card, such as US, Canada or EU. A client with one store sees no choice |
-| Which flows of this store are on, and is any in trouble? | One status card per flow of the chosen store, in sections: "Products and Inventory" (Products, Stock, Transfers), "Orders and fulfillment" (Orders, Shipments from NetSuite), "Returns". Each card shows On, Paused or Setup required, the last run, what is pending sync, and what failed to sync today |
-| What still needs setting up for this store? | A "Setup required" badge on the flow card, with the count of missing steps, such as "2 of 6 missing" |
-| Where do I change a setting? | The "Configuration" section, shared by all stores: Connection, File server (SFTP), NetSuite catalog. The chosen store's subsidiary sits above its flows |
+| Is the OMS connected to NetSuite, sandbox or production? | Top card, shared by all subsidiaries: "Connected to sandbox 1234567-sb1, tested 22 Nov", or "Not connected", with a Connect button |
+| Which subsidiaries does this client have? | A list of subsidiaries, by name and NetSuite id, such as US (1) |
+| Which OMS store is each one? | Each row shows its linked store, or "No store linked" with a Link button |
+| Which one needs me today? | Each row shows its flows' state and today's failures |
+| How do I work on one? | Tap the row. It opens that subsidiary's page with its flows (4.2) |
+| Where are the shared settings? | A "Configuration" section: Connection (4.3), File server (SFTP), mappings (4.5) |
 
-### 4.2 Connection
+#### Layout
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ NetSuite                                                         │
+├──────────────────────────────────────────────────────────────────┤
+│ Connected to sandbox 1234567-sb1, tested 22 Nov                  │
+│                                                                  │
+│ Subsidiaries                                                     │
+│ Subsidiary  Store           Flows                  Failed today  │
+│ US (1)      US Store        4 on, 1 paused               3  ›    │
+│ Canada (5)  Canada Store    2 on, 3 setup required       0  ›    │
+│ EU (7)      No store linked                       [Link]         │
+│                                                                  │
+│ Configuration                                                    │
+│ Connection · File server (SFTP) · Mappings                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- The top card is shared by all subsidiaries.
+- Each row is one subsidiary, with its name and NetSuite id.
+- "Link" lets the user pick the OMS product store for that subsidiary.
+- Tapping a row with a store opens its subsidiary page (4.2).
+
+### 4.2 Subsidiary page
+
+One page per subsidiary. It sits between the NetSuite home and the flow pages. It shows the flows
+of the subsidiary's linked store.
+
+Opened by the Customer Success Manager, from a row on the NetSuite home.
+
+The title names the subsidiary and its store, such as "US (1) · US Store".
+
+| Question, in order | Where the page answers it |
+|---|---|
+| Which flows of this store are on? | One status card per flow, in sections: "Products and Inventory" (Products, Stock, Transfers), "Orders and fulfillment" (Orders, Shipments from NetSuite), "Returns". Each card shows On, Paused or Setup required |
+| When did each flow last run? | Each card shows the last run |
+| What failed to sync today? | Each card shows what is pending sync and what failed to sync today |
+| What still needs setting up? | A "Setup required" badge on the flow card, with the count of missing steps, such as "2 of 6 missing" |
+| How do I work on one flow? | Tap the card. It opens that flow's page, such as Orders (4.4) |
+
+#### Layout
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ ←  US (1) · US Store                                             │
+├──────────────────────────────────────────────────────────────────┤
+│ Products and Inventory                                           │
+│ Flow          State             Last run  Pending  Failed today  │
+│ Products      [On]              10:15        0          0        │
+│ Stock         [On]              10:00        0          0        │
+│ Transfers     [Setup required]  2 of 6 missing                   │
+│                                                                  │
+│ Orders and fulfillment                                           │
+│ Orders        [On]              10:30       12          3        │
+│ Shipments     [Paused]          22 Nov       4          0        │
+│ from NetSuite                                                    │
+│                                                                  │
+│ Returns                                                          │
+│ Returns       [Setup required]  4 of 6 missing                   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- Each row is one flow card. The arrow goes back to the NetSuite home.
+- A flow that is not set up shows its count of missing steps in place of the counts.
+
+### 4.3 Connection
 
 A page under Configuration, like Shopify's "API credentials".
 
@@ -110,10 +198,10 @@ Opened by the Customer Success Manager, with the client's NetSuite Admin.
 | Is the login right? | Four fields (account id, consumer key, certificate id, private key) and a "Test connection" button. The result shows next to the button |
 | Can the OMS see what it needs? | After a good test, the page lists any HotWax script or field that the client's NetSuite does not have, by name, such as `custbody_hc_order_id` |
 
-### 4.3 Flow page: Orders
+### 4.4 Flow page: Orders
 
-The Orders flow page, for the chosen store. It is the first flow page. The other flows use the same
-layout when their turn comes.
+The Orders flow page, one per store. The user reaches a store through its subsidiary page (4.2).
+It is the first flow page. The other flows use the same layout when their turn comes.
 
 The flow and its steps are in
 [NetSuite flows: Orders](https://github.com/hotwax/mantle-netsuite-connector/blob/docs/netsuite-flows/docs/netsuite-flows/netsuite-flows.md#orders).
@@ -132,7 +220,7 @@ but does not move orders between locations.
 | What else does this store pick? | Under the date, any other condition of the store's rules, read-only. Example: "Only orders from the web sales channel" |
 | Is setup complete? | The setup list. Each item is marked done or missing, with a link to the page that fixes it |
 | Is it on? | A "Switch on" button. It shows the missing setup items as warnings, but does not block |
-| Is it working? | After switch-on, four counts for each step, each linking to its list (4.5) |
+| Is it working? | After switch-on, four counts for each step, each linking to its list (4.6) |
 
 #### The step list
 
@@ -170,11 +258,11 @@ A condition the page cannot write as a sentence is shown read-only, as stored. O
 
 The items from the flow's "Before switching on" list:
 
-1. The NetSuite login is saved and tested. All stores share it. Link: Connection (4.2).
+1. The NetSuite login is saved and tested. All stores share it. Link: Connection (4.3).
 2. Products have NetSuite item ids. Shows how many do not. Link: the Products flow.
 3. Stores and warehouses have NetSuite location ids. Shows which do not.
 4. Shipping methods, payment methods, tax codes and special items are mapped. Shows how many OMS
-   values have no match. Link: Mapping page (4.4).
+   values have no match. Link: Mapping page (4.5).
 5. Each chosen step has its template, the root node that builds the record for NetSuite.
 6. The go-live date is set. Done on this page.
 7. The store's jobs exist, paused. The page creates them when the steps are chosen.
@@ -211,7 +299,7 @@ Four counts for each step, for this store:
 | Pending sync more than one day | The record is due but still waits | Order 1003 waits for a NetSuite item id |
 | Not picked | The record is due and placed after the go-live date, but the store's other rules leave it out. It never goes | Order 1004, from a sales channel the rules leave out |
 
-Each count links to its list (4.5).
+Each count links to its list (4.6).
 
 #### Layout
 
@@ -278,7 +366,7 @@ After switch-on, the badge shows "On" and a "Pause" button. The page shows, top 
 
 - The banner shows only while a setup item is missing.
 - The steps card has one row per step and the four counts. A count above zero is colored: red for
-  "Failed", amber for the others. Each count opens its list (4.5).
+  "Failed", amber for the others. Each count opens its list (4.6).
 - A step the store does not send is greyed out, with "off" and dashes.
 - A step shared by all stores carries the "Shared by all stores" label. Its "Not picked" count is a
   dash, because it has no store rules.
@@ -298,13 +386,13 @@ The page follows the app's Product sync pattern:
    Picking a step loads its component beside the list.
 4. The monitoring view holds the 9 Orders steps as a fixed list in code. Each row is its own
    component, and asks the server for its own counts.
-5. A count opens that step's "Failed to sync" list (4.5), on its own route. A small detail, such as
+5. A count opens that step's "Failed to sync" list (4.6), on its own route. A small detail, such as
    one record's error, opens in a modal.
 
 Inventory sync puts its setup and monitoring in one large view. The Orders page keeps them apart,
 as Product sync does.
 
-### 4.4 Mapping page
+### 4.5 Mapping page
 
 One layout for shipping methods, payment methods, discounts, tax codes and special items such as
 the gift card.
@@ -322,7 +410,7 @@ no match.
 | What is the NetSuite match? | A dropdown of NetSuite's own records by name and id, read live from NetSuite, such as "Standard (2830)" |
 | Is a saved match still valid? | A warning on a row whose NetSuite record is gone or inactive |
 
-### 4.5 Failed to sync
+### 4.6 Failed to sync
 
 One per flow, for the chosen store.
 
@@ -347,6 +435,13 @@ Opened by the Customer Success Manager, every day.
 6. Save a store's choice of optional steps, and create the store's jobs for them, paused.
 7. Switch a store's jobs on or off, in the order the page sends them, and record who did it and which setup items
    were missing. A job shared by all stores starts once and stops only when no store uses it.
+8. The list of the client's subsidiaries, read from NetSuite, with each one's name and id.
+9. Save the link between a subsidiary and its OMS product store.
+
+Open for design: the code keeps a store's subsidiary id in two places today. The current NetSuite
+page and the old order feed read the product store's external id. The newer connector order views
+read the external id of the store's "pay to" party (view `ProductStoreSubsidiaryView` in
+mantle-netsuite-connector). The System Architect decides which one the link writes.
 
 ### 5.1 Sales order counts
 
