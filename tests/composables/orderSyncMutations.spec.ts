@@ -30,6 +30,8 @@ import { ref } from "vue";
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
   refreshAfterMutation: vi.fn(),
+  connectorVersion: "4.4.0",
+  shopsHydrated: null as ReturnType<typeof ref<boolean>> | null,
 }));
 
 const SHOP_ID = "10000";
@@ -106,7 +108,7 @@ vi.mock("@common", () => ({
       records: { value: records },
       first: { value: records[0] },
       count: { value: records.length },
-      hydrated: { value: true },
+      hydrated: key === "shops" && harness.shopsHydrated ? harness.shopsHydrated : { value: true },
     };
   },
 }));
@@ -134,7 +136,10 @@ vi.mock("@/composables/useDataManager", () => ({
     logs: { value: [] }, totalFailedRecords: { value: 0 }, hydrated: { value: true },
   }),
 }));
-vi.mock("@/composables/useSeed", () => ({ useStatuses: () => ({ labelFor: (s: string) => s }) }));
+vi.mock("@/composables/useSeed", () => ({
+  useStatuses: () => ({ labelFor: (s: string) => s }),
+  useMaargConfig: () => ({ load: async () => {}, componentVersion: () => ref(harness.connectorVersion) }),
+}));
 import { normalizeLogOutcome, useShopifyOrderSync } from "@/composables/useShopify";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 
@@ -163,6 +168,8 @@ function boundOrderSync() {
 }
 
 beforeEach(() => {
+  harness.shopsHydrated = null;
+  harness.connectorVersion = "4.4.0";
   harness.api.mockReset();
   harness.refreshAfterMutation.mockReset();
 });
@@ -520,9 +527,53 @@ describe("on-demand order imports", () => {
 });
 
 describe("processed order history", () => {
+  it("reads the connector's shop-scoped history array and primary OMS mapping", async () => {
+    const sync = boundOrderSync();
+    const row = { shopId: SHOP_ID, shopifyOrderId: "123", shopifyOrderName: "#321", lastUpdatedStamp: 12000, primaryOrder: { orderId: "O1" } };
+    harness.api.mockResolvedValueOnce(axiosResponse([row, { ...row, shopId: OTHER_SHOP_ID }]));
+    await sync.loadHistory(SHOP_ID);
+    expect(harness.api).toHaveBeenCalledWith({ method: "get", url: `sob/shopify/syncHistory/${SHOP_ID}/order`,
+      params: { pageSize: 100, orderByField: "-lastUpdatedStamp,shopifyOrderId" } });
+    expect(sync.recentOrders).toEqual([{ shopId: SHOP_ID, shopifyOrderId: "123", orderName: "#321", orderId: "O1", historyUpdatedAt: 12000 }]);
+    expect(sync.historySource).toBe("history");
+  });
+
+  it("shows only confirmed Shopify mappings from the current shop on older connectors", async () => {
+    harness.connectorVersion = "4.3.19";
+    const sync = boundOrderSync();
+    const node = { orderId: "O1", orderName: "#321", orderDate: "2026-11-27", shopifyOrder: { shopId: SHOP_ID, shopifyOrderId: "123" } };
+    const nodes = [node, { ...node, shopifyOrder: null }, { ...node, shopifyOrder: { shopId: OTHER_SHOP_ID, shopifyOrderId: "456" } }];
+    const data = { orders: { edges: nodes.map(node => ({ node })) } };
+    harness.api.mockResolvedValueOnce(axiosResponse({ data }));
+    await sync.loadHistory(SHOP_ID);
+    expect(harness.api.mock.calls.map(([config]) => [config.url, config.data.variables])).toEqual([
+      ["graphql", { filter: 'productStoreId:"STORE" orderTypeId:SALES_ORDER', limit: 100 }],
+    ]);
+    expect(sync.recentOrders).toEqual([{ shopId: SHOP_ID, shopifyOrderId: "123", orderId: "O1", orderName: "#321", orderDate: "2026-11-27" }]);
+    expect(sync.historySource).toBe("orders");
+    harness.api.mockResolvedValueOnce(axiosResponse({ data, errors: [{ message: "Partial response" }] }));
+    await sync.loadHistory(SHOP_ID);
+    expect(sync.historyError).toBe(true);
+    expect(sync.recentOrders).toHaveLength(1);
+  });
+
+  it("waits for the shop cache on direct navigation before querying OMS", async () => {
+    harness.connectorVersion = "4.3.19";
+    harness.shopsHydrated = ref(false);
+    const sync = boundOrderSync();
+    harness.api.mockResolvedValueOnce(axiosResponse({ data: { orders: { edges: [] } } }));
+    const pending = sync.loadHistory(SHOP_ID);
+    await Promise.resolve();
+    expect(harness.api).not.toHaveBeenCalled();
+    harness.shopsHydrated.value = true;
+    await pending;
+    expect(sync.historySource).toBe("orders");
+    expect(sync.historyError).toBe(false);
+  });
+
   it("distinguishes unavailable from a successful empty response", async () => {
     const sync = boundOrderSync();
-    harness.api.mockRejectedValueOnce(new Error("404")).mockResolvedValueOnce(axiosResponse({ orderSyncHistory: [] }));
+    harness.api.mockRejectedValueOnce(new Error("404")).mockResolvedValueOnce(axiosResponse([]));
     await sync.loadHistory(SHOP_ID);
     expect(sync.historyError).toBe(true);
     await sync.loadHistory(SHOP_ID);
@@ -534,6 +585,7 @@ describe("processed order history", () => {
     let finish!: (data: any) => void;
     harness.api.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     const pending = sync.loadHistory(SHOP_ID);
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
     sync.resetForShop(OTHER_SHOP_ID);
     finish(axiosResponse({ invalid: true }));
     await pending;

@@ -285,14 +285,14 @@
               <ion-item class="stat-title" lines="none">
                 <ion-label>
                   {{ translate("Recent order sync history") }}
-                  <p>{{ translate("Latest 100 processed orders") }}</p>
+                  <p>{{ orderSync.historySource === "orders" ? translate("Shopify matches among the latest 100 OMS sales orders for this product store") : translate("Latest order sync records for this shop") }}</p>
                 </ion-label>
                 <ion-badge v-if="!orderSync.historyError" slot="end" color="medium">{{ orderSync.recentOrders.length }}</ion-badge>
               </ion-item>
               <ion-searchbar
                 :value="ordersQuery"
                 :disabled="!orderSync.recentOrders.length"
-                :placeholder="translate('Search the loaded orders by Shopify name or ID')"
+                :placeholder="translate('Search by order name, Shopify ID, or OMS ID')"
                 :aria-label="translate('Search order sync history')"
                 @ionInput="ordersQuery = String($event.detail.value || '')"
               />
@@ -305,22 +305,15 @@
             </ion-item>
             <div class="stat-data" role="list">
               <transition-group name="list" tag="div" class="list-transition-group">
-                <ion-card v-for="order in filteredOrders" :key="order.id" role="listitem">
+                <ion-card v-for="order in filteredOrders" :key="order.orderId || order.shopifyOrderId" role="listitem">
                   <ion-list lines="full">
                     <ion-item>
                       <ion-label class="ion-text-wrap">
                         {{ order.orderName || order.shopifyOrderId }}
-                        <p>{{ translate("Shopify order") }} {{ order.shopifyOrderId || translate("Not available") }}</p>
-                        <p>{{ translate("Processed") }}: {{ formatDate(order.processedAt) }}</p>
-                      </ion-label>
-                      <ion-badge slot="end" :color="order.outcome === 'Created' ? 'success' : 'primary'">
-                        {{ translate(order.outcome) }}
-                      </ion-badge>
-                    </ion-item>
-                    <ion-item>
-                      <ion-label>
-                        {{ translate("Shopify order ID") }}
-                        <p>{{ order.shopifyOrderId }}</p>
+                        <p>{{ translate("Shopify order ID") }}: {{ order.shopifyOrderId }}</p>
+                        <p v-if="order.orderId">{{ translate("OMS order ID") }}: {{ order.orderId }}</p>
+                        <p v-if="order.historyUpdatedAt">{{ translate("History updated") }}: {{ formatDate(order.historyUpdatedAt) }}</p>
+                        <p v-else-if="order.orderDate">{{ translate("Order date") }}: {{ formatDate(order.orderDate) }}</p>
                       </ion-label>
                       <ion-button
                         v-if="shopifyAdminOrderUrl(order)"
@@ -336,22 +329,6 @@
                         <ion-icon slot="icon-only" :icon="openOutline" />
                       </ion-button>
                     </ion-item>
-                    <ion-card-content v-if="order.outcome === 'Updated'">
-                      <p class="history-object-heading">{{ translate("Updated objects") }}</p>
-                      <div v-if="order.updatedObjects.length" class="history-object-list">
-                        <ion-chip v-for="object in order.updatedObjects" :key="object.objectType">
-                          <ion-label>{{ historyObjectLabel(object.objectType, object.count) }}</ion-label>
-                        </ion-chip>
-                      </div>
-                      <p v-if="order.updatedObjects.length && !order.changeDetailsComplete" class="ion-no-margin">
-                        {{ translate("Legacy history may not include every updated object.") }}
-                      </p>
-                      <p v-else class="ion-no-margin">
-                        {{ order.changeDetailsComplete
-                          ? translate("No tracked order objects changed.")
-                          : translate("Object-level details were not recorded for this legacy update.") }}
-                      </p>
-                    </ion-card-content>
                   </ion-list>
                 </ion-card>
               </transition-group>
@@ -359,7 +336,7 @@
                 <ion-item lines="none">
                   <ion-label class="ion-text-center">
                     <p v-if="ordersQuery">{{ translate("No loaded orders match this search.") }}</p>
-                    <p v-else>{{ translate("No processed orders were found for this shop.") }}</p>
+                    <p v-else>{{ translate("No matching orders in the loaded history.") }}</p>
                   </ion-label>
                 </ion-item>
               </ion-card>
@@ -565,7 +542,6 @@ import {
   IonCardSubtitle,
   IonCardTitle,
   IonCheckbox,
-  IonChip,
   IonContent,
   IonDatetime,
   IonDatetimeButton,
@@ -789,20 +765,6 @@ function importLabel(configId: string | undefined): string {
   return configId === "SYNC_SHOPIFY_ORDER"
     ? translate("New order import")
     : translate("Updated order import");
-}
-
-function historyObjectLabel(objectType: string, count: number): string {
-  const labels: Record<string, [string, string]> = {
-    Order: ["Order", "Orders"],
-    OrderItem: ["Order item", "Order items"],
-    Transaction: ["Transaction", "Transactions"],
-    Refund: ["Refund", "Refunds"],
-    Return: ["Return", "Returns"],
-    Fulfillment: ["Fulfillment", "Fulfillments"],
-    FulfillmentLocation: ["Fulfillment location", "Fulfillment locations"],
-  };
-  const [singular, plural] = labels[objectType] || [objectType, objectType];
-  return `${translate(count === 1 ? singular : plural)}: ${count}`;
 }
 
 function openSystemMessageDetails(systemMessageId: unknown) {
@@ -1030,7 +992,6 @@ function shopifyAdminOrderUrl(order: ShopifyOrderSyncRecentOrder): string {
   if (
     order.shopId !== props.id
     || orderSync.shop?.shopId !== props.id
-    || order.shopifyFetchVerified !== true
     || !/^(?!0+$)[0-9]{1,30}$/.test(order.shopifyOrderId)
   ) return "";
 
@@ -1191,17 +1152,6 @@ ion-buttons {
 
 .stat-data ion-card {
   flex: 0 0 375px;
-}
-
-.history-object-heading {
-  margin: 0 0 8px;
-  font-weight: 600;
-}
-
-.history-object-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
 }
 
 @media screen and (max-width: 430px) {

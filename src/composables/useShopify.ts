@@ -51,7 +51,7 @@ import type { ActiveDomain } from "@common/db";
 import { serviceState } from "@common/db";
 import { onSessionCleared } from "./sessionScope";
 import { useDataManager } from "./useDataManager";
-import { useStatuses } from "./useSeed";
+import { useMaargConfig, useStatuses } from "./useSeed";
 import { useServiceJob } from "./useServiceJobs";
 import { useSystemMessage } from "./useSystemMessage";
 
@@ -3755,86 +3755,13 @@ export function deriveSyncOverallState(
   return importRow.state;
 }
 
-const AUDIT_TIMESTAMPS = ["processedDate", "processedAt", "completedDate", "createdDate", "createdStamp", "lastUpdatedStamp"] as const;
-
-export interface SuccessfulOrderAuditLike extends UnknownRecord {}
-
-export interface RecentProcessedOrder {
-  id: string;
+export interface ShopifyOrderSyncRecentOrder {
   shopId: string;
   shopifyOrderId: string;
-  orderName: string;
-  orderId: string;
-  outcome: "Created" | "Updated";
-  processedAt?: string | number;
-  processedAtMillis: number;
-  systemMessageId: string;
-  configId: string;
-  logId: string;
-  shopifyFetchVerified: boolean;
-}
-
-function auditOutcome(row: ValueSource): RecentProcessedOrder["outcome"] | null {
-  const configId = valueText(row?.configId);
-  if(configId !== "SYNC_SHOPIFY_ORDER" && configId !== "UPDATE_SHOPIFY_ORDER") {return null;}
-  const declaredOutcome = valueText(row?.outcome);
-
-  return declaredOutcome === "Created" || declaredOutcome === "Updated" ? declaredOutcome : null;
-}
-
-export function normalizeRecentProcessedOrders(
-  rows: readonly SuccessfulOrderAuditLike[],
-  options: { limit?: number; shopId?: string } = {}
-): RecentProcessedOrder[] {
-  const selectedShopId = valueText(options.shopId);
-  if(!selectedShopId) {return [];}
-
-  const normalized = rows.flatMap((row, index): RecentProcessedOrder[] => {
-    const shopId = valueText(row.shopId);
-    const systemMessageId = valueText(row.systemMessageId);
-    const configId = valueText(row.configId);
-    const logId = firstText(row, ["logId", "dataManagerLogId"]);
-    const outcome = auditOutcome(row);
-    const shopifyFetchVerified = row.shopifyFetchVerified;
-    if(
-      shopId !== selectedShopId ||
-      !systemMessageId ||
-      !configId ||
-      !logId ||
-      !outcome ||
-      typeof shopifyFetchVerified !== "boolean"
-    ) {return [];}
-
-    const shopifyOrderId = valueText(row.shopifyOrderId);
-    const processedAtMillis = timestampFrom(row, AUDIT_TIMESTAMPS);
-    const explicitId = firstText(row, ["auditId", "shopifyOrderSyncAuditId", "id"]);
-    const id = explicitId || [systemMessageId, configId, logId, shopifyOrderId, outcome, processedAtMillis || index].join(":");
-
-    return [{
-      id,
-      shopId,
-      shopifyOrderId,
-      orderName: firstText(row, ["orderName", "shopifyOrderName", "name"]),
-      orderId: firstText(row, ["orderId", "hotWaxOrderId", "internalOrderId"]),
-      outcome,
-      processedAt: originalTimestamp(row, AUDIT_TIMESTAMPS),
-      processedAtMillis,
-      systemMessageId,
-      configId,
-      logId,
-      shopifyFetchVerified,
-    }];
-  });
-
-  normalized.sort((a, b) => b.processedAtMillis - a.processedAtMillis || a.id.localeCompare(b.id));
-  const seen = new Set<string>();
-
-  return normalized.filter((row) => {
-    if(seen.has(row.id)) {return false;}
-    seen.add(row.id);
-
-    return true;
-  }).slice(0, boundedLimit(options.limit));
+  orderId?: string;
+  orderName?: string;
+  historyUpdatedAt?: string | number;
+  orderDate?: string;
 }
 
 const ERROR_TIMESTAMPS = [
@@ -3978,13 +3905,6 @@ function matchesQuery(values: readonly unknown[], query: string): boolean {
   if(!needle) {return true;}
 
   return values.some((value) => valueText(value).toLocaleLowerCase().includes(needle));
-}
-
-export function searchLoadedProcessedOrders(rows: readonly RecentProcessedOrder[], query: string): RecentProcessedOrder[] {
-  return rows.filter((row) => matchesQuery([
-    row.shopifyOrderId,
-    row.orderName
-  ], query));
 }
 
 export function searchLoadedOrderErrors(rows: readonly RecentOrderError[], query: string): RecentOrderError[] {
@@ -4220,11 +4140,8 @@ export function orderSyncRunNowDisabledReason(
 }
 
 /** Client-side order search over the already-loaded rows. */
-export function filterRecentOrders<T extends Record<string, any>>(
-  orders: readonly T[] | null | undefined,
-  query: string,
-): T[] {
-  return searchLoadedProcessedOrders((orders ?? []) as any, query) as unknown as T[];
+export function filterRecentOrders(orders: ShopifyOrderSyncRecentOrder[], query: string) {
+  return orders.filter(row => matchesQuery([row.shopifyOrderId, row.orderName, row.orderId], query));
 }
 
 /**
@@ -4615,7 +4532,6 @@ export interface ShopifyOrderSyncImport extends Record<string, any> {
   finishDateTime?: string | number;
 }
 
-export interface ShopifyOrderSyncRecentOrder extends Record<string, any> {}
 export interface ShopifyOrderSyncSearchResult extends Record<string, any> {}
 
 /** Shared monitoring session state — the store's non-entity fields. */
@@ -4632,6 +4548,7 @@ const state = reactive({
   historyError: false,
   recentOrders: [] as ShopifyOrderSyncRecentOrder[],
   historyLoading: false,
+  historySource: null as "history" | "orders" | null,
 });
 
 let orderHistoryRequest = 0;
@@ -4695,6 +4612,7 @@ export function useShopifyOrderSync() {
     state.lastRunResult = null;
     state.monitoringLoadedAt = null;
     state.historyError = false;
+    state.historySource = null;
     state.recentOrders = [];
     orderHistoryRequest++;
     state.historyLoading = false;
@@ -4734,19 +4652,65 @@ export function useShopifyOrderSync() {
     await loadLandmarkDates();
   }
 
+  async function readMappedOrders(shopId: string) {
+    // A direct link can enter the page before the shop table has emitted its first row.
+    if (!ctx.hydrated.value) {
+      await new Promise<void>(resolve => watch(ctx.hydrated, () => resolve(), { once: true }));
+    }
+    const storeId = shop.value?.shopId === shopId && shop.value.productStoreId;
+    if (!storeId) throw new Error("Product store unavailable");
+    const response = await api({
+      url: "graphql", method: "post",
+      data: {
+        query: `query RecentMappedOrders($filter: String!, $limit: Int!) {
+          orders(query: $filter, first: $limit, sortKey: ORDER_DATE, reverse: true) {
+            edges { node { orderId orderName orderDate shopifyOrder { shopId shopifyOrderId } } }
+          }
+        }`,
+        variables: { filter: `productStoreId:${JSON.stringify(storeId)} orderTypeId:SALES_ORDER`, limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT },
+      },
+    });
+    const edges = response.data?.data?.orders?.edges;
+    if (response.data?.errors?.length || !Array.isArray(edges)) throw new Error("OMS order history unavailable");
+    const rows: ShopifyOrderSyncRecentOrder[] = [];
+    for (const { node } of edges) {
+      const mapping = node.shopifyOrder;
+      if (mapping?.shopId === shopId && mapping.shopifyOrderId && node.orderId) {
+        rows.push({ shopId, shopifyOrderId: mapping.shopifyOrderId, orderId: node.orderId, orderName: node.orderName, orderDate: node.orderDate });
+      }
+    }
+    return rows;
+  }
+
   async function loadHistory(shopId: string) {
     if (shopId !== state.selectedShopId) return;
     const request = ++orderHistoryRequest;
     state.historyLoading = true;
     try {
-      const resp: any = await api({
-        url: `shopify/order-sync/${encodeURIComponent(shopId)}/history`, method: "get",
-        params: { pageSize: SHOPIFY_ORDER_SYNC_RESULT_LIMIT },
-      });
+      const maarg = useMaargConfig();
+      await maarg.load();
       if (request !== orderHistoryRequest) return;
-      const rows = resp?.data?.orderSyncHistory;
-      if (!Array.isArray(rows) || commonUtil.hasError(resp)) throw new Error("Order history unavailable");
-      state.recentOrders = normalizeRecentProcessedOrders(rows);
+      const version = maarg.componentVersion("shopify-connector").value || "";
+      const [major, minor] = version.replace(/^v/, "").split(".").map(Number);
+      // The shop-scoped history resource first shipped in connector 4.4.
+      const nativeHistory = major > 4 || (major === 4 && minor >= 4);
+      let rows: ShopifyOrderSyncRecentOrder[];
+      if (nativeHistory) {
+        const response = await api({
+          url: `sob/shopify/syncHistory/${encodeURIComponent(shopId)}/order`, method: "get",
+          params: { pageSize: SHOPIFY_ORDER_SYNC_RESULT_LIMIT, orderByField: "-lastUpdatedStamp,shopifyOrderId" },
+        });
+        if (!Array.isArray(response.data) || commonUtil.hasError(response)) throw new Error("Order sync history unavailable");
+        rows = response.data.filter(row => row.shopId === shopId && row.shopifyOrderId).map(row => ({
+          shopId, shopifyOrderId: row.shopifyOrderId, orderName: row.shopifyOrderName,
+          orderId: row.primaryOrder?.orderId, historyUpdatedAt: row.lastUpdatedStamp,
+        }));
+      } else {
+        rows = await readMappedOrders(shopId);
+      }
+      if (request !== orderHistoryRequest) return;
+      state.recentOrders = rows;
+      state.historySource = nativeHistory ? "history" : "orders";
       state.historyError = false;
     } catch {
       if (request === orderHistoryRequest) state.historyError = true;

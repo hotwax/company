@@ -4669,5 +4669,11 @@
   "No linked import log": "No linked import log",
   "Latest {limit} batch requests": "Latest {limit} batch requests",
   "Request {id}": "Request {id}",
-  "{count} succeeded": "{count} succeeded"
+  "{count} succeeded": "{count} succeeded",
+  "Shopify matches among the latest 100 OMS sales orders for this product store": "Shopify matches among the latest 100 OMS sales orders for this product store",
+  "Latest order sync records for this shop": "Latest order sync records for this shop",
+  "Search by order name, Shopify ID, or OMS ID": "Search by order name, Shopify ID, or OMS ID",
+  "OMS order ID": "OMS order ID",
+  "History updated": "History updated",
+  "No matching orders in the loaded history.": "No matching orders in the loaded history."
 }
