@@ -312,8 +312,6 @@
                         {{ order.orderName || order.shopifyOrderId }}
                         <p>{{ translate("Shopify order ID") }}: {{ order.shopifyOrderId }}</p>
                         <p v-if="order.orderId">{{ translate("OMS order ID") }}: {{ order.orderId }}</p>
-                        <p v-if="order.historyUpdatedAt">{{ translate("History updated") }}: {{ formatDate(order.historyUpdatedAt) }}</p>
-                        <p v-else-if="order.orderDate">{{ translate("Order date") }}: {{ formatDate(order.orderDate) }}</p>
                       </ion-label>
                       <ion-button
                         v-if="shopifyAdminOrderUrl(order)"
@@ -330,6 +328,14 @@
                       </ion-button>
                     </ion-item>
                   </ion-list>
+                  <ion-card-content>
+                    <dl class="order-timing">
+                      <dt>{{ translate("Order placed") }}</dt><dd>{{ formatOrderTimestamp(order.orderDate) }}</dd>
+                      <dt>{{ translate("Imported into OMS") }}</dt><dd>{{ formatOrderTimestamp(order.importedAt) }}</dd>
+                      <dt>{{ translate("Time to import") }}</dt><dd>{{ importDelay(order) }}</dd>
+                    </dl>
+                    <p v-if="order.historyUpdatedAt">{{ translate("History updated") }}: {{ formatDate(order.historyUpdatedAt) }}</p>
+                  </ion-card-content>
                 </ion-card>
               </transition-group>
               <ion-card v-if="!filteredOrders.length && !orderSync.historyError">
@@ -586,7 +592,8 @@ import { commonUtil, logger, translate } from "@common";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { DateTime } from "luxon";
 import { closeOutline, flashOutline, openOutline, refreshOutline } from "ionicons/icons";
-import { formatDateTime } from "@/utils";
+import { formatDateTime, parseDateTimeValue } from "@/utils";
+import { formatSyncDuration } from "@/utils/shopifyTransferSyncPresentation";
 import { importCountsLabel, orderImportState, progressColor, progressStateLabel, sumReported } from "@/utils/orderImportDisplay";
 import { useUserStore } from "@/store/user";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
@@ -747,6 +754,18 @@ const runNowExplanation = computed(() => {
 });
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function formatOrderTimestamp(value?: string) {
+  return formatDateTime(value, "LLL d, yyyy, h:mm:ss a ZZZZ") || translate("Not available");
+}
+
+function importDelay(order: ShopifyOrderSyncRecentOrder) {
+  const placed = parseDateTimeValue(order.orderDate);
+  const imported = parseDateTimeValue(order.importedAt);
+  if (!placed || !imported) return translate("Not available");
+  const ms = imported.toMillis() - placed.toMillis();
+  return (ms < 0 ? "−" : "") + formatSyncDuration(Math.abs(ms));
 }
 
 function formatDate(value: unknown): string {
@@ -1148,6 +1167,18 @@ ion-buttons {
   flex-wrap: nowrap;
   overflow-x: scroll;
   align-items: flex-start;
+}
+
+.order-timing {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+.order-timing dd {
+  margin: 0;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-data ion-card {

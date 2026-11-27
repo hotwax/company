@@ -4675,5 +4675,7 @@
   "Search by order name, Shopify ID, or OMS ID": "Search by order name, Shopify ID, or OMS ID",
   "OMS order ID": "OMS order ID",
   "History updated": "History updated",
-  "No matching orders in the loaded history.": "No matching orders in the loaded history."
+  "No matching orders in the loaded history.": "No matching orders in the loaded history.",
+  "Imported into OMS": "Imported into OMS",
+  "Time to import": "Time to import"
 }

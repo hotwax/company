@@ -21,7 +21,7 @@
  */
 
 
-import { api, commonUtil, logger, translate, useLiveEntity } from "@common";
+import { api, commonUtil, logger, translate, useLiveEntity, useSolrSearch } from "@common";
 import { companyDb } from "@/db/companyDb";
 import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
 import {
@@ -3762,6 +3762,7 @@ export interface ShopifyOrderSyncRecentOrder {
   orderName?: string;
   historyUpdatedAt?: string | number;
   orderDate?: string;
+  importedAt?: string;
 }
 
 const ERROR_TIMESTAMPS = [
@@ -4682,6 +4683,29 @@ export function useShopifyOrderSync() {
     return rows;
   }
 
+  async function addImportDates(rows: ShopifyOrderSyncRecentOrder[]) {
+    const ids = rows.flatMap(row => row.orderId ? [row.orderId] : []);
+    if (!ids.length) return;
+    // ORDER search documents repeat by line. Read one header per mapped order in a single request.
+    const response = await useSolrSearch().runSolrQuery({ json: {
+      query: "*:*", filter: ["docType:ORDER", "{!terms f=orderId}" + ids.join(",")],
+      params: { fl: "orderId,orderDate,entryDate", rows: ids.length, group: true, "group.field": "orderId", "group.limit": 1 },
+    } });
+    const groups = response.data?.grouped?.orderId?.groups;
+    if (!Array.isArray(groups)) throw new Error("Order dates unavailable");
+    const dates = new Map<string, { orderDate?: string; entryDate?: string }>();
+    for (const group of groups) {
+      const doc = group.doclist?.docs?.[0];
+      if (doc?.orderId) dates.set(doc.orderId, doc);
+    }
+    for (const row of rows) {
+      const doc = row.orderId && dates.get(row.orderId);
+      if (!doc) continue;
+      row.orderDate ??= doc.orderDate;
+      row.importedAt = doc.entryDate;
+    }
+  }
+
   async function loadHistory(shopId: string) {
     if (shopId !== state.selectedShopId) return;
     const request = ++orderHistoryRequest;
@@ -4707,6 +4731,12 @@ export function useShopifyOrderSync() {
         }));
       } else {
         rows = await readMappedOrders(shopId);
+      }
+      if (request !== orderHistoryRequest) return;
+      try {
+        await addImportDates(rows);
+      } catch {
+        logger.warn("Could not load order import dates.");
       }
       if (request !== orderHistoryRequest) return;
       state.recentOrders = rows;

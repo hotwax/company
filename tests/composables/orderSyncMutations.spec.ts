@@ -29,6 +29,7 @@ import { ref } from "vue";
 
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
+  search: vi.fn(),
   refreshAfterMutation: vi.fn(),
   connectorVersion: "4.4.0",
   shopsHydrated: null as ReturnType<typeof ref<boolean>> | null,
@@ -81,6 +82,7 @@ const TABLE_TO_CACHE_KEY: Record<string, string> = {
 
 vi.mock("@common", () => ({
   api: (...args: any[]) => harness.api(...args),
+  useSolrSearch: () => ({ runSolrQuery: harness.search }),
   commonUtil: { hasError: () => false, showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
@@ -171,6 +173,7 @@ beforeEach(() => {
   harness.shopsHydrated = null;
   harness.connectorVersion = "4.4.0";
   harness.api.mockReset();
+  harness.search.mockReset().mockResolvedValue(axiosResponse({ grouped: { orderId: { groups: [] } } }));
   harness.refreshAfterMutation.mockReset();
 });
 
@@ -530,11 +533,14 @@ describe("processed order history", () => {
   it("reads the connector's shop-scoped history array and primary OMS mapping", async () => {
     const sync = boundOrderSync();
     const row = { shopId: SHOP_ID, shopifyOrderId: "123", shopifyOrderName: "#321", lastUpdatedStamp: 12000, primaryOrder: { orderId: "O1" } };
+    const timestamps = { orderId: "O1", orderDate: "2026-11-27T20:51:39Z", entryDate: "2026-11-27T20:54:50Z" };
+    harness.search.mockResolvedValueOnce(axiosResponse({ grouped: { orderId: { groups: [{ doclist: { docs: [timestamps] } }] } } }));
     harness.api.mockResolvedValueOnce(axiosResponse([row, { ...row, shopId: OTHER_SHOP_ID }]));
     await sync.loadHistory(SHOP_ID);
     expect(harness.api).toHaveBeenCalledWith({ method: "get", url: `sob/shopify/syncHistory/${SHOP_ID}/order`,
       params: { pageSize: 100, orderByField: "-lastUpdatedStamp,shopifyOrderId" } });
-    expect(sync.recentOrders).toEqual([{ shopId: SHOP_ID, shopifyOrderId: "123", orderName: "#321", orderId: "O1", historyUpdatedAt: 12000 }]);
+    expect(sync.recentOrders).toEqual([{ shopId: SHOP_ID, shopifyOrderId: "123", orderName: "#321", orderId: "O1", historyUpdatedAt: 12000, orderDate: timestamps.orderDate, importedAt: timestamps.entryDate }]);
+    expect(harness.search.mock.calls[0][0].json.filter).toContain("{!terms f=orderId}O1");
     expect(sync.historySource).toBe("history");
   });
 
@@ -544,6 +550,7 @@ describe("processed order history", () => {
     const node = { orderId: "O1", orderName: "#321", orderDate: "2026-11-27", shopifyOrder: { shopId: SHOP_ID, shopifyOrderId: "123" } };
     const nodes = [node, { ...node, shopifyOrder: null }, { ...node, shopifyOrder: { shopId: OTHER_SHOP_ID, shopifyOrderId: "456" } }];
     const data = { orders: { edges: nodes.map(node => ({ node })) } };
+    harness.search.mockRejectedValueOnce(new Error("Index unavailable"));
     harness.api.mockResolvedValueOnce(axiosResponse({ data }));
     await sync.loadHistory(SHOP_ID);
     expect(harness.api.mock.calls.map(([config]) => [config.url, config.data.variables])).toEqual([
