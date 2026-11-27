@@ -88,76 +88,49 @@
 
         <ion-accordion-group>
           <ion-accordion v-for="run in runs" :key="run.id" :value="run.id">
-            <div
-              slot="header"
-              class="list-item"
-              :class="{ 'requested-run': run.id === requestedRun?.id }"
-            >
-              <ion-item lines="none">
-                <ion-icon slot="start" :icon="stateIcon(run.overallState)" :color="progressColor(run.overallState)" />
-                <ion-label>
-                  {{ run.id }}
-                  <ion-badge v-if="run.id === requestedRun?.id" color="primary">
-                    {{ translate("Requested run") }}
-                  </ion-badge>
-                  <p>{{ translate("Requested") }}: {{ formatDate(run.batch.initDate) }}</p>
-                  <p v-if="run.imports.length">
-                    {{ importCountsLabel(run.imports) }}
+            <ion-item slot="header" :class="{ 'requested-run': run.id === requestedRun?.id }">
+              <div class="run-summary">
+                <ion-label class="ion-text-wrap">
+                  <strong>{{ translate("Batch {id}", { id: run.id }) }}</strong>
+                  <p>{{ formatDate(run.batch.initDate) }}</p>
+                  <ion-badge v-if="run.id === requestedRun?.id" color="primary">{{ translate("Requested run") }}</ion-badge>
+                </ion-label>
+                <ion-label class="ion-text-wrap">
+                  {{ translate("Queue sync window") }}
+                  <p>{{ translate("Queued") }}</p>
+                </ion-label>
+                <ion-label class="ion-text-wrap">
+                  {{ translate("Fetch and stage changed orders") }}
+                  <p>{{ progressStateLabel(run.batchRow.state) }}</p>
+                </ion-label>
+                <ion-label class="ion-text-wrap">
+                  {{ translate("Import into OMS") }}
+                  <p>{{ run.importStatus }}</p>
+                  <p v-for="group in run.groups" :key="group.label">
+                    {{ group.label }} · {{ group.logs.length ? importCountsLabel(group.logs) : emptyImportLabel(run.batchRow.state) }}
                   </p>
                 </ion-label>
-              </ion-item>
-              <ion-label class="stat">
-                <ion-chip outline :color="progressColor(run.batchRow.state)">
-                  <ion-label>{{ progressStateLabel(run.batchRow.state) }}</ion-label>
-                </ion-chip>
-                <p>{{ translate("Shopify order batch request") }}</p>
-              </ion-label>
-              <ion-label class="stat">
-                <ion-chip outline :color="run.imports.length ? progressColor(run.importRow.state) : 'medium'">
-                  <ion-label>{{ run.imports.length ? progressStateLabel(run.importRow.state) : translate("No linked import log") }}</ion-label>
-                </ion-chip>
-                <p>{{ translate("HotWax order import") }}</p>
-              </ion-label>
-              <div />
-            </div>
+              </div>
+            </ion-item>
 
             <ion-list slot="content" lines="full">
-              <ion-item>
-                <ion-label>
-                  {{ translate("System message") }}
-                  <p>{{ run.id }}</p>
-                </ion-label>
-                <ion-badge slot="end" :color="progressColor(run.batchRow.state)">
-                  {{ batchStatusLabel(run.batch.statusId) }}
-                </ion-badge>
+              <ion-item v-if="run.batch.processedDate">
+                <ion-label>{{ translate("Processed") }}</ion-label>
+                <ion-label slot="end">{{ formatDate(run.batch.processedDate) }}</ion-label>
               </ion-item>
-              <ion-item>
-                <ion-label>
-                  {{ translate("Processed") }}
-                  <p>{{ formatDate(run.batch.processedDate) }}</p>
-                </ion-label>
+              <ion-item v-if="run.batch.createdByJobRunId">
+                <ion-label>{{ translate("Job run") }}</ion-label>
+                <ion-label slot="end">{{ run.batch.createdByJobRunId }}</ion-label>
               </ion-item>
-              <ion-item>
+              <ion-item v-for="log in run.imports" :key="log.logId" button detail @click="openMdmLogDetails(log)">
                 <ion-label>
-                  {{ translate("Job run") }}
-                  <p>{{ run.batch.createdByJobRunId || translate("Not available") }}</p>
-                </ion-label>
-              </ion-item>
-              <ion-item v-for="log in run.imports" :key="log.logId">
-                <ion-label>
-                  {{ importLabel(log.configId) }}
-                  <p>{{ log.logId }}</p>
+                  {{ translate("Import log") }} {{ log.logId }}
+                  <p>{{ log.configId }}</p>
                   <p>{{ importCountsLabel([log]) }}</p>
                 </ion-label>
-                <ion-badge slot="end" :color="progressColor(orderImportState(log))">
+                <ion-label slot="end" class="ion-text-end" :color="progressColor(orderImportState(log))">
                   {{ progressStateLabel(orderImportState(log)) }}
-                </ion-badge>
-                <ion-button slot="end" fill="clear" @click="openMdmLogDetails(log)">
-                  {{ translate("View MDM log") }}
-                </ion-button>
-              </ion-item>
-              <ion-item v-if="!run.imports.length">
-                <ion-label>{{ translate("No linked import log") }}</ion-label>
+                </ion-label>
               </ion-item>
             </ion-list>
           </ion-accordion>
@@ -177,14 +150,12 @@
 import { translate } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
-  IonCardContent, IonCardHeader, IonCardTitle, IonChip, IonContent, IonHeader, IonIcon, IonInput,
+  IonCardContent, IonCardHeader, IonCardTitle, IonContent, IonHeader, IonIcon, IonInput,
   IonItem, IonLabel, IonList, IonListHeader, IonNote, IonPage, IonSelect, IonSelectOption, IonSpinner,
   IonTitle, IonToolbar, onIonViewWillEnter
 } from "@ionic/vue";
-import {
-  alertCircleOutline, checkmarkCircleOutline, helpCircleOutline, refreshOutline, syncCircleOutline
-} from "ionicons/icons";
-import { computed, reactive, ref } from "vue";
+import { refreshOutline } from "ionicons/icons";
+import { computed, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import SearchFilterCard from "@/components/common/SearchFilterCard.vue";
 import UniformFilterLayout from "@/components/common/UniformFilterLayout.vue";
@@ -202,14 +173,13 @@ import {
   type SyncProgressState,
   deriveSyncOverallState,
   deriveSyncProgress,
-  mergeOrderSyncHistoryBatches,
+  fetchOrderRunImports, mergeOrderSyncHistoryBatches,
   useShopifyOrderSync,
   useShopifyOrderSyncHistorySession,
   useShopifySyncContext,
-  useShopifySyncImports,
   useShopifySyncMessages
 } from "@/composables/useShopify";
-import { importCountsLabel, orderImportState, progressColor, progressStateLabel } from "@/utils/orderImportDisplay";
+import { importCountsLabel, orderImportGroups, emptyImportLabel, orderImportState, progressColor, progressStateLabel } from "@/utils/orderImportDisplay";
 import { formatDateTime, parseDateTimeValue } from "@/utils";
 import { getSafeSyncRunQueryId } from "@/utils/syncRunRoute";
 
@@ -218,7 +188,8 @@ interface OrderSyncHistoryRun {
   batch: ShopifyOrderSyncBatch;
   imports: ShopifyOrderSyncImport[];
   batchRow: SyncProgressRow;
-  importRow: SyncProgressRow;
+  importStatus: string;
+  groups: ReturnType<typeof orderImportGroups>;
   overallState: SyncProgressState;
   requestedTime: number;
 }
@@ -232,17 +203,17 @@ const onboardingHistoryMessages = useShopifySyncMessages(
   syncContext,
   { limit: 100 }
 );
-const onboardingHistoryImports = useShopifySyncImports(ORDER_HISTORY_SYNC_FEATURE);
 const orderHistoryJobName = computed(() => onboardingInitialLoadJobName("orders", props.id));
 const orderHistoryJobRuns = useServiceJobRunsByJob(() => [orderHistoryJobName.value], 25);
 const historyError = ref("");
+const refreshVersion = ref(0);
 const historySession = useShopifyOrderSyncHistorySession({
   remoteIds: () => syncContext.hydrated.value ? syncContext.remoteIds.value : [],
   jobName: () => orderHistoryJobName.value,
-  refresh: () => {
+  refresh: async () => {
     historyError.value = "";
-
-    return Promise.resolve();
+    await orderSync.loadImportConfigs(props.id);
+    refreshVersion.value++;
   },
   onError: (error) => { historyError.value = String((error as Error)?.message || error || ""); }
 });
@@ -262,25 +233,28 @@ const backHref = computed(() => {
     ? path
     : `/shopify-connection-details/${encodeURIComponent(props.id)}/order-sync`;
 });
-/**
- * Batches and their imports come straight from the cache, LIVE.
- *
- * This page used to hold them in local refs filled by `orderSync.loadHistory(id)` — a store-era
- * contract that returned `{ batches, importsBySystemMessageId }`. That contract is gone: both values
- * are now cached projections that re-derive themselves whenever the sync worker commits, so the page
- * needs no fetch, no copy, and no re-entry to show a new run appearing.
- *
- * `isLoading` is the cache's own hydration flag rather than a request flag. On a revisit the cache is
- * already hydrated, so no skeleton is shown at all.
- */
 const batches = computed(() => mergeOrderSyncHistoryBatches(
   orderSync.batches,
   onboardingHistoryMessages.records.value
 ));
-const importsBySystemMessageId = computed(() => ({
-  ...orderSync.importsBySystemMessageId,
-  ...onboardingHistoryImports.bySystemMessageId.value
-}));
+const runIds = computed(() => batches.value.map(batch => batch.systemMessageId).filter(Boolean).join(","));
+const logsByRun = ref<Record<string, ShopifyOrderSyncImport[]>>({});
+const logReadFailed = ref(false);
+watch([() => historySession.isPageActive.value && props.id, runIds, () => orderSync.latestImportChange, refreshVersion],
+  async ([shop, ids], old, onCleanup) => {
+    if (shop !== old?.[0]) logsByRun.value = {};
+    if (!shop || !ids) return;
+    let current = true;
+    onCleanup(() => { current = false; });
+    try {
+      const messages = ids.split(",");
+      const byRun: Record<string, ShopifyOrderSyncImport[]> = Object.fromEntries(messages.map(id => [id, []]));
+      for (const log of await fetchOrderRunImports(messages)) byRun[log.systemMessageId!].push(log);
+      if (current) { logsByRun.value = byRun; logReadFailed.value = false; }
+    } catch {
+      if (current) logReadFailed.value = true;
+    }
+  }, { immediate: true });
 const isLoading = computed(() => !orderSync.hydrated || !onboardingHistoryMessages.hydrated.value);
 const showMdmLogModal = ref(false);
 const selectedMdmLog = ref<ShopifyOrderSyncImport | null>(null);
@@ -314,20 +288,11 @@ const outcomeOptions = computed(() => ([
   { value: "pending", label: progressStateLabel("pending") },
 ]));
 
-const SYSTEM_MESSAGE_STATUS_LABELS: Record<string, string> = {
-  SmsgProduced: "Produced",
-  SmsgSent: "Sent",
-  SmsgReceived: "Received",
-  SmsgConsumed: "Consumed",
-  SmsgConfirmed: "Confirmed",
-  SmsgError: "Error",
-  SmsgCancelled: "Cancelled",
-};
-
 const allRuns = computed<OrderSyncHistoryRun[]>(() => batches.value.flatMap((batch) => {
   const id = String(batch.systemMessageId || "").trim();
   if(!id) {return [];}
-  const imports = importsBySystemMessageId.value[id] || [];
+  const logs = logsByRun.value[id];
+  const imports = logs || [];
   const [batchRow, importRow] = deriveSyncProgress(batch, imports);
 
   return [{
@@ -335,7 +300,9 @@ const allRuns = computed<OrderSyncHistoryRun[]>(() => batches.value.flatMap((bat
     batch,
     imports,
     batchRow,
-    importRow,
+    groups: logs && !logReadFailed.value && orderSync.importConfigsAvailable ? orderImportGroups(logs, orderSync.importConfigIds) : [],
+    importStatus: logReadFailed.value || !orderSync.importConfigsAvailable ? translate("Import status unavailable")
+      : !logs ? translate("Loading") : logs.length ? progressStateLabel(importRow.state) : emptyImportLabel(batchRow.state),
     overallState: deriveSyncOverallState(batchRow, importRow),
     requestedTime: toMillis(batch.initDate),
   }];
@@ -395,27 +362,6 @@ function formatDate(value: unknown): string {
   return formatDateTime(value) || translate("Not available");
 }
 
-/** Both ids are optional on the cached rows these render, so both labels accept their absence. */
-function importLabel(configId: string | undefined): string {
-  if(configId === "BULK_ORDER_HISTORY") {return translate("Historic order import");}
-
-  return configId === "SYNC_SHOPIFY_ORDER" ? translate("New order import") : translate("Updated order import");
-}
-
-function batchStatusLabel(statusId: string | undefined): string {
-  const label = statusId ? SYSTEM_MESSAGE_STATUS_LABELS[statusId] : "";
-
-  return label ? translate(label) : statusId || translate("Not available");
-}
-
-function stateIcon(state: SyncProgressState): string {
-  if(state === "completed") {return checkmarkCircleOutline;}
-  if(state === "partial" || state === "failed") {return alertCircleOutline;}
-  if(state === "active") {return syncCircleOutline;}
-
-  return helpCircleOutline;
-}
-
 function openMdmLogDetails(log: ShopifyOrderSyncImport) {
   selectedMdmLog.value = log;
   showMdmLogModal.value = true;
@@ -428,9 +374,13 @@ function closeMdmLogDetails() {
 </script>
 
 <style scoped>
-.list-item {
-  --columns-desktop: 4;
-  border-top: var(--border-medium);
+.run-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1.35fr;
+  gap: var(--spacer-sm);
+  align-items: start;
+  width: 100%;
+  padding-block: var(--spacer-sm);
 }
 
 .requested-run-card p {
@@ -443,10 +393,7 @@ function closeMdmLogDetails() {
   background: rgba(var(--ion-color-primary-rgb), 0.08);
 }
 
-@media (min-width: 991px) {
-  .list-item {
-    padding-block: var(--spacer-sm);
-    padding-inline-end: var(--spacer-sm);
-  }
+@media (max-width: 700px) {
+  .run-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

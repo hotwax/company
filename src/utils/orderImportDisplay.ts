@@ -1,6 +1,6 @@
 import { translate } from "@common";
 import { logState, type DataManagerLog } from "@/utils/dataManagerLog";
-import type { SyncProgressState } from "@/composables/useShopify";
+import type { ShopifyOrderSyncImport, SyncProgressState } from "@/composables/useShopify";
 
 type ImportLog = Partial<DataManagerLog>;
 type Count = "successRecordCount" | "failedRecordCount" | "totalRecordCount";
@@ -53,4 +53,21 @@ export function progressColor(state: SyncProgressState): string {
   if (state === "failed") return "danger";
   if (state === "active") return "primary";
   return "medium";
+}
+
+export function orderImportGroups(logs: ShopifyOrderSyncImport[], configIds: string[]) {
+  const [created, updated] = configIds;
+  const labels = new Map<string | undefined, string>([
+    [created, translate("New orders")], [updated, translate("Order updates")],
+  ]);
+  if (created === updated) labels.set(created, translate("New orders and updates"));
+  for (const log of logs) {
+    if (!labels.has(log.configId)) labels.set(log.configId, log.configId === "BULK_ORDER_HISTORY"
+      ? translate("Historic order import") : log.configId || translate("Import log"));
+  }
+  return [...labels].map(([configId, label]) => ({ configId, label, logs: logs.filter(log => log.configId === configId) }));
+}
+
+export function emptyImportLabel(batch: SyncProgressState) {
+  return ["completed", "failed"].includes(batch) ? translate("No import recorded") : translate("Waiting");
 }

@@ -158,7 +158,7 @@
               </ion-card-header>
 
               <ion-list lines="full">
-                <ion-item :button="!!latestBatch" :detail="!!latestBatch" @click="openSystemMessageDetails(latestBatch?.systemMessageId)">
+                <ion-item>
                   <ion-label>{{ translate("Queue sync window") }}<p v-if="latestBatch">{{ batchRequestedLabel }}</p></ion-label>
                   <ion-label slot="end" class="ion-text-end">{{ latestBatch ? translate("Queued") : translate("Awaiting first run") }}</ion-label>
                 </ion-item>
@@ -173,7 +173,7 @@
                 <template v-for="group in (latestBatch && runLogs && !runReadFailed && orderSync.importConfigsAvailable ? importGroups : [])" :key="group.label">
                   <ion-item :button="group.logs.length === 1" :detail="group.logs.length === 1" @click="group.logs.length === 1 && openMdmLogDetails(group.logs[0].logId)">
                     <ion-label>{{ group.label }}</ion-label>
-                    <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ group.logs.length ? importCountsLabel(group.logs) : translate("No import recorded") }}</ion-label>
+                    <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ group.logs.length ? importCountsLabel(group.logs) : emptyImportLabel(summary.batchStatus) }}</ion-label>
                   </ion-item>
                   <template v-if="group.logs.length > 1">
                     <ion-item v-for="log in group.logs" :key="log.logId" button detail @click="openMdmLogDetails(log.logId)">
@@ -602,7 +602,7 @@ import { DateTime } from "luxon";
 import { closeOutline, flashOutline, openOutline, refreshOutline } from "ionicons/icons";
 import { formatDateTime, parseDateTimeValue } from "@/utils";
 import { formatSyncDuration } from "@/utils/shopifyTransferSyncPresentation";
-import { importCountsLabel, orderImportState, progressColor, progressStateLabel, sumReported } from "@/utils/orderImportDisplay";
+import { importCountsLabel, orderImportGroups, emptyImportLabel, orderImportState, progressColor, progressStateLabel, sumReported } from "@/utils/orderImportDisplay";
 import { useOrderArrivalMetrics } from "@/composables/useOrderArrivalMetrics";
 import { useUserStore } from "@/store/user";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
@@ -767,16 +767,12 @@ const selectedMdmLogDetails = computed(() => {
   const log = visibleLogs.value.find(entry => entry.logId === selectedMdmLogId.value);
   return { ...log, startedAt: log?.startDateTime, completedAt: log?.finishDateTime };
 });
-const importGroups = computed(() => orderSync.importConfigIds.map((configId, index) => ({
-  configId, label: index === 0 ? translate("New orders") : translate("Order updates"),
-  logs: progressImports.value.filter(log => log.configId === configId),
-})));
+const importGroups = computed(() => orderImportGroups(progressImports.value, orderSync.importConfigIds));
 const importStepLabel = computed(() => {
   if ((!orderSync.importConfigsAvailable || runReadFailed.value) && latestBatch.value) return translate("Import status unavailable");
   if (latestBatch.value && !runLogs.value) return translate("Loading");
-  if (progressImports.value.length) return progressStateLabel(deriveSyncProgress(latestBatch.value, progressImports.value)[1].state);
-  return latestBatch.value && ["completed", "failed"].includes(summary.value.batchStatus)
-    ? translate("No import recorded") : translate("Waiting");
+  const [batch, imports] = deriveSyncProgress(latestBatch.value, progressImports.value);
+  return progressImports.value.length ? progressStateLabel(imports.state) : emptyImportLabel(batch.state);
 });
 const filteredOrders = computed(() => filterRecentOrders(orderSync.recentOrders, ordersQuery.value));
 const failedImportLogs = computed(() => orderSync.failedDataManagerLogs);

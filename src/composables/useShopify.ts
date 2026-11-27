@@ -4530,15 +4530,18 @@ export interface ShopifyOrderSyncImport extends Record<string, any> {
   finishDateTime?: string | number;
 }
 
-/** Fetch all files for this run, including logs outside the worker's recent per-config window. */
-export async function fetchOrderRunImports(systemMessageId: string) {
+/** Fetch all files for these exact runs, including logs outside the recent per-config window. */
+export async function fetchOrderRunImports(ids: string | string[]) {
+  const requested = new Set(typeof ids === "string" ? [ids] : ids);
+  if (!requested.size) return [];
+  const systemMessageId = [...requested].join(",");
   const logs: ShopifyOrderSyncImport[] = [];
   const pageSize = 100;
   for (let pageIndex = 0; ; pageIndex++) {
     const response = await api({ url: "admin/dataManager/details", method: "get",
-      params: { systemMessageId, pageIndex, pageSize, orderByField: "logId" } });
+      params: { systemMessageId, ...(requested.size > 1 ? { systemMessageId_op: "in" } : {}), pageIndex, pageSize, orderByField: "logId" } });
     const page: ShopifyOrderSyncImport[] = response.data?.dataManagerLogs;
-    if (!Array.isArray(page) || page.some(log => log.systemMessageId !== systemMessageId)) throw new Error("Import logs unavailable");
+    if (!Array.isArray(page) || page.some(log => !log.systemMessageId || !requested.has(log.systemMessageId))) throw new Error("Import logs unavailable");
     logs.push(...page);
     if (page.length < pageSize || logs.length >= response.data.dataManagerLogsCount) return logs;
   }
@@ -5023,7 +5026,7 @@ export function useShopifyOrderSync() {
     salesChannelMappings, paymentMethodMappings, shippingMethodMappings,
     mappingReadiness, configurationState,
     // session control
-    resetForShop, loadMonitoring, loadConfiguration, loadHistory, refresh, suggestOldestOrderDate,
+    resetForShop, loadImportConfigs, loadMonitoring, loadConfiguration, loadHistory, refresh, suggestOldestOrderDate,
     // mutations
     updateSchedule, updateJobStatus, runNow, setLandmarkDate,
     searchShopifyOrders, requestSelectedOrders, replayOrdersFromDate, configure,
@@ -5509,7 +5512,7 @@ export function useShopifyOrderSyncHistorySession(options: {
   refresh?: () => Promise<void>;
   onError?: (error: unknown) => void;
 }) {
-  return useShopifySyncSession(ORDER_SYNC_FEATURE, {
+  return useShopifySyncSession(shopImportFeature, {
     active: () => true,
     refresh: options.refresh,
     refreshWorker: true,
