@@ -310,8 +310,6 @@
                     <ion-item>
                       <ion-label class="ion-text-wrap">
                         {{ order.orderName || order.shopifyOrderId }}
-                        <p>{{ translate("Shopify order ID") }}: {{ order.shopifyOrderId }}</p>
-                        <p v-if="order.orderId">{{ translate("OMS order ID") }}: {{ order.orderId }}</p>
                       </ion-label>
                       <ion-button
                         v-if="shopifyAdminOrderUrl(order)"
@@ -327,15 +325,31 @@
                         <ion-icon slot="icon-only" :icon="openOutline" />
                       </ion-button>
                     </ion-item>
+                    <ion-item>
+                      <ion-label>{{ translate("Shopify order ID") }}</ion-label>
+                      <ion-note slot="end">{{ order.shopifyOrderId }}</ion-note>
+                    </ion-item>
+                    <ion-item v-if="order.orderId">
+                      <ion-label>{{ translate("OMS order ID") }}</ion-label>
+                      <ion-note slot="end">{{ order.orderId }}</ion-note>
+                    </ion-item>
+                    <ion-item>
+                      <ion-label>{{ translate("Order placed") }}</ion-label>
+                      <ion-note slot="end">{{ formatOrderTimestamp(order.orderDate) }}</ion-note>
+                    </ion-item>
+                    <ion-item>
+                      <ion-label>{{ translate("Imported into OMS") }}</ion-label>
+                      <ion-note slot="end">{{ formatOrderTimestamp(order.importedAt) }}</ion-note>
+                    </ion-item>
+                    <ion-item>
+                      <ion-label>{{ translate("Time to import") }}</ion-label>
+                      <ion-note slot="end">{{ importDelay(order) }}</ion-note>
+                    </ion-item>
+                    <ion-item v-if="order.historyUpdatedAt">
+                      <ion-label>{{ translate("History updated") }}</ion-label>
+                      <ion-note slot="end">{{ formatDate(order.historyUpdatedAt) }}</ion-note>
+                    </ion-item>
                   </ion-list>
-                  <ion-card-content>
-                    <dl class="order-timing">
-                      <dt>{{ translate("Order placed") }}</dt><dd>{{ formatOrderTimestamp(order.orderDate) }}</dd>
-                      <dt>{{ translate("Imported into OMS") }}</dt><dd>{{ formatOrderTimestamp(order.importedAt) }}</dd>
-                      <dt>{{ translate("Time to import") }}</dt><dd>{{ importDelay(order) }}</dd>
-                    </dl>
-                    <p v-if="order.historyUpdatedAt">{{ translate("History updated") }}: {{ formatDate(order.historyUpdatedAt) }}</p>
-                  </ion-card-content>
                 </ion-card>
               </transition-group>
               <ion-card v-if="!filteredOrders.length && !orderSync.historyError">
@@ -1167,18 +1181,6 @@ ion-buttons {
   flex-wrap: nowrap;
   overflow-x: scroll;
   align-items: flex-start;
-}
-
-.order-timing {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 12px;
-  margin: 0;
-}
-.order-timing dd {
-  margin: 0;
-  text-align: end;
-  font-variant-numeric: tabular-nums;
 }
 
 .stat-data ion-card {
