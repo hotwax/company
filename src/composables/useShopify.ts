@@ -39,7 +39,6 @@ import {
 import { parseDateTimeValue } from "@/utils";
 import { isShopifyLocationMapping } from "@/utils/shopifyShop";
 import {
-  DATA_MANAGER_LOG_STATUS_IDS,
   logState as dataManagerLogState,
   isTerminal as isDataManagerLogTerminal,
 } from "@/utils/dataManagerLog";
@@ -3064,6 +3063,7 @@ export function useShopifyProductSyncRun() {
 
   /** Which run is displayed. Set by `fetchSyncRun`; everything below derives from it. */
   const targetMessageId = ref("");
+  const targetSummary = ref<any>();
   /** True only while the two on-demand primes are in flight — never for observing progress. */
   const loading = ref(false);
 
@@ -3139,6 +3139,7 @@ export function useShopifyProductSyncRun() {
    */
   const mdmLog = computed<any>(() => {
     if(!targetMessageId.value) {return undefined;}
+    if (targetSummary.value?.logId) return mdmLogs.value.find(row => row.logId === targetSummary.value.logId);
     const referenced = getReferencedBulkOperationSystemMessageIds(systemMessage.value) ?? [];
     const candidates = new Set([targetMessageId.value, ...referenced].filter(Boolean).map(String));
 
@@ -3153,7 +3154,7 @@ export function useShopifyProductSyncRun() {
    */
   const skippedEmptyImport = computed<boolean>(() =>
     String(bulkOperation.value?.status ?? "").toUpperCase() === "COMPLETED" &&
-    Number(bulkOperation.value?.objectCount ?? 0) === 0);
+    bulkOperation.value?.objectCount != null && Number(bulkOperation.value.objectCount) === 0);
 
   const effectiveStatus = computed<string>(() =>
     mdmLog.value?.statusId ||
@@ -3165,7 +3166,7 @@ export function useShopifyProductSyncRun() {
   const currentSyncRun = computed(() => {
     if(!targetMessageId.value) {return {} as Record<string, any>;}
 
-    const message = systemMessage.value ?? {};
+    const message = systemMessage.value ?? targetSummary.value ?? {};
     const operation = bulkOperation.value;
     const log = mdmLog.value;
     const mdmStatus = log?.statusId || (skippedEmptyImport.value ? "skipped" : undefined);
@@ -3229,6 +3230,7 @@ export function useShopifyProductSyncRun() {
     if(!id) {return null;}
 
     targetMessageId.value = id;
+    targetSummary.value = systemMessageData;
     loading.value = true;
     try {
       // Decide from loaded tables only: before its first read every row looks missing.
@@ -3242,12 +3244,15 @@ export function useShopifyProductSyncRun() {
 
       // An exact deep link can target a run outside the current shop spine window: request that one
       // message by id, the same way spine enrichment does.
-      if(!systemMessage.value && !systemMessageData) {await requestSystemMessage(id);}
+      if (!systemMessage.value) await requestSystemMessage(id);
+      if (systemMessageData?.logId && !mdmLog.value) await refreshAfterMutation("dataManagerLog", { logId: systemMessageData.logId });
+      if (targetMessageId.value !== id) return currentSyncRun.value;
 
       // Stored after the first look, so this asks nothing on revisit.
       if(!systemMessageErrors.value.length) {await requestSystemMessageErrors(id).catch(() => undefined);}
 
       // Only when it is not stored yet: once a run has an operation, opening it does not ask Shopify.
+      if (targetMessageId.value !== id) return currentSyncRun.value;
       const message = systemMessage.value ?? systemMessageData;
       const operationId = getSystemMessageBulkOperationId(message);
       const remoteId = message?.systemMessageRemoteId;
@@ -3257,7 +3262,7 @@ export function useShopifyProductSyncRun() {
 
       return currentSyncRun.value;
     } finally {
-      loading.value = false;
+      if (targetMessageId.value === id) loading.value = false;
     }
   };
 
@@ -3266,7 +3271,7 @@ export function useShopifyProductSyncRun() {
    *
    * `currentSyncRun` is derived, so it cannot be assigned to — clearing means pointing at nothing.
    */
-  const clearSyncRun = () => { targetMessageId.value = ""; };
+  const clearSyncRun = () => { targetMessageId.value = ""; loading.value = false; };
 
   return { currentSyncRun, loading, fetchSyncRun, clearSyncRun, systemMessage, bulkOperation, mdmLog };
 }
@@ -6029,6 +6034,7 @@ export interface ShopifyProductSyncProgressState {
 
 export interface ShopifyShopProductCount {
   count: number;
+  atLeast?: boolean;
   lastSyncedAt?: string;
 }
 
@@ -6146,11 +6152,6 @@ const SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID = "SHOP_NO_ACCESS";
 // deprecated full-form enum and requires updating (it is being phased out / force-replaced).
 const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_READ_WRITE_ACCESS";
 const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_RW_ACCESS";
-const TERMINAL_DATA_MANAGER_LOG_STATUS_IDS = DATA_MANAGER_LOG_STATUS_IDS.filter((statusId) => {
-  const state = dataManagerLogState(statusId, { total: 0, success: 0, failed: 0 });
-
-  return state === "completed" || state === "partial" || state === "failed";
-});
 const LIVE_CATALOG_COUNTS_QUERY = `
 query WizardLiveCatalogCounts {
   productsCount {
@@ -6415,7 +6416,7 @@ function getTimestampDate(value: any): string | undefined {
 
 function getEntityValueList(response: any, context: string): any[] {
   if(Array.isArray(response?.entityValueList)) {return response.entityValueList;}
-  if(Number(response?.entityValueListCount || 0) === 0) {return [];}
+  if(response?.entityValueListCount != null && Number(response.entityValueListCount) === 0) {return [];}
   throw new Error(`${context} response must include array entityValueList.`);
 }
 
@@ -6617,6 +6618,34 @@ function getLatestSystemMessage(systemMessages: any[]) {
   }, undefined);
 }
 
+/** A pin outside the local window must prove membership through the same scoped data document. */
+export function useSelectedProductSyncMessage(
+  shopId: () => string, pinnedId: ComputedRef<string | undefined>, messages: () => ProductSyncRunSummaryRow[],
+) {
+  const cached = computed(() => pinnedId.value !== undefined
+    ? messages().find(row => String(row.systemMessageId) === pinnedId.value)
+    : messages()[0]);
+  const historical = ref<ProductSyncRunSummaryRow>();
+  const resolving = ref(false);
+  watch([shopId, pinnedId, () => Boolean(cached.value)], async ([shop, id, found], _, onCleanup) => {
+    let current = true;
+    onCleanup(() => { current = false; });
+    historical.value = undefined;
+    resolving.value = Boolean(shop && id && !found);
+    if (!resolving.value) return;
+    try {
+      const rows = await fetchServerProductSyncMessages(shop, 1, id);
+      if (current) historical.value = rows.find(row => String(row.systemMessageId) === id &&
+        String(row.remoteInternalId) === shop && row.systemMessageTypeId === PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID);
+    } catch (error) {
+      logger.error("Failed to resolve the requested product sync run", error);
+    } finally {
+      if (current) resolving.value = false;
+    }
+  }, { immediate: true, flush: "sync" });
+  return { selectedMessage: computed(() => cached.value ?? historical.value), resolving };
+}
+
 /**
  * This shop's product-sync messages as the server's history document joins them, newest first.
  *
@@ -6625,7 +6654,7 @@ function getLatestSystemMessage(systemMessages: any[]) {
  * a shop with months of sync history read as never synced and dropped into the first-time wizard.
  * So an empty spine is confirmed here, which costs a request only for shops that truly have no runs.
  */
-async function fetchServerProductSyncMessages(shopId: string, pageSize: number): Promise<any[]> {
+async function fetchServerProductSyncMessages(shopId: string, pageSize: number, systemMessageId?: string): Promise<any[]> {
   if(!shopId) {
     throw new Error("Shop ID is required to find product update sync system messages.");
   }
@@ -6639,6 +6668,7 @@ async function fetchServerProductSyncMessages(shopId: string, pageSize: number):
         customParametersMap: {
           systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
           remoteInternalId: shopId,
+          ...(systemMessageId && { systemMessageId }),
           remoteInternalIdType: "HOTWAX_SHOP_ID",
           orderByField: "-lastUpdatedStamp"
         },
@@ -6776,6 +6806,7 @@ export const fetchShopifyShopProductCount = async (payload: any): Promise<Shopif
 
   return {
     count: getRequiredCount(graphQlPayload, "productsCount", "Shopify unsynced product update count query"),
+    ...(graphQlPayload?.productsCount?.precision === "AT_LEAST" && { atLeast: true }),
     lastSyncedAt
   };
 }
@@ -7134,34 +7165,6 @@ export const fetchSyncJobConfig = async (payload: any): Promise<{ isConfigured: 
 // already replaces it and additionally refreshes the cached `serviceJob` row, which the store version
 // did not — without that the new job stays invisible to every cached read until the next login.
 
-
-export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<number> => {
-  const { shopId, configId } = payload;
-  try {
-    const response = await requestBackend<any>({
-      url: "oms/dataDocumentView",
-      method: "post",
-      data: {
-        dataDocumentId: "DATA_MANAGER_LOG_AND_PARAMETER",
-        pageSize: 1,
-        pageIndex: 0,
-        customParametersMap: {
-          configId: configId || "SYNC_SHOPIFY_PRODUCT",
-          parameterName: "shopId",
-          parameterValue: shopId,
-          statusId: TERMINAL_DATA_MANAGER_LOG_STATUS_IDS,
-          statusId_not: "true"
-        }
-      }
-    });
-
-    return Number(response?.entityValueListCount || 0);
-  } catch (error: any) {
-    logger.warn("Failed to fetch update files to process count using dataDocumentView", error);
-
-    return 0;
-  }
-};
 
 export const fetchWebhookSubscriptions = async (payload: any): Promise<any> => {
   const response = await requestBackend<any>({

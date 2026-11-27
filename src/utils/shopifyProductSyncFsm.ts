@@ -1,9 +1,7 @@
 import { translate } from "@/i18n";
 
-export type ProductSyncFsmActionId = "send" | "poll" | "cancel";
-
 export interface ProductSyncFsmAction {
-  id: ProductSyncFsmActionId;
+  id: "cancel";
   label: string;
   kind: "primary" | "secondary";
 }
@@ -23,7 +21,6 @@ export interface ProductSyncFsmNextJob {
 export interface ProductSyncFsmState {
   statusId: string;
   statusLabel: string;
-  primaryAction: ProductSyncFsmAction | null;
   secondaryActions: ProductSyncFsmAction[];
   nextJob: ProductSyncFsmNextJob | null;
   nextJobReason: string;
@@ -83,7 +80,6 @@ export function getProductSyncFsmState(input: ProductSyncFsmInput): ProductSyncF
       return {
         statusId,
         statusLabel,
-        primaryAction: { id: "send", label: translate("Send now"), kind: "primary" },
         secondaryActions: [cancelAction],
         nextJob: buildNextJob(
           input.sendJob,
@@ -101,7 +97,6 @@ export function getProductSyncFsmState(input: ProductSyncFsmInput): ProductSyncF
       return {
         statusId,
         statusLabel,
-        primaryAction: { id: "poll", label: translate("Poll now"), kind: "primary" },
         secondaryActions: [cancelAction],
         nextJob: buildNextJob(
           input.pollJob,
@@ -121,29 +116,15 @@ export function getProductSyncFsmState(input: ProductSyncFsmInput): ProductSyncF
       return {
         statusId,
         statusLabel,
-        primaryAction: null,
         secondaryActions: [cancelAction],
         nextJob: null,
         nextJobReason: translate("No forward action is available. You can only discard this run if you no longer want to use it.")
-      };
-
-    case "SmsgConsumed":
-    case "SmsgConfirmed":
-    case "SmsgCancelled":
-      return {
-        statusId,
-        statusLabel,
-        primaryAction: null,
-        secondaryActions: [],
-        nextJob: null,
-        nextJobReason: translate("No automated next step")
       };
 
     default:
       return {
         statusId,
         statusLabel,
-        primaryAction: null,
         secondaryActions: [],
         nextJob: null,
         nextJobReason: translate("No automated next step")

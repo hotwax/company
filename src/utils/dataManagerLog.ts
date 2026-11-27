@@ -36,6 +36,28 @@ export interface DataManagerLog {
   lastUpdatedStamp?: string | number;
 }
 
+/** Finished product imports report total and failed records. Other statuses may still have unprocessed rows. */
+export function finishedImportCounts(log?: Partial<DataManagerLog> & { logStatusId?: string } | null) {
+  if (!log || !["DmlsFinished", "DmlsFailed", "DmlsCrashed", "DmlsCancelled"].includes(log.logStatusId ?? "")) return;
+  const { totalRecordCount: total, failedRecordCount: failed, successRecordCount } = log;
+  if (failed == null || !Number.isInteger(failed) || failed < 0) return;
+  const succeeded = successRecordCount ?? (log.logStatusId === "DmlsFinished" && total != null ? total - failed : undefined);
+  if (succeeded == null || !Number.isInteger(succeeded) || succeeded < 0) return;
+  if (total != null && (!Number.isInteger(total) || succeeded + failed > total)) return;
+  return { succeeded, failed };
+}
+
+/** Count each open import once within the caller's shop-scoped request window. */
+export function countOpenImports(runs: readonly { logId?: string; logStatusId?: string }[]) {
+  const open = new Set<string>();
+  for (const { logId, logStatusId } of runs) {
+    if (!logId) continue;
+    if (!logStatusId || !DATA_MANAGER_LOG_STATUS_IDS.includes(logStatusId)) return;
+    if (["DmlsPending", "DmlsQueued", "DmlsRunning"].includes(logStatusId)) open.add(logId);
+  }
+  return open.size;
+}
+
 export function countFailedRecordsInLastDay(logs: readonly DataManagerLog[], now: number): number {
   const since = now - 24 * 60 * 60 * 1000;
   return logs.reduce((sum, log) => {

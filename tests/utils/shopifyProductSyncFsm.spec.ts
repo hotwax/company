@@ -10,7 +10,6 @@ describe("getProductSyncFsmState", () => {
     const state = getProductSyncFsmState({ statusId: "Unknown" });
     expect(state.statusId).toBe("Unknown");
     expect(state.statusLabel).toBe("Pending");
-    expect(state.primaryAction).toBeNull();
     expect(state.secondaryActions).toEqual([]);
     expect(state.nextJob).toBeNull();
     expect(state.nextJobReason).toBe("No automated next step");
@@ -19,7 +18,6 @@ describe("getProductSyncFsmState", () => {
   it("returns correct state for SmsgProduced", () => {
     const state = getProductSyncFsmState({ statusId: "SmsgProduced" });
     expect(state.statusId).toBe("SmsgProduced");
-    expect(state.primaryAction).toEqual({ id: "send", label: "Send now", kind: "primary" });
     expect(state.secondaryActions).toEqual([{ id: "cancel", label: "Cancel", kind: "secondary" }]);
     expect(state.nextJob).toBeNull();
     expect(state.nextJobReason).toBe("The next logical step is to send the produced bulk query to Shopify.");
@@ -28,7 +26,6 @@ describe("getProductSyncFsmState", () => {
   it("returns correct state for SmsgSending", () => {
     const state = getProductSyncFsmState({ statusId: "SmsgSending" });
     expect(state.statusId).toBe("SmsgSending");
-    expect(state.primaryAction).toEqual({ id: "send", label: "Send now", kind: "primary" });
     expect(state.secondaryActions).toEqual([{ id: "cancel", label: "Cancel", kind: "secondary" }]);
     expect(state.nextJob).toBeNull();
     expect(state.nextJobReason).toBe("The next logical step is to send the produced bulk query to Shopify.");
@@ -57,7 +54,6 @@ describe("getProductSyncFsmState", () => {
   it("returns correct state for SmsgSent", () => {
     const state = getProductSyncFsmState({ statusId: "SmsgSent" });
     expect(state.statusId).toBe("SmsgSent");
-    expect(state.primaryAction).toEqual({ id: "poll", label: "Poll now", kind: "primary" });
     expect(state.secondaryActions).toEqual([{ id: "cancel", label: "Cancel", kind: "secondary" }]);
     expect(state.nextJob).toBeNull();
     expect(state.nextJobReason).toBe("The next logical step is to check whether Shopify finished the bulk operation.");
@@ -85,7 +81,6 @@ describe("getProductSyncFsmState", () => {
 
   it.each(["SmsgReceived", "SmsgConsuming", "SmsgError"])("returns correct state for %s", (statusId) => {
     const state = getProductSyncFsmState({ statusId });
-    expect(state.primaryAction).toBeNull();
     expect(state.secondaryActions).toEqual([{ id: "cancel", label: "Cancel", kind: "secondary" }]);
     expect(state.nextJob).toBeNull();
     expect(state.nextJobReason).toBe("No forward action is available. You can only discard this run if you no longer want to use it.");
@@ -93,7 +88,6 @@ describe("getProductSyncFsmState", () => {
 
   it.each(["SmsgConsumed", "SmsgConfirmed", "SmsgCancelled"])("returns correct state for %s", (statusId) => {
     const state = getProductSyncFsmState({ statusId });
-    expect(state.primaryAction).toBeNull();
     expect(state.secondaryActions).toEqual([]);
     expect(state.nextJob).toBeNull();
     expect(state.nextJobReason).toBe("No automated next step");
