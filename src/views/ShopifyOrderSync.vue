@@ -327,27 +327,27 @@
                     </ion-item>
                     <ion-item>
                       <ion-label>{{ translate("Shopify order ID") }}</ion-label>
-                      <ion-note slot="end">{{ order.shopifyOrderId }}</ion-note>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ order.shopifyOrderId }}</ion-label>
                     </ion-item>
                     <ion-item v-if="order.orderId">
                       <ion-label>{{ translate("OMS order ID") }}</ion-label>
-                      <ion-note slot="end">{{ order.orderId }}</ion-note>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ order.orderId }}</ion-label>
                     </ion-item>
                     <ion-item>
                       <ion-label>{{ translate("Order placed") }}</ion-label>
-                      <ion-note slot="end">{{ formatOrderTimestamp(order.orderDate) }}</ion-note>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ formatOrderTimestamp(order.orderDate) }}</ion-label>
                     </ion-item>
                     <ion-item>
                       <ion-label>{{ translate("Imported into OMS") }}</ion-label>
-                      <ion-note slot="end">{{ formatOrderTimestamp(order.importedAt) }}</ion-note>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ formatOrderTimestamp(order.importedAt) }}</ion-label>
                     </ion-item>
                     <ion-item>
                       <ion-label>{{ translate("Time to import") }}</ion-label>
-                      <ion-note slot="end">{{ importDelay(order) }}</ion-note>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ importDelay(order) }}</ion-label>
                     </ion-item>
                     <ion-item v-if="order.historyUpdatedAt">
                       <ion-label>{{ translate("History updated") }}</ion-label>
-                      <ion-note slot="end">{{ formatDate(order.historyUpdatedAt) }}</ion-note>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ formatDate(order.historyUpdatedAt) }}</ion-label>
                     </ion-item>
                   </ion-list>
                 </ion-card>
