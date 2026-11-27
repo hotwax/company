@@ -2435,10 +2435,7 @@ function isFailedImport(log: any): boolean {
 export function useShopifySyncImports(feature: ShopifySyncFeature) {
   const { records: logs, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, { dateField: "createdDate" });
 
-  const wanted = new Set(feature.importConfigIds.map(String));
-
-  const records = computed<any[]>(() =>
-    logs.value.filter((row: any) => wanted.has(String(row?.configId))));
+  const records = computed<any[]>(() => logs.value.filter(row => feature.importConfigIds.includes(row.configId)));
 
   const bySystemMessageId = computed<Record<string, any[]>>(() => {
     const grouped: Record<string, any[]> = {};
@@ -4533,10 +4530,26 @@ export interface ShopifyOrderSyncImport extends Record<string, any> {
   finishDateTime?: string | number;
 }
 
+/** Fetch all files for this run, including logs outside the worker's recent per-config window. */
+export async function fetchOrderRunImports(systemMessageId: string) {
+  const logs: ShopifyOrderSyncImport[] = [];
+  const pageSize = 100;
+  for (let pageIndex = 0; ; pageIndex++) {
+    const response = await api({ url: "admin/dataManager/details", method: "get",
+      params: { systemMessageId, pageIndex, pageSize, orderByField: "logId" } });
+    const page: ShopifyOrderSyncImport[] = response.data?.dataManagerLogs;
+    if (!Array.isArray(page) || page.some(log => log.systemMessageId !== systemMessageId)) throw new Error("Import logs unavailable");
+    logs.push(...page);
+    if (page.length < pageSize || logs.length >= response.data.dataManagerLogsCount) return logs;
+  }
+}
+
 export interface ShopifyOrderSyncSearchResult extends Record<string, any> {}
 
 /** Shared monitoring session state — the store's non-entity fields. */
 const state = reactive({
+  importConfigIds: [...ORDER_SYNC_FEATURE.importConfigIds],
+  importConfigsAvailable: false,
   selectedShopId: "",
   runtimeTimeZone: "",
   loading: false,
@@ -4551,6 +4564,11 @@ const state = reactive({
   historyLoading: false,
   historySource: null as "history" | "orders" | null,
 });
+
+const shopImportFeature = {
+  ...ORDER_SYNC_FEATURE,
+  get importConfigIds() { return state.importConfigIds; },
+};
 
 let orderHistoryRequest = 0;
 
@@ -4586,7 +4604,7 @@ export function useShopifyOrderSync() {
   /** Historical alias: order sync's only message type IS its batch request. */
   const systemMessages = batches;
 
-  const imports = useShopifySyncImports(ORDER_SYNC_FEATURE);
+  const imports = useShopifySyncImports(shopImportFeature);
   const hydrated = computed(() => ctx.hydrated.value && messagesHydrated.value && imports.hydrated.value);
   const importsBySystemMessageId = computed<Record<string, ShopifyOrderSyncImport[]>>(() => Object.fromEntries(batches.value.map(batch => [
     batch.systemMessageId, imports.bySystemMessageId.value[batch.systemMessageId] ?? [],
@@ -4613,6 +4631,8 @@ export function useShopifyOrderSync() {
     state.lastRunResult = null;
     state.monitoringLoadedAt = null;
     state.historyError = false;
+    state.importConfigIds = [...ORDER_SYNC_FEATURE.importConfigIds];
+    state.importConfigsAvailable = false;
     state.historySource = null;
     state.recentOrders = [];
     orderHistoryRequest++;
@@ -4631,7 +4651,7 @@ export function useShopifyOrderSync() {
     state.loading = !state.monitoringLoadedAt;
     state.monitoringRefreshing = true;
     try {
-      await Promise.all([loadHistory(shopId), loadLandmarkDates()]);
+      await Promise.all([loadHistory(shopId), loadLandmarkDates(), loadImportConfigs(shopId)]);
       if (shopId !== state.selectedShopId) return;
       state.monitoringLoadedAt = Date.now();
       state.monitoringError = "";
@@ -4651,6 +4671,23 @@ export function useShopifyOrderSync() {
   async function loadConfiguration(shopId: string) {
     if(state.selectedShopId !== shopId) {resetForShop(shopId);}
     await loadLandmarkDates();
+  }
+
+  async function loadImportConfigs(shopId: string) {
+    const types = ["SHPFY_CRT_ORDER", "SHPFY_UPD_ORDER"];
+    try {
+      const response = await api({ url: "sob/shopify/shopSetting", method: "get", params: {
+        shopId, settingTypeEnumId: types.join(","), settingTypeEnumId_op: "in", pageSize: types.length,
+      } });
+      if (shopId !== state.selectedShopId) return;
+      const settings: { shopId: string; settingTypeEnumId: string; settingValue: string }[] = response.data;
+      const ids = types.map((type, i) => settings.find(row => row.shopId === shopId && row.settingTypeEnumId === type)?.settingValue
+        || ORDER_SYNC_FEATURE.importConfigIds[i]);
+      if (ids.some((id, i) => id !== state.importConfigIds[i])) state.importConfigIds = ids;
+      state.importConfigsAvailable = true;
+    } catch {
+      if (shopId === state.selectedShopId) state.importConfigsAvailable = false;
+    }
   }
 
   async function readMappedOrders(shopId: string) {
@@ -4977,8 +5014,12 @@ export function useShopifyOrderSync() {
     ...toRefs(state),
     hydrated,
     // cached entities
-    shop, productStore, remote, job, templateJob, isPaused, isConfigured, landmarkDates,
+    shop, productStore, remote, remoteIds: ctx.remoteIds, job, templateJob, isPaused, isConfigured, landmarkDates,
     batches, systemMessages, importsBySystemMessageId, failedDataManagerLogs,
+    latestImportChange: computed(() => {
+      const log = imports.records.value[0];
+      return log && [log.logId, log.statusId, log.finishDateTime].join("/");
+    }),
     salesChannelMappings, paymentMethodMappings, shippingMethodMappings,
     mappingReadiness, configurationState,
     // session control
@@ -5439,7 +5480,7 @@ export interface OrderSyncSessionOptions {
 /** The DataManagerLog configs an order import writes under. */
 
 export function useShopifyOrderSyncPolling(options: OrderSyncSessionOptions) {
-  return useShopifySyncSession(ORDER_SYNC_FEATURE, {
+  return useShopifySyncSession(shopImportFeature, {
     active: options.batchActive,
     refresh: options.refresh,
     onError: options.onError,

@@ -100,6 +100,21 @@ describe("ShopifyOrderSyncHistory exact run context", () => {
     ]
   })
 
+  it("finds a batch by job ID and clears the shared filters back to all runs", async () => {
+    const View = (await import("@/views/ShopifyOrderSyncHistory.vue")).default
+    const wrapper = mount(View, {
+      props: { id: "SHOP" },
+      global: { stubs: { IonBackButton: true } }
+    })
+    wrapper.getComponent({ name: "SearchFilterCard" }).vm.$emit("update:modelValue", "requested-job")
+    await nextTick()
+    expect(wrapper.findAll("ion-accordion")).toHaveLength(1)
+    expect(wrapper.get("ion-accordion").text()).toContain("REQUESTED-MESSAGE")
+    wrapper.getComponent({ name: "UniformFilterLayout" }).vm.$emit("clear")
+    await nextTick()
+    expect(wrapper.findAll("ion-accordion")).toHaveLength(2)
+  })
+
   it("identifies and highlights the queried onboarding run instead of implying the newest run", async () => {
     harness.route.query = {
       systemMessageId: "REQUESTED-MESSAGE",

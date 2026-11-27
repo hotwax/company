@@ -57,62 +57,25 @@
           </ion-card-content>
         </ion-card>
 
-        <ion-list lines="full">
-          <ion-list-header>
-            <ion-label>{{ translate("Filters") }}</ion-label>
-          </ion-list-header>
-          <ion-item>
-            <ion-select
-              :label="translate('Outcome')"
-              :value="filters.outcome"
-              interface="popover"
-              @ion-change="filters.outcome = $event.detail.value"
-            >
-              <ion-select-option value="">
-                {{ translate("All outcomes") }}
-              </ion-select-option>
-              <ion-select-option v-for="option in outcomeOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </ion-select-option>
+        <SearchFilterCard v-model="filters.query" :placeholder="translate('Search by batch, job run, or import log ID')" :show-clear="false">
+          <UniformFilterLayout @clear="clearFilters">
+            <ion-select v-model="filters.outcome" :label="translate('Outcome')" label-placement="stacked" fill="outline" interface="popover">
+              <ion-select-option value="">{{ translate("All outcomes") }}</ion-select-option>
+              <ion-select-option v-for="option in outcomeOptions" :key="option.value" :value="option.value">{{ option.label }}</ion-select-option>
             </ion-select>
-          </ion-item>
-          <ion-item>
-            <ion-select
-              :label="translate('Sort')"
-              :value="filters.sortOrder"
-              interface="popover"
-              @ion-change="filters.sortOrder = $event.detail.value === 'oldest' ? 'oldest' : 'newest'"
-            >
-              <ion-select-option value="newest">
-                {{ translate("Newest first") }}
-              </ion-select-option>
-              <ion-select-option value="oldest">
-                {{ translate("Oldest first") }}
-              </ion-select-option>
+            <ion-select v-model="filters.sortOrder" :label="translate('Sort')" label-placement="stacked" fill="outline" interface="popover">
+              <ion-select-option value="newest">{{ translate("Newest first") }}</ion-select-option>
+              <ion-select-option value="oldest">{{ translate("Oldest first") }}</ion-select-option>
             </ion-select>
-          </ion-item>
-          <ion-item>
-            <ion-input
-              :label="translate('Requested after')"
-              type="datetime-local"
-              :value="filters.requestedAfter"
-              @ion-change="filters.requestedAfter = String($event.detail.value || '')"
-            />
-          </ion-item>
-          <ion-item>
-            <ion-input
-              :label="translate('Requested before')"
-              type="datetime-local"
-              :value="filters.requestedBefore"
-              @ion-change="filters.requestedBefore = String($event.detail.value || '')"
-            />
-          </ion-item>
-        </ion-list>
+            <ion-input v-model="filters.requestedAfter" :label="translate('Requested after')" label-placement="stacked" fill="outline" type="datetime-local" />
+            <ion-input v-model="filters.requestedBefore" :label="translate('Requested before')" label-placement="stacked" fill="outline" type="datetime-local" />
+          </UniformFilterLayout>
+        </SearchFilterCard>
 
         <ion-list lines="full">
           <ion-list-header>
             <ion-label>
-              {{ translate("A list of previous order sync runs") }}
+              {{ runs.length === 1 ? translate("1 run") : translate("{count} runs", { count: runs.length }) }}
               <p>{{ shopName }}</p>
             </ion-label>
           </ion-list-header>
@@ -223,6 +186,8 @@ import {
 } from "ionicons/icons";
 import { computed, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
+import SearchFilterCard from "@/components/common/SearchFilterCard.vue";
+import UniformFilterLayout from "@/components/common/UniformFilterLayout.vue";
 import ShopifyOrderSyncMdmLogModal from "@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue";
 import {
   onboardingInitialLoadJobName,
@@ -331,12 +296,15 @@ const selectedMdmLogDetails = computed(() => selectedMdmLog.value ? {
   failedRecordCount: selectedMdmLog.value.failedRecordCount,
 } : {});
 
-const filters = reactive({
+const defaultFilters = {
+  query: "",
   outcome: "" as "" | SyncProgressState,
   sortOrder: "newest" as "newest" | "oldest",
   requestedAfter: "",
   requestedBefore: "",
-});
+};
+const filters = reactive({ ...defaultFilters });
+function clearFilters() { Object.assign(filters, defaultFilters); }
 
 const outcomeOptions = computed(() => ([
   { value: "completed", label: progressStateLabel("completed") },
@@ -388,7 +356,10 @@ const requestedRun = computed(() => {
 const runs = computed<OrderSyncHistoryRun[]>(() => {
   const requestedAfter = filterTimestamp(filters.requestedAfter);
   const requestedBefore = filterTimestamp(filters.requestedBefore);
+  const query = filters.query.trim().toLowerCase();
   const filtered = allRuns.value.filter((run) => {
+    if (query && ![run.id, run.batch.createdByJobRunId, ...run.imports.map(log => log.logId)]
+      .some(id => String(id || "").toLowerCase().includes(query))) return false;
     if(filters.outcome && run.overallState !== filters.outcome) {return false;}
     if(requestedAfter && run.requestedTime < requestedAfter) {return false;}
     if(requestedBefore && run.requestedTime > requestedBefore) {return false;}

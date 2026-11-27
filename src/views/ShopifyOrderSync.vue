@@ -39,7 +39,7 @@
                 </ion-card-subtitle>
               </ion-card-header>
               <ion-list lines="full">
-                <ion-item v-for="row in 4" :key="row">
+                <ion-item v-for="row in (card === 1 ? 4 : 3)" :key="row">
                   <ion-label>
                     <ion-skeleton-text animated style="width: 45%" />
                     <p><ion-skeleton-text animated style="width: 65%" /></p>
@@ -92,7 +92,7 @@
               <ion-card-header>
                 <ion-card-title>{{ translate("Summary") }}</ion-card-title>
                 <ion-card-subtitle>
-                  {{ translate("Latest scheduled batch activity for this Shopify instance") }}
+                  {{ shopName }}
                 </ion-card-subtitle>
                 <ion-buttons>
                   <ion-button
@@ -109,48 +109,29 @@
 
               <ion-list lines="full">
                 <ion-item>
-                  <ion-label>
-                    {{ translate("Shopify instance") }}
-                    <p>{{ translate("Shop ID") }}: {{ id }}</p>
+                  <ion-label class="ion-text-wrap">{{ translate("Orders imported in the last hour") }}</ion-label>
+                  <ion-label slot="end" class="ion-text-end">{{ arrivals?.count ?? unavailable }}</ion-label>
+                </ion-item>
+                <ion-item :href="latestOrderHref || undefined" :detail="!!latestOrderHref" target="_blank" rel="noopener noreferrer">
+                  <ion-label>{{ translate("Last order imported") }}
+                    <p v-if="arrivals?.latest">{{ arrivals.latest.orderName || arrivals.latest.shopifyOrderId }}</p>
                   </ion-label>
-                  <ion-note slot="end">
-                    {{ shopName }}, {{ shopifyShopId || translate("Not available") }}
-                  </ion-note>
+                  <ion-label slot="end" class="ion-text-end">{{ latestArrivalLabel }}</ion-label>
                 </ion-item>
                 <ion-item>
-                  <ion-label>
-                    {{ translate("Last completed batch") }}
-                    <p>{{ lastCompletedBatchLabel }}</p>
-                    <p v-if="summary.latestCompletedBatch">{{ importCountsLabel(lastCompletedImports) }}</p>
-                  </ion-label>
-                  <ion-note slot="end">{{ latestCompletedBatchId }}</ion-note>
-                </ion-item>
-                <ion-item>
-                  <ion-label>
-                    {{ translate("Next batch sync") }}
-                    <p>{{ nextRunLabel }}</p>
-                  </ion-label>
-                  <ion-badge v-if="orderSync.isPaused" slot="end" color="warning">
-                    {{ translate("Paused") }}
-                  </ion-badge>
-                </ion-item>
-                <ion-item>
-                  <ion-label>{{ translate("Pending batch requests") }}<p>{{ translate("Latest {limit} batch requests", { limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT }) }}</p></ion-label>
-                  <ion-badge slot="end" :color="summary.pendingBatchRequests ? 'primary' : 'medium'">
-                    {{ summary.pendingBatchRequests }}
-                  </ion-badge>
+                  <ion-label>{{ translate("Median sync delay") }}<p>{{ translate("Orders imported in the last hour") }}</p></ion-label>
+                  <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ medianLabel }}</ion-label>
                 </ion-item>
                 <ion-item lines="none">
-                  <ion-label>
-                    {{ translate("Product store") }}
-                    <p>{{ productStoreId || translate("Not linked") }}</p>
+                  <ion-label>{{ translate("Next scheduled sync") }}</ion-label>
+                  <ion-label slot="end" class="ion-text-end">{{ nextRunLabel }}
+                    <p v-if="nextRun">{{ relativeTime(nextRun) }}</p>
                   </ion-label>
-                  <ion-note slot="end">{{ productStoreName }}</ion-note>
                 </ion-item>
               </ion-list>
 
-              <ion-card-content v-if="runNowExplanation || actionMessage || actionError" class="action-feedback">
-                <p v-if="runNowExplanation">{{ runNowExplanation }}</p>
+              <ion-card-content v-if="(!canRunNow && runNowDisabledReason) || actionMessage || actionError" class="action-feedback">
+                <p v-if="!canRunNow && runNowDisabledReason">{{ runNowDisabledReason }}</p>
                 <p v-if="actionMessage" role="status">{{ actionMessage }}</p>
                 <p v-if="actionError" class="ion-text-danger" role="alert">{{ actionError }}</p>
                 <p v-if="orderSync.lastRunResult?.systemMessageId">
@@ -164,7 +145,7 @@
 
             <ion-card class="progress">
               <ion-card-header>
-                <ion-card-title>{{ translate("Latest batch") }}</ion-card-title>
+                <ion-card-title>{{ translate("Latest run") }}</ion-card-title>
                 <ion-buttons>
                   <ion-button
                     fill="clear"
@@ -178,19 +159,29 @@
 
               <ion-list lines="full">
                 <ion-item :button="!!latestBatch" :detail="!!latestBatch" @click="openSystemMessageDetails(latestBatch?.systemMessageId)">
-                  <ion-label>
-                    {{ latestBatch ? translate("Request {id}", { id: latestBatch.systemMessageId }) : translate("Awaiting first run") }}
-                    <p v-if="latestBatch">{{ batchRequestedLabel }}</p>
-                  </ion-label>
-                  <ion-badge slot="end" :color="progressColor(summary.batchStatus)">{{ progressStateLabel(summary.batchStatus) }}</ion-badge>
+                  <ion-label>{{ translate("Queue sync window") }}<p v-if="latestBatch">{{ batchRequestedLabel }}</p></ion-label>
+                  <ion-label slot="end" class="ion-text-end">{{ latestBatch ? translate("Queued") : translate("Awaiting first run") }}</ion-label>
                 </ion-item>
-                <ion-item v-if="latestBatch && !progressImports.length"><ion-label>{{ translate("No linked import log") }}</ion-label></ion-item>
-                <ion-item v-for="log in progressImports" :key="log.logId" button detail @click="openMdmLogDetails(log.logId)">
-                  <ion-label>{{ importLabel(log.configId) }} · {{ log.logId }}
-                    <p>{{ importCountsLabel([log]) }}</p>
-                  </ion-label>
-                  <ion-note slot="end">{{ progressStateLabel(orderImportState(log)) }}</ion-note>
+                <ion-item :button="!!latestBatch" :detail="!!latestBatch" @click="openSystemMessageDetails(latestBatch?.systemMessageId)">
+                  <ion-label class="ion-text-wrap">{{ translate("Fetch and stage changed orders") }}</ion-label>
+                  <ion-label slot="end" class="ion-text-end" :color="progressColor(summary.batchStatus)">{{ progressStateLabel(summary.batchStatus) }}</ion-label>
                 </ion-item>
+                <ion-item>
+                  <ion-label>{{ translate("Import into OMS") }}</ion-label>
+                  <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ importStepLabel }}</ion-label>
+                </ion-item>
+                <template v-for="group in (latestBatch && runLogs && !runReadFailed && orderSync.importConfigsAvailable ? importGroups : [])" :key="group.label">
+                  <ion-item :button="group.logs.length === 1" :detail="group.logs.length === 1" @click="group.logs.length === 1 && openMdmLogDetails(group.logs[0].logId)">
+                    <ion-label>{{ group.label }}</ion-label>
+                    <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ group.logs.length ? importCountsLabel(group.logs) : translate("No import recorded") }}</ion-label>
+                  </ion-item>
+                  <template v-if="group.logs.length > 1">
+                    <ion-item v-for="log in group.logs" :key="log.logId" button detail @click="openMdmLogDetails(log.logId)">
+                      <ion-label>{{ translate("Import log") }} {{ log.logId }}</ion-label>
+                      <ion-label slot="end" class="ion-text-end">{{ progressStateLabel(orderImportState(log)) }}</ion-label>
+                    </ion-item>
+                  </template>
+                </template>
               </ion-list>
             </ion-card>
           </section>
@@ -593,6 +584,9 @@ import {
   isOrderSyncBatchActive,
   ORDER_SYNC_FEATURE,
   getSyncCapabilities,
+  getNextSyncRun,
+  fetchOrderRunImports,
+  deriveSyncProgress,
   orderSyncRunNowDisabledReason,
   orderSyncSummary,
   useShopifyOrderSyncPolling,
@@ -609,6 +603,7 @@ import { closeOutline, flashOutline, openOutline, refreshOutline } from "ionicon
 import { formatDateTime, parseDateTimeValue } from "@/utils";
 import { formatSyncDuration } from "@/utils/shopifyTransferSyncPresentation";
 import { importCountsLabel, orderImportState, progressColor, progressStateLabel, sumReported } from "@/utils/orderImportDisplay";
+import { useOrderArrivalMetrics } from "@/composables/useOrderArrivalMetrics";
 import { useUserStore } from "@/store/user";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
@@ -664,6 +659,7 @@ async function refreshStore() {
 
 const polling = useShopifyOrderSyncPolling({
   batchActive: () => isBatchActive.value,
+  remoteIds: () => orderSync.remoteIds,
   refresh: refreshStore,
   onError: (error) => {
     pollingError.value = errorMessage(error, translate("Order Sync monitoring could not be refreshed."));
@@ -713,19 +709,50 @@ const editJobDisabledReason = computed(() => canEditJobFromModal.value
   ? ""
   : translate("COMMON_ADMIN permission is required to edit Order Sync."));
 const shopName = computed(() => orderSync.shop?.name || translate("Shopify instance {id}", { id: props.id }));
-const shopifyShopId = computed(() => orderSync.shop?.shopifyShopId || "");
-const productStoreId = computed(() => orderSync.productStore?.productStoreId || orderSync.shop?.productStoreId || "");
-const productStoreName = computed(() => orderSync.productStore?.storeName || orderSync.productStore?.name || orderSync.shop?.productStoreName || translate("Not linked"));
 const latestBatch = computed(() => summary.value.latestBatch);
-const latestCompletedBatchId = computed(() => summary.value.latestCompletedBatch?.systemMessageId || translate("None"));
-const progressImports = computed<ShopifyOrderSyncImport[]>(() => {
-  const systemMessageId = latestBatch.value?.systemMessageId;
-  return systemMessageId ? orderSync.importsBySystemMessageId[systemMessageId] || [] : [];
+const { metrics, failed: metricsFailed, now, refresh: refreshMetrics } = useOrderArrivalMetrics(
+  () => props.id,
+  () => loadedShopMatchesRoute.value ? orderSync.shop?.productStoreId || "" : "",
+  polling.isPageActive,
+  () => orderSync.latestImportChange,
+);
+const arrivals = computed(() => metricsFailed.value ? undefined : metrics.value);
+const unavailable = computed(() => metricsFailed.value || !orderSync.shop?.productStoreId ? translate("Not available") : translate("Loading"));
+const latestOrderHref = computed(() => arrivals.value?.latest ? shopifyAdminOrderUrl(arrivals.value.latest) : "");
+function relativeTime(value: Date | string) {
+  const date = parseDateTimeValue(value);
+  return date?.toRelative({ base: DateTime.fromMillis(now.value) }) || translate("Not available");
+}
+const latestArrivalLabel = computed(() => arrivals.value?.latest ? relativeTime(arrivals.value.latest.entryDate)
+  : arrivals.value ? translate("No imports recorded") : unavailable.value);
+const medianLabel = computed(() => {
+  if (!arrivals.value) return unavailable.value;
+  if (!arrivals.value.count) return translate("No imports in the last hour");
+  const ms = arrivals.value.medianMs;
+  return ms == null ? translate("Not available") : formatDelay(ms);
 });
+const runLogs = ref<{ id: string; logs: ShopifyOrderSyncImport[] }>();
+const runReadFailed = ref(false);
+watch([() => polling.isPageActive.value && latestBatch.value?.systemMessageId, () => latestBatch.value?.statusId, () => orderSync.latestImportChange, () => orderSync.monitoringLoadedAt],
+  async ([id], _, onCleanup) => {
+    if (id !== runLogs.value?.id) runLogs.value = undefined;
+    if (!id) return;
+    let current = true;
+    onCleanup(() => { current = false; });
+    runReadFailed.value = false;
+    try {
+      const logs = await fetchOrderRunImports(id);
+      if (current) runLogs.value = { id, logs };
+    } catch {
+      if (current) runReadFailed.value = true;
+    }
+  }, { immediate: true });
+const progressImports = computed(() => runLogs.value?.id === latestBatch.value?.systemMessageId ? runLogs.value?.logs || [] : []);
+const visibleLogs = computed(() => [...progressImports.value, ...Object.values(orderSync.importsBySystemMessageId).flat()]);
 const selectedSystemMessageDetails = computed(() => {
   const message = (orderSync.systemMessages || [])
     .find((row) => row.systemMessageId === selectedSystemMessageId.value);
-  const imports = orderSync.importsBySystemMessageId[selectedSystemMessageId.value] || [];
+  const imports = runLogs.value?.id === selectedSystemMessageId.value ? progressImports.value : orderSync.importsBySystemMessageId[selectedSystemMessageId.value] || [];
   return {
     statusId: message?.statusId,
     systemMessageTypeId: message?.systemMessageTypeId,
@@ -737,10 +764,20 @@ const selectedSystemMessageDetails = computed(() => {
   };
 });
 const selectedMdmLogDetails = computed(() => {
-  const log = Object.values(orderSync.importsBySystemMessageId).flat().find(entry => entry.logId === selectedMdmLogId.value);
+  const log = visibleLogs.value.find(entry => entry.logId === selectedMdmLogId.value);
   return { ...log, startedAt: log?.startDateTime, completedAt: log?.finishDateTime };
 });
-const lastCompletedImports = computed(() => orderSync.importsBySystemMessageId[latestCompletedBatchId.value] ?? []);
+const importGroups = computed(() => orderSync.importConfigIds.map((configId, index) => ({
+  configId, label: index === 0 ? translate("New orders") : translate("Order updates"),
+  logs: progressImports.value.filter(log => log.configId === configId),
+})));
+const importStepLabel = computed(() => {
+  if ((!orderSync.importConfigsAvailable || runReadFailed.value) && latestBatch.value) return translate("Import status unavailable");
+  if (latestBatch.value && !runLogs.value) return translate("Loading");
+  if (progressImports.value.length) return progressStateLabel(deriveSyncProgress(latestBatch.value, progressImports.value)[1].state);
+  return latestBatch.value && ["completed", "failed"].includes(summary.value.batchStatus)
+    ? translate("No import recorded") : translate("Waiting");
+});
 const filteredOrders = computed(() => filterRecentOrders(orderSync.recentOrders, ordersQuery.value));
 const failedImportLogs = computed(() => orderSync.failedDataManagerLogs);
 
@@ -749,23 +786,18 @@ const jobStateLabel = computed(() => {
   return orderSync.isPaused ? translate("Paused") : translate("Active");
 });
 const jobStateColor = computed(() => !orderSync.job ? "medium" : orderSync.isPaused ? "warning" : "success");
-const lastCompletedBatchLabel = computed(() => summary.value.lastCompletedAt
-  ? formatDate(summary.value.lastCompletedAt)
-  : translate("No completed batch recorded"));
+const nextRun = computed(() => orderSync.job && !orderSync.isPaused
+  ? getNextSyncRun(orderSync.job.cronExpression, {
+    currentDate: new Date(now.value), timeZone: orderSync.productStore?.defaultTimeZone || orderSync.productStore?.timeZone,
+  }) : null);
 const nextRunLabel = computed(() => {
   if (!orderSync.job) return translate("Not configured");
   if (orderSync.isPaused) return translate("Paused");
-  return summary.value.nextRunTime ? formatDate(summary.value.nextRunTime) : translate("Not scheduled");
+  return nextRun.value ? formatDateTime(nextRun.value, "h:mm a ZZZZ") : translate("Not scheduled");
 });
 const batchRequestedLabel = computed(() => latestBatch.value?.initDate
   ? formatDate(latestBatch.value.initDate)
   : translate("Not requested yet"));
-const runNowExplanation = computed(() => {
-  if (canRunNow.value) {
-    return translate("Queues the standard next batch window from the existing job configuration.");
-  }
-  return runNowDisabledReason.value;
-});
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -778,7 +810,10 @@ function importDelay(order: ShopifyOrderSyncRecentOrder) {
   const placed = parseDateTimeValue(order.orderDate);
   const imported = parseDateTimeValue(order.importedAt);
   if (!placed || !imported) return translate("Not available");
-  const ms = imported.toMillis() - placed.toMillis();
+  return formatDelay(imported.toMillis() - placed.toMillis());
+}
+
+function formatDelay(ms: number) {
   return (ms < 0 ? "−" : "") + formatSyncDuration(Math.abs(ms));
 }
 
@@ -795,7 +830,7 @@ function landmarkDateLabel(value: string): string {
 
 /** `configId` is optional on a cached import row, so the label must accept its absence. */
 function importLabel(configId: string | undefined): string {
-  return configId === "SYNC_SHOPIFY_ORDER"
+  return configId === orderSync.importConfigIds[0]
     ? translate("New order import")
     : translate("Updated order import");
 }
@@ -810,7 +845,7 @@ function openSystemMessageDetails(systemMessageId: unknown) {
 function openMdmLogDetails(logId: unknown) {
   const id = String(logId || "").trim();
   if (!id) return;
-  if (!Object.values(orderSync.importsBySystemMessageId).flat().some(log => log.logId === id)) return;
+  if (!visibleLogs.value.some(log => log.logId === id)) return;
   selectedMdmLogId.value = id;
   showMdmLogModal.value = true;
 }
@@ -1037,6 +1072,7 @@ function shopifyAdminOrderUrl(order: ShopifyOrderSyncRecentOrder): string {
 }
 
 async function handleManualRefresh() {
+  void refreshMetrics();
   actionError.value = "";
   await polling.manualRefresh();
 }
