@@ -92,15 +92,11 @@
               <div class="run-summary">
                 <ion-label class="ion-text-wrap">
                   <strong>{{ translate("Batch {id}", { id: run.id }) }}</strong>
-                  <p>{{ formatDate(run.batch.initDate) }}</p>
                   <ion-badge v-if="run.id === requestedRun?.id" color="primary">{{ translate("Requested run") }}</ion-badge>
                 </ion-label>
                 <ion-label class="ion-text-wrap">
-                  {{ translate("Queue sync window") }}
-                  <p>{{ translate("Queued") }}</p>
-                </ion-label>
-                <ion-label class="ion-text-wrap">
-                  {{ translate("Fetch and stage changed orders") }}
+                  {{ translate("Fetch Shopify orders") }}
+                  <p v-if="run.batch.initDate">{{ translate("Queued at {time}", { time: formatDate(run.batch.initDate) }) }}</p>
                   <p>{{ progressStateLabel(run.batchRow.state) }}</p>
                 </ion-label>
                 <ion-label class="ion-text-wrap">
@@ -376,7 +372,7 @@ function closeMdmLogDetails() {
 <style scoped>
 .run-summary {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1.35fr;
+  grid-template-columns: 1fr 1fr 1.35fr;
   gap: var(--spacer-sm);
   align-items: start;
   width: 100%;
@@ -395,5 +391,6 @@ function closeMdmLogDetails() {
 
 @media (max-width: 700px) {
   .run-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .run-summary > :first-child { grid-column: 1 / -1; }
 }
 </style>

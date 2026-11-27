@@ -113,9 +113,8 @@ describe("ShopifyOrderSyncHistory exact run context", () => {
     await flushPromises()
     const rows = wrapper.findAll('ion-accordion > [slot="header"]')
     expect(rows).toHaveLength(2)
-    expect(rows[0].text()).toContain("Queue sync window")
-    expect(rows[0].text()).toContain("Fetch and stage changed orders")
-    expect(rows[0].text()).toContain("Import into OMS")
+    expect(rows[0].findAll(".run-summary > ion-label")).toHaveLength(3) // Batch ID and two steps
+    expect(rows[0].text()).toMatch(/Fetch Shopify orders\s*Queued at .+2026.*Import into OMS/s)
     expect(rows[0].text()).toContain("New orders · 4 succeeded · 1 failed")
     expect(rows[0].text()).toContain("Order updates · 0 succeeded · 0 failed")
     expect(rows[1].text()).toContain("Order updates · No import recorded")

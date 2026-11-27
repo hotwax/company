@@ -158,13 +158,14 @@
               </ion-card-header>
 
               <ion-list lines="full">
-                <ion-item>
-                  <ion-label>{{ translate("Queue sync window") }}<p v-if="latestBatch">{{ batchRequestedLabel }}</p></ion-label>
-                  <ion-label slot="end" class="ion-text-end">{{ latestBatch ? translate("Queued") : translate("Awaiting first run") }}</ion-label>
-                </ion-item>
                 <ion-item :button="!!latestBatch" :detail="!!latestBatch" @click="openSystemMessageDetails(latestBatch?.systemMessageId)">
-                  <ion-label class="ion-text-wrap">{{ translate("Fetch and stage changed orders") }}</ion-label>
-                  <ion-label slot="end" class="ion-text-end" :color="progressColor(summary.batchStatus)">{{ progressStateLabel(summary.batchStatus) }}</ion-label>
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Fetch Shopify orders") }}
+                    <p v-if="latestBatch?.initDate">{{ translate("Queued at {time}", { time: formatDate(latestBatch.initDate) }) }}</p>
+                  </ion-label>
+                  <ion-label slot="end" class="ion-text-end" :color="progressColor(summary.batchStatus)">
+                    {{ latestBatch ? progressStateLabel(summary.batchStatus) : translate("Awaiting first run") }}
+                  </ion-label>
                 </ion-item>
                 <ion-item>
                   <ion-label>{{ translate("Import into OMS") }}</ion-label>
@@ -172,7 +173,7 @@
                 </ion-item>
                 <template v-for="group in (latestBatch && runLogs && !runReadFailed && orderSync.importConfigsAvailable ? importGroups : [])" :key="group.label">
                   <ion-item :button="group.logs.length === 1" :detail="group.logs.length === 1" @click="group.logs.length === 1 && openMdmLogDetails(group.logs[0].logId)">
-                    <ion-label>{{ group.label }}</ion-label>
+                    <ion-label class="ion-padding-start">{{ group.label }}</ion-label>
                     <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ group.logs.length ? importCountsLabel(group.logs) : emptyImportLabel(summary.batchStatus) }}</ion-label>
                   </ion-item>
                   <template v-if="group.logs.length > 1">
@@ -791,9 +792,6 @@ const nextRunLabel = computed(() => {
   if (orderSync.isPaused) return translate("Paused");
   return nextRun.value ? formatDateTime(nextRun.value, "h:mm a ZZZZ") : translate("Not scheduled");
 });
-const batchRequestedLabel = computed(() => latestBatch.value?.initDate
-  ? formatDate(latestBatch.value.initDate)
-  : translate("Not requested yet"));
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
