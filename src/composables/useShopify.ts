@@ -32,7 +32,6 @@ import Actions from "@/authorization/actions";
 import { type InventoryEventSourceRoot, sourceRootFor } from "@/utils/inventoryEventSourceRoots";
 import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation, syncDomainsError as workerError, syncNow } from "@/db/appDbSync";
-import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import {
   METAFIELD_DEFINITIONS_QUERY, SHOPIFY_METAFIELD_OWNER_TYPES, type ShopifyMetafieldDefinition, parseMetafieldDefinitionsPage,
 } from "@/utils/shopifyMetafieldDefinitions";
@@ -3643,18 +3642,19 @@ interface NormalizedLogOutcome {
   failed: number;
 }
 
-function normalizeLogOutcome(log: DataManagerLogLike): NormalizedLogOutcome {
+export function normalizeLogOutcome(log: DataManagerLogLike): NormalizedLogOutcome {
   const configId = firstText(log, ["configId", "dataManagerConfigId", "configName"]);
   const logId = firstText(log, ["logId", "dataManagerLogId", "id"]);
   const total = numberValue(log, ["totalRecordCount", "recordCount", "totalRecords"]);
   const failed = numberValue(log, ["failedRecordCount", "errorRecordCount", "failedRecords"]);
-  const explicitSuccessful = numberValue(log, ["successRecordCount", "successfulRecordCount", "processedRecordCount"]);
-  const successful = explicitSuccessful || Math.max(total - failed, 0);
+  const reported = firstValue(log, ["successRecordCount", "successfulRecordCount", "processedRecordCount"]);
   const status = normalizeToken(firstValue(log, ["statusId", "status", "runStatusId"]));
   const hasFinish = Boolean(firstValue(log, ["finishDateTime", "finishedDateTime", "completedDate", "processedDate"]));
+  const finished = tokenIncludes(status, COMPLETE_TOKENS) || (!status && hasFinish);
+  const successful = reported != null ? Number(reported) : (finished ? Math.max(total - failed, 0) : 0);
   let state: SyncProgressState;
 
-  if(tokenIncludes(status, FAILURE_TOKENS)) {state = successful > 0 ? "partial" : "failed";} else if(failed > 0) {state = successful > 0 ? "partial" : "failed";} else if(tokenIncludes(status, COMPLETE_TOKENS) || hasFinish) {state = "completed";} else if(tokenIncludes(status, ACTIVE_TOKENS) || total > 0) {state = "active";} else {state = "pending";}
+  if(tokenIncludes(status, ACTIVE_TOKENS)) {state = "active";} else if(tokenIncludes(status, FAILURE_TOKENS)) {state = successful > 0 ? "partial" : "failed";} else if(failed > 0) {state = successful > 0 ? "partial" : "failed";} else if(tokenIncludes(status, COMPLETE_TOKENS) || hasFinish) {state = "completed";} else if(tokenIncludes(status, ACTIVE_TOKENS) || total > 0) {state = "active";} else {state = "pending";}
 
   return {
     key: logId || [
@@ -4091,7 +4091,7 @@ const TERMINAL_STATES = new Set<SyncProgressState>(["completed", "partial", "fai
 
 /** Newest first by `initDate`; the entity carries no other ordering signal. */
 function byInitDateDesc(a: OrderSyncBatchLike, b: OrderSyncBatchLike): number {
-  return Number(b?.initDate ?? 0) - Number(a?.initDate ?? 0);
+  return getTimestampValue(b?.initDate) - getTimestampValue(a?.initDate);
 }
 
 /**
@@ -4127,28 +4127,17 @@ export function orderSyncSummary(
 
   const latestCompletedBatch = ordered.find((batch) => {
     const logs = logsFor(batch);
-    /**
-     * ⚠️ Requires at least one ACTUAL import log, not just an import state of "completed".
-     *
-     * `deriveSyncProgress` reports a consumed batch with ZERO import logs as import "completed"
-     * (nothing was required, so nothing is outstanding — defensible for the progress row). But that
-     * meant one zero-order run poisoned this headline: the newest batch matched the predicate, its
-     * empty logs produced no `lastCompletedAt`, and the card claimed "No completed batch recorded"
-     * for a shop whose real last completed import was days old and still cached. Observed live the
-     * moment a queued run returned zero orders. "Last completed batch" means "last batch that
-     * actually imported", which is also what the retired store computed.
-     */
     if(!logs.length) {return false;}
     const [batchHalf, importHalf] = deriveSyncProgress(batch, logs);
 
-    return TERMINAL_STATES.has(batchHalf.state) && importHalf.state === "completed";
+    return TERMINAL_STATES.has(batchHalf.state) && TERMINAL_STATES.has(importHalf.state);
   });
 
   const completedLogs = logsFor(latestCompletedBatch);
   const lastCompletedAt = completedLogs
     .map((log: any) => log?.finishDateTime ?? log?.completedDate ?? log?.processedDate)
     .filter(Boolean)
-    .sort((a: any, b: any) => Number(b) - Number(a))[0];
+    .sort((a: any, b: any) => getTimestampValue(b) - getTimestampValue(a))[0];
 
   /**
    * "Orders processed" describes the last COMPLETED batch, not the newest one.
@@ -4640,11 +4629,12 @@ const state = reactive({
   error: "" as string,
   activeMutation: "" as string,
   lastRunResult: null as any,
+  historyError: false,
   recentOrders: [] as ShopifyOrderSyncRecentOrder[],
-  recentErrors: [] as any[],
-  recentRequestErrors: [] as any[],
-  recentAudits: [] as any[],
+  historyLoading: false,
 });
+
+let orderHistoryRequest = 0;
 
 export function useShopifyOrderSync() {
   const { updateJob, runNow: runJobNow } = useServiceJob();
@@ -4671,15 +4661,19 @@ export function useShopifyOrderSync() {
   });
 
   /** Batch requests = this remote's `ShopifyOrderSync` messages, newest first. */
-  const { records: batches, hydrated } = useShopifySyncMessages(ORDER_SYNC_FEATURE, ctx, {
+  const { records: batches, hydrated: messagesHydrated } = useShopifySyncMessages(ORDER_SYNC_FEATURE, ctx, {
     limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT,
   });
 
   /** Historical alias: order sync's only message type IS its batch request. */
   const systemMessages = batches;
 
-  const { bySystemMessageId: importsBySystemMessageId, failed: failedDataManagerLogs } =
-    useShopifySyncImports(ORDER_SYNC_FEATURE);
+  const imports = useShopifySyncImports(ORDER_SYNC_FEATURE);
+  const hydrated = computed(() => ctx.hydrated.value && messagesHydrated.value && imports.hydrated.value);
+  const importsBySystemMessageId = computed<Record<string, ShopifyOrderSyncImport[]>>(() => Object.fromEntries(batches.value.map(batch => [
+    batch.systemMessageId, imports.bySystemMessageId.value[batch.systemMessageId] ?? [],
+  ])));
+  const failedDataManagerLogs = computed(() => imports.failed.value.filter(log => log.systemMessageId in importsBySystemMessageId.value));
 
   const {
     salesChannelMappings, paymentMethodMappings, shippingMethodMappings,
@@ -4699,10 +4693,11 @@ export function useShopifyOrderSync() {
     state.monitoringError = "";
     state.error = "";
     state.lastRunResult = null;
+    state.monitoringLoadedAt = null;
+    state.historyError = false;
     state.recentOrders = [];
-    state.recentErrors = [];
-    state.recentRequestErrors = [];
-    state.recentAudits = [];
+    orderHistoryRequest++;
+    state.historyLoading = false;
   }
 
   /**
@@ -4718,14 +4713,18 @@ export function useShopifyOrderSync() {
     state.monitoringRefreshing = true;
     try {
       await Promise.all([loadHistory(shopId), loadLandmarkDates()]);
+      if (shopId !== state.selectedShopId) return;
       state.monitoringLoadedAt = Date.now();
       state.monitoringError = "";
     } catch (error: any) {
+      if (shopId !== state.selectedShopId) return;
       state.monitoringError = error?.message || "Failed to load Order Sync monitoring.";
       logger.error("Order Sync monitoring failed", error);
     } finally {
-      state.loading = false;
-      state.monitoringRefreshing = false;
+      if (shopId === state.selectedShopId) {
+        state.loading = false;
+        state.monitoringRefreshing = false;
+      }
     }
   }
 
@@ -4735,26 +4734,24 @@ export function useShopifyOrderSync() {
     await loadLandmarkDates();
   }
 
-  /**
-   * The processed-order history.
-   *
-   * `shopify/order-sync/{shopId}/history` is the ONE bespoke endpoint that works, and it is a
-   * projection with no generic equivalent, so it stays live.
-   */
   async function loadHistory(shopId: string) {
+    if (shopId !== state.selectedShopId) return;
+    const request = ++orderHistoryRequest;
+    state.historyLoading = true;
     try {
       const resp: any = await api({
-        url: `shopify/order-sync/${encodeURIComponent(shopId)}/history`,
-        method: "get",
+        url: `shopify/order-sync/${encodeURIComponent(shopId)}/history`, method: "get",
         params: { pageSize: SHOPIFY_ORDER_SYNC_RESULT_LIMIT },
       });
-      const rows = resp?.data?.orderSyncHistory ?? resp?.orderSyncHistory ?? [];
-      state.recentOrders = normalizeRecentProcessedOrders(rows) as any[];
-      state.recentAudits = state.recentOrders;
-    } catch (error) {
-      logger.error("Failed to load Order Sync history", error);
-      state.recentOrders = [];
-      state.recentAudits = [];
+      if (request !== orderHistoryRequest) return;
+      const rows = resp?.data?.orderSyncHistory;
+      if (!Array.isArray(rows) || commonUtil.hasError(resp)) throw new Error("Order history unavailable");
+      state.recentOrders = normalizeRecentProcessedOrders(rows);
+      state.historyError = false;
+    } catch {
+      if (request === orderHistoryRequest) state.historyError = true;
+    } finally {
+      if (request === orderHistoryRequest) state.historyLoading = false;
     }
   }
 
@@ -4882,7 +4879,7 @@ export function useShopifyOrderSync() {
    * straight off the returned object to drive their paging loop, and nesting them only under
    * `pageInfo` left both undefined — a search silently stopped after its first page.
    */
-  async function searchShopifyOrders(input: { queryString: string; after?: string; pageSize?: number; shopId?: string },) {
+  async function searchShopifyOrders(input: { queryString: string; after?: string; pageSize?: number; shopId?: string; idsOnly?: boolean }) {
     assertShop(input.shopId);
     const systemMessageRemoteId = remoteId.value;
     if(!systemMessageRemoteId) {throw new Error("The selected Shopify shop remote is unavailable.");}
@@ -4891,7 +4888,11 @@ export function useShopifyOrderSync() {
       method: "post",
       data: {
         systemMessageRemoteId,
-        queryText: ORDER_SEARCH_QUERY,
+        queryText: input.idsOnly ? `query ReplayOrderIds($query:String!, $first:Int!, $after:String) {
+          orders(query:$query, first:$first, after:$after, sortKey:UPDATED_AT) {
+            edges { node { legacyResourceId } } pageInfo { hasNextPage endCursor }
+          }
+        }` : ORDER_SEARCH_QUERY,
         variables: { query: input.queryString, first: input.pageSize ?? 25, after: input.after ?? null },
       },
     });
@@ -4900,7 +4901,9 @@ export function useShopifyOrderSync() {
     // `response` branch made every search return [] against the real backend — found by QA driving
     // the modal live, while the `data`-shaped unit fixtures kept passing.
     const payload = resp?.data?.response ?? resp?.data?.data ?? resp?.data ?? {};
-    const edges = payload?.orders?.edges ?? [];
+    const edges = payload?.orders?.edges;
+    if (resp?.data?.errors?.length || payload.errors?.length || !Array.isArray(edges) || (input.idsOnly && typeof payload.orders?.pageInfo?.hasNextPage !== "boolean")) throw new Error("Shopify order search is unavailable.");
+    if (input.idsOnly && edges.some((edge: any) => !edge?.node?.legacyResourceId)) throw new Error("Shopify returned an order without an ID.");
     const pageInfo = payload?.orders?.pageInfo ?? null;
 
     return {
@@ -4911,141 +4914,46 @@ export function useShopifyOrderSync() {
     };
   }
 
-  /**
-   * Targeted order retry — the WINDOW-REPLAY alternate to the broken bespoke endpoint.
-   *
-   * `POST shopify/order-sync/{shopId}/retry` 400s (`Cannot get property 'hotwax' on null object`,
-   * verified live 2026-07-26), and the generic surface has no message-production route either:
-   * `POST admin/systemMessages` and `admin/systemMessages/produce` both 405, and `runNow` ignores
-   * body parameter overrides (all probed live 2026-07-27). What IS proven live (run M2399240 →
-   * message M228628): the job's `fromDate` PARAMETER drives the sync window, `[fromDate, now]`.
-   *
-   * So a targeted retry becomes a WINDOW import: swap `fromDate` to just before the oldest selected
-   * order's `updatedAt`, run the job once, restore the parameter. Orders inside the window that were
-   * not selected re-import too — the import is idempotent, so the over-coverage is harmless — which
-   * is why these mutations report one covering RUN, not per-order queue ids.
-   */
-
-  /** `yyyy-MM-dd HH:mm:ss`, read as UTC — the only timestamp format the job runner accepts (ISO
-   * errored live: `Timestamp format must be yyyy-mm-dd hh:mm:ss[.fffffffff]`, run M2399238). */
-  function toJobTimestamp(iso: string): string {
-    const date = new Date(iso);
-    if(Number.isNaN(date.getTime())) {throw new Error("A valid from date is required to replay orders.");}
-
-    return date.toISOString().slice(0, 19).replace("T", " ");
+  async function importOrderIds(shopId: string, ids: Iterable<string>) {
+    const failed: string[] = [];
+    let imported = 0;
+    for (const shopifyOrderId of new Set(ids)) {
+      try {
+        const response: any = await api({
+          url: "sob/orders/import", method: "post", data: { shopId, shopifyOrderId },
+        });
+        if (commonUtil.hasError(response) || !response?.data?.orderId) failed.push(shopifyOrderId);
+        else imported++;
+      } catch {
+        failed.push(shopifyOrderId);
+      }
+    }
+    return { imported, failed };
   }
 
-  /**
-   * The primitive every retry path composes: PUT the job's parameter set with `fromDate` swapped in,
-   * run the job once, restore the original set.
-   *
-   * The COMPLETE current set is re-sent rather than a one-parameter patch: merge-vs-replace semantics
-   * of `serviceJobParameters` on the PUT are undocumented, and the full-set shape is the one proven
-   * live. The restore runs in `finally` so a failed run cannot leave a stale window pinned to the
-   * job. Known race: if the job's cron fires between swap and restore (~2s against a >=5-minute
-   * cron), that scheduled run imports the replay window too — idempotent, so at worst a duplicate
-   * import of the same orders.
-   */
-  async function replayWindow(fromDateIso: string, shopId?: string) {
-    const jobName = resolveJobName(shopId);
-    const currentParameters: any[] = Array.isArray(job.value?.serviceJobParameters)
-      ? job.value.serviceJobParameters
-      : [];
-    const baseline = currentParameters.map((parameter: any) => ({
-      parameterName: parameter.parameterName,
-      parameterValue: parameter.parameterValue ?? null,
-    }));
-    // REFUSE on a parameter-less row rather than PUT a lone `fromDate`: if the PUT replaces the whole
-    // set, that write would strip the remote/type parameters and orphan the job from its shop.
-    if(!baseline.some((parameter) => parameter.parameterName === "systemMessageRemoteId" && parameter.parameterValue)) {
-      throw new Error("The Order Sync job's parameters are unavailable. Refresh and try again.");
-    }
-    if(!baseline.some((parameter) => parameter.parameterName === "fromDate")) {
-      baseline.push({ parameterName: "fromDate", parameterValue: null });
-    }
-    const swapped = baseline.map((parameter) =>
-      parameter.parameterName === "fromDate"
-        ? { ...parameter, parameterValue: toJobTimestamp(fromDateIso) }
-        : parameter);
-    await writeParameters(jobName, swapped);
-    try {
-      const resp: any = await runJobNow(jobName);
-      const result = { jobName, fromDate: fromDateIso, ...(resp?.data ?? {}) };
-      state.lastRunResult = result;
+  const requestSelectedOrders = (input: { ids: string[]; shopId: string }) => withMutation("request-orders", () => {
+    assertShop(input.shopId);
+    return importOrderIds(input.shopId, input.ids);
+  });
 
-      return result;
-    } finally {
-      await writeParameters(jobName, baseline);
-    }
-  }
-
-  /**
-   * `updateJob` for the replay's swap and restore, where only a failed cache refresh after the PUT
-   * is tolerated: the PUT landed either way. Letting it throw skipped the run and the restore after
-   * the swap, pinning the replay window to the job, and after the restore reported a replay that
-   * ran as failed, inviting a second one. `updateJob` records the failure as a sync error.
-   */
-  async function writeParameters(jobName: string, serviceJobParameters: any[]) {
-    try {
-      await updateJob({ jobName, serviceJobParameters });
-    } catch (error) {
-      if(!isCacheReconciliationError(error)) throw error;
-      logger.warn(`Updated ${jobName}'s parameters, but its cached job row could not be refreshed`, error);
-    }
-  }
-
-  /** Replay every order the shop changed since `fromDate` (ISO). The replay-modal path. */
-  const replayOrdersFromDate = (input: { fromDate: string; shopId?: string }) =>
-    withMutation("replay-orders", () => replayWindow(input.fromDate, input.shopId));
-
-  const requestSelectedOrders = (input: {
-    orders: Array<{ legacyResourceId?: string; id?: string; updatedAt?: string; createdAt?: string }>;
-    shopId?: string;
-  }) =>
-    withMutation("request-orders", async () => {
-      assertShop(input.shopId);
-      const orders = (input.orders ?? []).filter((order) => order.legacyResourceId || order.id);
-      if(!orders.length) {throw new Error("Select at least one Shopify order to request.");}
-      const stamps = orders
-        .map((order) => Date.parse(order.updatedAt || order.createdAt || ""))
-        .filter((stamp) => !Number.isNaN(stamp));
-      if(!stamps.length) {
-        throw new Error("The selected Shopify orders are missing their update dates. Search again and retry.");
-      }
-      // One minute of cushion so a subsecond-truncated `updatedAt` cannot fall outside the window.
-      const run = await replayWindow(new Date(Math.min(...stamps) - 60_000).toISOString(), input.shopId);
-
-      return {
-        queued: orders.map((order) => ({
-          shopifyOrderId: String(order.legacyResourceId || order.id),
-          jobRunId: run.jobRunId,
-        })),
-        failedOrderIds: [] as string[],
-        ...run,
-      };
-    });
-
-  /** `errorId` is accepted for caller compatibility; the window mechanism has no use for it. */
-  const retryIndividualOrder = (input: { errorId?: string; shopifyOrderId: string; shopId?: string }) =>
-    withMutation("retry-order", async () => {
-      assertShop(input.shopId);
-      const search = await searchShopifyOrders({
-        queryString: `id:${input.shopifyOrderId}`,
-        pageSize: 5,
-        shopId: input.shopId,
-      });
-      const order = search.orders.find((candidate: any) => String(candidate.legacyResourceId ?? "") === String(input.shopifyOrderId),) ?? search.orders[0];
-      if(!order) {
-        throw new Error(`Shopify order ${input.shopifyOrderId} was not found on the connected shop.`);
-      }
-      const basis = Date.parse(order.updatedAt || order.createdAt || "");
-      if(Number.isNaN(basis)) {
-        throw new Error(`Shopify order ${input.shopifyOrderId} is missing its update date.`);
-      }
-      const run = await replayWindow(new Date(basis - 60_000).toISOString(), input.shopId);
-
-      return { shopifyOrderId: input.shopifyOrderId, ...run };
-    });
+  const replayOrdersFromDate = (input: { fromDate: string; shopId: string }) => withMutation("replay-orders", async () => {
+    assertShop(input.shopId);
+    const from = new Date(input.fromDate);
+    const through = new Date();
+    if (!Number.isFinite(from.getTime()) || from > through) throw new Error("Choose a valid replay start date.");
+    const queryString = `updated_at:>='${from.toISOString()}' updated_at:<='${through.toISOString()}'`;
+    const ids = new Set<string>();
+    let after: string | undefined;
+    do {
+      const page = await searchShopifyOrders({ shopId: input.shopId, queryString, after, pageSize: 100, idsOnly: true });
+      for (const order of page.orders) ids.add(String(order.legacyResourceId));
+      if (!page.hasNextPage) break;
+      if (!page.endCursor || after === page.endCursor) throw new Error("Shopify did not return the next order page.");
+      after = page.endCursor;
+    } while (after);
+    assertShop(input.shopId);
+    return importOrderIds(input.shopId, ids);
+  });
 
   /** ⚠️ Also blocked: wraps the same broken `/job` resource. See the module note. */
   const configure = (input: { shopId?: string } = {}) => withMutation("configure", async () => {
@@ -5061,7 +4969,6 @@ export function useShopifyOrderSync() {
     return landmarkDates.value.launchDate || "";
   }
 
-  const filteredErrors = (query: string) => searchLoadedOrderErrors(state.recentErrors as any, query);
 
   /**
    * Returned as ONE `reactive` object so callers keep store-style access — `orderSync.job`,
@@ -5084,8 +4991,7 @@ export function useShopifyOrderSync() {
     resetForShop, loadMonitoring, loadConfiguration, loadHistory, refresh, suggestOldestOrderDate,
     // mutations
     updateSchedule, updateJobStatus, runNow, setLandmarkDate,
-    searchShopifyOrders, requestSelectedOrders, retryIndividualOrder, replayOrdersFromDate, configure,
-    filteredErrors,
+    searchShopifyOrders, requestSelectedOrders, replayOrdersFromDate, configure,
   });
 }
 

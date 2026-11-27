@@ -138,8 +138,8 @@
                     {{ translate("Requested run") }}
                   </ion-badge>
                   <p>{{ translate("Requested") }}: {{ formatDate(run.batch.initDate) }}</p>
-                  <p v-if="importCountsLabel(run)">
-                    {{ importCountsLabel(run) }}
+                  <p v-if="run.imports.length">
+                    {{ importCountsLabel(run.imports) }}
                   </p>
                 </ion-label>
               </ion-item>
@@ -150,8 +150,8 @@
                 <p>{{ translate("Shopify order batch request") }}</p>
               </ion-label>
               <ion-label class="stat">
-                <ion-chip outline :color="progressColor(run.importRow.state)">
-                  <ion-label>{{ progressStateLabel(run.importRow.state) }}</ion-label>
+                <ion-chip outline :color="run.imports.length ? progressColor(run.importRow.state) : 'medium'">
+                  <ion-label>{{ run.imports.length ? progressStateLabel(run.importRow.state) : translate("No linked import log") }}</ion-label>
                 </ion-chip>
                 <p>{{ translate("HotWax order import") }}</p>
               </ion-label>
@@ -184,19 +184,17 @@
                 <ion-label>
                   {{ importLabel(log.configId) }}
                   <p>{{ log.logId }}</p>
-                  <p>{{ log.totalRecordCount }} {{ translate("records") }}</p>
-                  <p>{{ log.successRecordCount }} {{ translate("successful") }}</p>
-                  <p>{{ log.failedRecordCount }} {{ translate("failed") }}</p>
+                  <p>{{ importCountsLabel([log]) }}</p>
                 </ion-label>
-                <ion-badge slot="end" :color="statusColor(log.statusId, log.failedRecordCount)">
-                  {{ statusLabel(log.statusId, log.failedRecordCount) }}
+                <ion-badge slot="end" :color="progressColor(orderImportState(log))">
+                  {{ progressStateLabel(orderImportState(log)) }}
                 </ion-badge>
                 <ion-button slot="end" fill="clear" @click="openMdmLogDetails(log)">
                   {{ translate("View MDM log") }}
                 </ion-button>
               </ion-item>
               <ion-item v-if="!run.imports.length">
-                <ion-label>{{ translate("No MDM import was required for this batch") }}</ion-label>
+                <ion-label>{{ translate("No linked import log") }}</ion-label>
               </ion-item>
             </ion-list>
           </ion-accordion>
@@ -246,6 +244,7 @@ import {
   useShopifySyncImports,
   useShopifySyncMessages
 } from "@/composables/useShopify";
+import { importCountsLabel, orderImportState, progressColor, progressStateLabel } from "@/utils/orderImportDisplay";
 import { formatDateTime, parseDateTimeValue } from "@/utils";
 import { getSafeSyncRunQueryId } from "@/utils/syncRunRoute";
 
@@ -404,7 +403,7 @@ const runs = computed<OrderSyncHistoryRun[]>(() => {
 });
 
 /** Bind the shared session to this shop; the reads above then resolve against it. */
-onIonViewWillEnter(() => orderSync.resetForShop(props.id));
+onIonViewWillEnter(() => { if (orderSync.selectedShopId !== props.id) orderSync.resetForShop(props.id); });
 
 function toMillis(value: unknown): number {
   if(typeof value === "number" && Number.isFinite(value)) {
@@ -435,34 +434,7 @@ function importLabel(configId: string | undefined): string {
 function batchStatusLabel(statusId: string | undefined): string {
   const label = statusId ? SYSTEM_MESSAGE_STATUS_LABELS[statusId] : "";
 
-  return label ? translate(label) : statusLabel(statusId ?? "");
-}
-
-function progressStateLabel(state: SyncProgressState): string {
-  if(state === "completed") {return translate("Completed");}
-  if(state === "partial") {return translate("Partially completed");}
-  if(state === "failed") {return translate("Failed");}
-  if(state === "active") {return translate("In progress");}
-
-  return translate("Waiting");
-}
-
-function importCountsLabel(run: OrderSyncHistoryRun): string {
-  const { state, successfulRecords, failedRecords, logCount } = run.importRow;
-  if(!logCount && (state === "pending" || state === "active")) {return "";}
-  const processed = translate("{count} processed", { count: successfulRecords });
-  if(!failedRecords) {return processed;}
-
-  return `${processed}, ${translate("{count} failed", { count: failedRecords })}`;
-}
-
-function progressColor(state: SyncProgressState): string {
-  if(state === "completed") {return "success";}
-  if(state === "partial") {return "warning";}
-  if(state === "failed") {return "danger";}
-  if(state === "active") {return "primary";}
-
-  return "medium";
+  return label ? translate(label) : statusId || translate("Not available");
 }
 
 function stateIcon(state: SyncProgressState): string {
@@ -471,19 +443,6 @@ function stateIcon(state: SyncProgressState): string {
   if(state === "active") {return syncCircleOutline;}
 
   return helpCircleOutline;
-}
-
-function statusLabel(status: unknown, failed = 0): string {
-  const value = String(status || "").toLowerCase();
-  if(failed > 0 || value.includes("error") || value.includes("fail")) {return translate("Failed");}
-  if(value.includes("complete") || value.includes("success") || value.includes("finish") || value.includes("confirm")) {return translate("Completed");}
-  if(value.includes("run") || value.includes("process") || value.includes("active")) {return translate("In progress");}
-
-  return status ? String(status) : translate("Not available");
-}
-
-function statusColor(status: unknown, failed = 0): string {
-  return statusLabel(status, failed) === translate("Failed") ? "danger" : statusLabel(status, failed) === translate("Completed") ? "success" : "primary";
 }
 
 function openMdmLogDetails(log: ShopifyOrderSyncImport) {

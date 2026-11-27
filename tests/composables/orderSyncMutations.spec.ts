@@ -135,7 +135,7 @@ vi.mock("@/composables/useDataManager", () => ({
   }),
 }));
 vi.mock("@/composables/useSeed", () => ({ useStatuses: () => ({ labelFor: (s: string) => s }) }));
-import { useShopifyOrderSync } from "@/composables/useShopify";
+import { normalizeLogOutcome, useShopifyOrderSync } from "@/composables/useShopify";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 
 /** What `api()` really resolves to — the envelope whose `.data` the callers were reading through. */
@@ -431,12 +431,7 @@ describe("shop race — a mutation must refuse a shop that is not the bound one"
       key: "launchDate", value: "2026-06-11 01:40:57", shopId: OTHER_SHOP_ID,
     })],
     ["searchShopifyOrders", (o) => o.searchShopifyOrders({ queryString: "x", shopId: OTHER_SHOP_ID })],
-    ["requestSelectedOrders", (o) => o.requestSelectedOrders({
-      orders: [{ legacyResourceId: "1", updatedAt: "2026-07-20T10:00:00Z" }], shopId: OTHER_SHOP_ID,
-    })],
-    ["retryIndividualOrder", (o) => o.retryIndividualOrder({
-      errorId: "E-1", shopifyOrderId: "1", shopId: OTHER_SHOP_ID,
-    })],
+    ["requestSelectedOrders", (o) => o.requestSelectedOrders({ ids: ["1"], shopId: OTHER_SHOP_ID })],
     ["replayOrdersFromDate", (o) => o.replayOrdersFromDate({
       fromDate: "2026-07-01T00:00:00.000Z", shopId: OTHER_SHOP_ID,
     })],
@@ -464,14 +459,6 @@ describe("shop race — a mutation must refuse a shop that is not the bound one"
   });
 });
 
-/**
- * `POST shopify/order-sync/{shopId}/retry` and `.../job` both return 400
- * `Cannot get property 'hotwax' on null object` on the live instance — a backend defect, not a client
- * gap — and no generic message-production route exists (`POST admin/systemMessages` and `.../produce`
- * both 405, probed live 2026-07-27). These tests pin the GENERIC alternates that replaced them:
- * configure clones the template job, and every retry path swaps the job's `fromDate` parameter, runs
- * it once, and restores the parameter (proven live: run M2399240 → message M228628).
- */
 describe("configure — template clone + parameters", () => {
   const NEW_JOB_NAME = `queue_ShopifyOrderSync_${SHOP_ID}`;
 
@@ -500,118 +487,79 @@ describe("configure — template clone + parameters", () => {
   });
 });
 
-describe("targeted retry — the fromDate window replay", () => {
-  const jobRoute = new RegExp(`admin/serviceJobs/${JOB_NAME}$`);
-  const runRoute = new RegExp(`admin/serviceJobs/${JOB_NAME}/runNow$`);
-
-  /** The three parameters the cached job row holds, with `fromDate` appended at `value`. */
-  const paramsWithFromDate = (value: string | null) => [
-    { parameterName: "systemMessageRemoteId", parameterValue: "HCDemoShopifyConfig" },
-    { parameterName: "systemMessageTypeId", parameterValue: "ShopifyOrderSync" },
-    { parameterName: "runAsBatch", parameterValue: "Y" },
-    { parameterName: "fromDate", parameterValue: value },
-  ];
-
-  it("requestSelectedOrders swaps fromDate to a minute before the OLDEST selected order, runs, restores", async () => {
-    respondWith([[runRoute, { jobRunId: "M2399240" }], [jobRoute, {}]]);
-    const orderSync = boundOrderSync();
-
-    const result = await orderSync.requestSelectedOrders({
-      orders: [
-        { legacyResourceId: "6321001", updatedAt: "2026-07-21T11:30:00Z" },
-        { legacyResourceId: "6321002", updatedAt: "2026-07-20T10:00:00Z" },
-      ],
-      shopId: SHOP_ID,
-    });
-
-    // Swap → run → restore, in that order, all against the job resolved from the cache.
-    const jobWrites = callsTo(jobRoute);
-    expect(jobWrites).toHaveLength(2);
-    // `yyyy-MM-dd HH:mm:ss` UTC — ISO errored live (`Timestamp format must be yyyy-mm-dd hh:mm:ss`).
-    expect(jobWrites[0].data.serviceJobParameters).toEqual(paramsWithFromDate("2026-07-20 09:59:00"));
-    expect(jobWrites[1].data.serviceJobParameters).toEqual(paramsWithFromDate(null));
-    expect(callsTo(runRoute)).toHaveLength(1);
-    expect(harness.refreshAfterMutation).toHaveBeenCalledWith("serviceJob", { jobName: JOB_NAME });
-
-    // The result reports one covering RUN for the selected ids — there are no per-order queue ids.
-    expect(result.jobRunId).toBe("M2399240");
-    expect(result.queued.map((entry: any) => entry.shopifyOrderId)).toEqual(["6321001", "6321002"]);
-    expect(result.failedOrderIds).toEqual([]);
+describe("on-demand order imports", () => {
+  it("imports only the selected shop and IDs, once each, and reports unconfirmed orders", async () => {
+    harness.api.mockResolvedValueOnce(axiosResponse({ orderId: "O1" })).mockRejectedValueOnce(new Error("upstream unavailable"))
+      .mockResolvedValueOnce(axiosResponse({}));
+    const result = await boundOrderSync().requestSelectedOrders({ ids: ["11", "12", "11", "13"], shopId: SHOP_ID });
+    expect(result).toEqual({ imported: 1, failed: ["12", "13"] });
+    expect(harness.api.mock.calls.map(([r]) => [r.url, r.data])).toEqual(["11", "12", "13"].map(shopifyOrderId =>
+      ["sob/orders/import", { shopId: SHOP_ID, shopifyOrderId }]));
   });
 
-  it("restores the original fromDate even when the run itself fails", async () => {
-    harness.api.mockImplementation(async (config: any) => {
-      const url = String(config?.url ?? "");
-      if (runRoute.test(url)) throw new Error("run refused");
-      if (jobRoute.test(url)) return axiosResponse({}, config);
-      throw new Error(`Unexpected request in this test: ${url}`);
-    });
-    const orderSync = boundOrderSync();
-
-    await expect(orderSync.replayOrdersFromDate({
-      fromDate: "2026-07-01T00:00:00.000Z", shopId: SHOP_ID,
-    })).rejects.toThrow(/run refused/);
-
-    const jobWrites = callsTo(jobRoute);
-    expect(jobWrites).toHaveLength(2);
-    expect(jobWrites[1].data.serviceJobParameters).toEqual(paramsWithFromDate(null));
+  it("collects every page of the same updated-time window before importing, without editing the job", async () => {
+    const page = (ids: string[], next: string | null) => axiosResponse({ response: { orders: {
+      edges: ids.map(legacyResourceId => ({ node: { legacyResourceId } })),
+      pageInfo: { hasNextPage: !!next, endCursor: next },
+    } } });
+    harness.api.mockResolvedValueOnce(page(["10"], "cursor")).mockResolvedValueOnce(page(["10", "20"], null))
+      .mockResolvedValue(axiosResponse({ orderId: "OMS" }));
+    expect(await boundOrderSync().replayOrdersFromDate({ fromDate: "2026-01-01T00:00:00Z", shopId: SHOP_ID }))
+      .toEqual({ imported: 2, failed: [] });
+    const calls = harness.api.mock.calls.map(([r]) => r);
+    expect(calls.map(r => r.url)).toEqual(["shopify/graphql", "shopify/graphql", "sob/orders/import", "sob/orders/import"]);
+    expect(calls[0].data.variables.query).toContain("updated_at:>='2026-01-01T00:00:00.000Z' updated_at:<=");
+    expect(calls[1].data.variables).toEqual({ ...calls[0].data.variables, after: "cursor" });
   });
 
-  // The swap's write landed even when the cache refresh after it failed. Aborting there skipped the
-  // run AND the restore, leaving the replay window pinned to the job for every scheduled run.
-  it("runs and restores when only the cache refreshes fail", async () => {
-    respondWith([[runRoute, { jobRunId: "M2399240" }], [jobRoute, {}]]);
-    harness.refreshAfterMutation.mockRejectedValue(new CacheReconciliationError("serviceJob", { jobName: JOB_NAME }));
-    const orderSync = boundOrderSync();
+  it("does not import an incomplete search or report it as an empty replay", async () => {
+    respondWith([[/shopify\/graphql/, { errors: [{ message: "Access denied" }] }]]);
+    await expect(boundOrderSync().replayOrdersFromDate({ fromDate: "2026-01-01", shopId: SHOP_ID })).rejects.toThrow();
+    expect(callsTo(/orders\/import/)).toHaveLength(0);
+  });
+});
 
-    const result = await orderSync.replayOrdersFromDate({
-      fromDate: "2026-07-01T00:00:00.000Z", shopId: SHOP_ID,
-    });
+describe("processed order history", () => {
+  it("distinguishes unavailable from a successful empty response", async () => {
+    const sync = boundOrderSync();
+    harness.api.mockRejectedValueOnce(new Error("404")).mockResolvedValueOnce(axiosResponse({ orderSyncHistory: [] }));
+    await sync.loadHistory(SHOP_ID);
+    expect(sync.historyError).toBe(true);
+    await sync.loadHistory(SHOP_ID);
+    expect(sync.historyError).toBe(false);
+    expect(sync.recentOrders).toEqual([]);
+  });
+  it("ignores a previous shop's response", async () => {
+    const sync = boundOrderSync();
+    let finish!: (data: any) => void;
+    harness.api.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const pending = sync.loadHistory(SHOP_ID);
+    sync.resetForShop(OTHER_SHOP_ID);
+    finish(axiosResponse({ invalid: true }));
+    await pending;
+    expect(sync.historyError).toBe(false);
+  });
+});
 
-    expect(result.jobRunId).toBe("M2399240");
-    expect(callsTo(runRoute)).toHaveLength(1);
-    const jobWrites = callsTo(jobRoute);
-    expect(jobWrites).toHaveLength(2);
-    expect(jobWrites[1].data.serviceJobParameters).toEqual(paramsWithFromDate(null));
+describe("order import outcomes", () => {
+  it("only displays failed import logs linked to the selected shop's batch requests", () => {
+    const message = { systemMessageTypeId: "ShopifyOrderSync", systemMessageRemoteId: REMOTE.systemMessageRemoteId };
+    CACHE.systemMessages = [{ ...message, systemMessageId: "ours" }, { ...message, systemMessageId: "other", systemMessageRemoteId: "other-remote" }];
+    CACHE.dataManagerLogs = ["ours", "other", "unlinked"].map(systemMessageId => ({
+      systemMessageId, logId: systemMessageId, configId: "SYNC_SHOPIFY_ORDER", statusId: "DmlsCrashed",
+    }));
+    try {
+      expect(boundOrderSync().failedDataManagerLogs.map(log => log.logId)).toEqual(["ours"]);
+    } finally {
+      delete CACHE.systemMessages;
+      delete CACHE.dataManagerLogs;
+    }
   });
 
-  it("retryIndividualOrder derives its window from the order's live updatedAt", async () => {
-    respondWith([
-      [/shopify\/graphql/, {
-        data: { orders: { edges: [{ node: {
-          id: "gid://shopify/Order/6321001", legacyResourceId: "6321001", updatedAt: "2026-07-22T08:15:30Z",
-        } }], pageInfo: { hasNextPage: false, endCursor: null } } },
-      }],
-      [runRoute, { jobRunId: "M2399241" }],
-      [jobRoute, {}],
-    ]);
-    const orderSync = boundOrderSync();
-
-    const result = await orderSync.retryIndividualOrder({
-      errorId: "E-1", shopifyOrderId: "6321001", shopId: SHOP_ID,
-    });
-
-    expect(callsTo(jobRoute)[0].data.serviceJobParameters).toEqual(paramsWithFromDate("2026-07-22 08:14:30"));
-    expect(result.shopifyOrderId).toBe("6321001");
-    expect(result.jobRunId).toBe("M2399241");
-  });
-
-  it("refuses an order Shopify no longer returns, without touching the job", async () => {
-    respondWith([[/shopify\/graphql/, { data: { orders: { edges: [] } } }], [jobRoute, {}]]);
-    const orderSync = boundOrderSync();
-
-    await expect(orderSync.retryIndividualOrder({
-      shopifyOrderId: "999", shopId: SHOP_ID,
-    })).rejects.toThrow(/was not found/);
-    expect(callsTo(jobRoute)).toHaveLength(0);
-  });
-
-  it("surfaces a server failure instead of resolving with an empty result", async () => {
-    harness.api.mockRejectedValue(new Error("Cannot get property 'hotwax' on null object"));
-    const orderSync = boundOrderSync();
-
-    await expect(orderSync.requestSelectedOrders({
-      orders: [{ legacyResourceId: "1", updatedAt: "2026-07-20T10:00:00Z" }], shopId: SHOP_ID,
-    })).rejects.toThrow(/hotwax/);
+  it("does not count unprocessed records as succeeded for a crashed import or override a reported zero", () => {
+    const counts = { totalRecordCount: 12, failedRecordCount: 3 };
+    expect(normalizeLogOutcome({ ...counts, statusId: "DmlsCrashed" })).toMatchObject({ state: "failed", successful: 0 });
+    expect(normalizeLogOutcome({ ...counts, statusId: "DmlsFinished", successRecordCount: 0 })).toMatchObject({ state: "failed", successful: 0 });
+    expect(normalizeLogOutcome({ ...counts, statusId: "DmlsFinished" })).toMatchObject({ state: "partial", successful: 9 });
   });
 });
