@@ -21,7 +21,7 @@
  */
 
 
-import { api, commonUtil, logger, translate, useLiveEntity } from "@common";
+import { api, commonUtil, logger, translate, useLiveEntity, useSolrSearch } from "@common";
 import { companyDb } from "@/db/companyDb";
 import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
 import {
@@ -32,7 +32,6 @@ import Actions from "@/authorization/actions";
 import { type InventoryEventSourceRoot, sourceRootFor } from "@/utils/inventoryEventSourceRoots";
 import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation, syncDomainsError as workerError, syncNow } from "@/db/appDbSync";
-import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import {
   METAFIELD_DEFINITIONS_QUERY, SHOPIFY_METAFIELD_OWNER_TYPES, type ShopifyMetafieldDefinition, parseMetafieldDefinitionsPage,
 } from "@/utils/shopifyMetafieldDefinitions";
@@ -51,7 +50,7 @@ import type { ActiveDomain } from "@common/db";
 import { serviceState } from "@common/db";
 import { onSessionCleared } from "./sessionScope";
 import { useDataManager } from "./useDataManager";
-import { useStatuses } from "./useSeed";
+import { useMaargConfig, useStatuses } from "./useSeed";
 import { useServiceJob } from "./useServiceJobs";
 import { useSystemMessage } from "./useSystemMessage";
 
@@ -2435,10 +2434,7 @@ function isFailedImport(log: any): boolean {
 export function useShopifySyncImports(feature: ShopifySyncFeature) {
   const { records: logs, hydrated } = useLiveEntity<any>(companyDb.tables.dataManagerLogs, { dateField: "createdDate" });
 
-  const wanted = new Set(feature.importConfigIds.map(String));
-
-  const records = computed<any[]>(() =>
-    logs.value.filter((row: any) => wanted.has(String(row?.configId))));
+  const records = computed<any[]>(() => logs.value.filter(row => feature.importConfigIds.includes(row.configId)));
 
   const bySystemMessageId = computed<Record<string, any[]>>(() => {
     const grouped: Record<string, any[]> = {};
@@ -3648,18 +3644,19 @@ interface NormalizedLogOutcome {
   failed: number;
 }
 
-function normalizeLogOutcome(log: DataManagerLogLike): NormalizedLogOutcome {
+export function normalizeLogOutcome(log: DataManagerLogLike): NormalizedLogOutcome {
   const configId = firstText(log, ["configId", "dataManagerConfigId", "configName"]);
   const logId = firstText(log, ["logId", "dataManagerLogId", "id"]);
   const total = numberValue(log, ["totalRecordCount", "recordCount", "totalRecords"]);
   const failed = numberValue(log, ["failedRecordCount", "errorRecordCount", "failedRecords"]);
-  const explicitSuccessful = numberValue(log, ["successRecordCount", "successfulRecordCount", "processedRecordCount"]);
-  const successful = explicitSuccessful || Math.max(total - failed, 0);
+  const reported = firstValue(log, ["successRecordCount", "successfulRecordCount", "processedRecordCount"]);
   const status = normalizeToken(firstValue(log, ["statusId", "status", "runStatusId"]));
   const hasFinish = Boolean(firstValue(log, ["finishDateTime", "finishedDateTime", "completedDate", "processedDate"]));
+  const finished = tokenIncludes(status, COMPLETE_TOKENS) || (!status && hasFinish);
+  const successful = reported != null ? Number(reported) : (finished ? Math.max(total - failed, 0) : 0);
   let state: SyncProgressState;
 
-  if(tokenIncludes(status, FAILURE_TOKENS)) {state = successful > 0 ? "partial" : "failed";} else if(failed > 0) {state = successful > 0 ? "partial" : "failed";} else if(tokenIncludes(status, COMPLETE_TOKENS) || hasFinish) {state = "completed";} else if(tokenIncludes(status, ACTIVE_TOKENS) || total > 0) {state = "active";} else {state = "pending";}
+  if(tokenIncludes(status, ACTIVE_TOKENS)) {state = "active";} else if(tokenIncludes(status, FAILURE_TOKENS)) {state = successful > 0 ? "partial" : "failed";} else if(failed > 0) {state = successful > 0 ? "partial" : "failed";} else if(tokenIncludes(status, COMPLETE_TOKENS) || hasFinish) {state = "completed";} else if(tokenIncludes(status, ACTIVE_TOKENS) || total > 0) {state = "active";} else {state = "pending";}
 
   return {
     key: logId || [
@@ -3760,86 +3757,14 @@ export function deriveSyncOverallState(
   return importRow.state;
 }
 
-const AUDIT_TIMESTAMPS = ["processedDate", "processedAt", "completedDate", "createdDate", "createdStamp", "lastUpdatedStamp"] as const;
-
-export interface SuccessfulOrderAuditLike extends UnknownRecord {}
-
-export interface RecentProcessedOrder {
-  id: string;
+export interface ShopifyOrderSyncRecentOrder {
   shopId: string;
   shopifyOrderId: string;
-  orderName: string;
-  orderId: string;
-  outcome: "Created" | "Updated";
-  processedAt?: string | number;
-  processedAtMillis: number;
-  systemMessageId: string;
-  configId: string;
-  logId: string;
-  shopifyFetchVerified: boolean;
-}
-
-function auditOutcome(row: ValueSource): RecentProcessedOrder["outcome"] | null {
-  const configId = valueText(row?.configId);
-  if(configId !== "SYNC_SHOPIFY_ORDER" && configId !== "UPDATE_SHOPIFY_ORDER") {return null;}
-  const declaredOutcome = valueText(row?.outcome);
-
-  return declaredOutcome === "Created" || declaredOutcome === "Updated" ? declaredOutcome : null;
-}
-
-export function normalizeRecentProcessedOrders(
-  rows: readonly SuccessfulOrderAuditLike[],
-  options: { limit?: number; shopId?: string } = {}
-): RecentProcessedOrder[] {
-  const selectedShopId = valueText(options.shopId);
-  if(!selectedShopId) {return [];}
-
-  const normalized = rows.flatMap((row, index): RecentProcessedOrder[] => {
-    const shopId = valueText(row.shopId);
-    const systemMessageId = valueText(row.systemMessageId);
-    const configId = valueText(row.configId);
-    const logId = firstText(row, ["logId", "dataManagerLogId"]);
-    const outcome = auditOutcome(row);
-    const shopifyFetchVerified = row.shopifyFetchVerified;
-    if(
-      shopId !== selectedShopId ||
-      !systemMessageId ||
-      !configId ||
-      !logId ||
-      !outcome ||
-      typeof shopifyFetchVerified !== "boolean"
-    ) {return [];}
-
-    const shopifyOrderId = valueText(row.shopifyOrderId);
-    const processedAtMillis = timestampFrom(row, AUDIT_TIMESTAMPS);
-    const explicitId = firstText(row, ["auditId", "shopifyOrderSyncAuditId", "id"]);
-    const id = explicitId || [systemMessageId, configId, logId, shopifyOrderId, outcome, processedAtMillis || index].join(":");
-
-    return [{
-      id,
-      shopId,
-      shopifyOrderId,
-      orderName: firstText(row, ["orderName", "shopifyOrderName", "name"]),
-      orderId: firstText(row, ["orderId", "hotWaxOrderId", "internalOrderId"]),
-      outcome,
-      processedAt: originalTimestamp(row, AUDIT_TIMESTAMPS),
-      processedAtMillis,
-      systemMessageId,
-      configId,
-      logId,
-      shopifyFetchVerified,
-    }];
-  });
-
-  normalized.sort((a, b) => b.processedAtMillis - a.processedAtMillis || a.id.localeCompare(b.id));
-  const seen = new Set<string>();
-
-  return normalized.filter((row) => {
-    if(seen.has(row.id)) {return false;}
-    seen.add(row.id);
-
-    return true;
-  }).slice(0, boundedLimit(options.limit));
+  orderId?: string;
+  orderName?: string;
+  historyUpdatedAt?: string | number;
+  orderDate?: string;
+  importedAt?: string;
 }
 
 const ERROR_TIMESTAMPS = [
@@ -3985,13 +3910,6 @@ function matchesQuery(values: readonly unknown[], query: string): boolean {
   return values.some((value) => valueText(value).toLocaleLowerCase().includes(needle));
 }
 
-export function searchLoadedProcessedOrders(rows: readonly RecentProcessedOrder[], query: string): RecentProcessedOrder[] {
-  return rows.filter((row) => matchesQuery([
-    row.shopifyOrderId,
-    row.orderName
-  ], query));
-}
-
 export function searchLoadedOrderErrors(rows: readonly RecentOrderError[], query: string): RecentOrderError[] {
   return rows.filter((row) => matchesQuery([
     row.shopifyOrderId,
@@ -4096,7 +4014,7 @@ const TERMINAL_STATES = new Set<SyncProgressState>(["completed", "partial", "fai
 
 /** Newest first by `initDate`; the entity carries no other ordering signal. */
 function byInitDateDesc(a: OrderSyncBatchLike, b: OrderSyncBatchLike): number {
-  return Number(b?.initDate ?? 0) - Number(a?.initDate ?? 0);
+  return getTimestampValue(b?.initDate) - getTimestampValue(a?.initDate);
 }
 
 /**
@@ -4132,28 +4050,17 @@ export function orderSyncSummary(
 
   const latestCompletedBatch = ordered.find((batch) => {
     const logs = logsFor(batch);
-    /**
-     * ⚠️ Requires at least one ACTUAL import log, not just an import state of "completed".
-     *
-     * `deriveSyncProgress` reports a consumed batch with ZERO import logs as import "completed"
-     * (nothing was required, so nothing is outstanding — defensible for the progress row). But that
-     * meant one zero-order run poisoned this headline: the newest batch matched the predicate, its
-     * empty logs produced no `lastCompletedAt`, and the card claimed "No completed batch recorded"
-     * for a shop whose real last completed import was days old and still cached. Observed live the
-     * moment a queued run returned zero orders. "Last completed batch" means "last batch that
-     * actually imported", which is also what the retired store computed.
-     */
     if(!logs.length) {return false;}
     const [batchHalf, importHalf] = deriveSyncProgress(batch, logs);
 
-    return TERMINAL_STATES.has(batchHalf.state) && importHalf.state === "completed";
+    return TERMINAL_STATES.has(batchHalf.state) && TERMINAL_STATES.has(importHalf.state);
   });
 
   const completedLogs = logsFor(latestCompletedBatch);
   const lastCompletedAt = completedLogs
     .map((log: any) => log?.finishDateTime ?? log?.completedDate ?? log?.processedDate)
     .filter(Boolean)
-    .sort((a: any, b: any) => Number(b) - Number(a))[0];
+    .sort((a: any, b: any) => getTimestampValue(b) - getTimestampValue(a))[0];
 
   /**
    * "Orders processed" describes the last COMPLETED batch, not the newest one.
@@ -4236,11 +4143,8 @@ export function orderSyncRunNowDisabledReason(
 }
 
 /** Client-side order search over the already-loaded rows. */
-export function filterRecentOrders<T extends Record<string, any>>(
-  orders: readonly T[] | null | undefined,
-  query: string,
-): T[] {
-  return searchLoadedProcessedOrders((orders ?? []) as any, query) as unknown as T[];
+export function filterRecentOrders(orders: ShopifyOrderSyncRecentOrder[], query: string) {
+  return orders.filter(row => matchesQuery([row.shopifyOrderId, row.orderName, row.orderId], query));
 }
 
 /**
@@ -4631,11 +4535,29 @@ export interface ShopifyOrderSyncImport extends Record<string, any> {
   finishDateTime?: string | number;
 }
 
-export interface ShopifyOrderSyncRecentOrder extends Record<string, any> {}
+/** Fetch all files for these exact runs, including logs outside the recent per-config window. */
+export async function fetchOrderRunImports(ids: string | string[]) {
+  const requested = new Set(typeof ids === "string" ? [ids] : ids);
+  if (!requested.size) return [];
+  const systemMessageId = [...requested].join(",");
+  const logs: ShopifyOrderSyncImport[] = [];
+  const pageSize = 100;
+  for (let pageIndex = 0; ; pageIndex++) {
+    const response = await api({ url: "admin/dataManager/details", method: "get",
+      params: { systemMessageId, ...(requested.size > 1 ? { systemMessageId_op: "in" } : {}), pageIndex, pageSize, orderByField: "logId" } });
+    const page: ShopifyOrderSyncImport[] = response.data?.dataManagerLogs;
+    if (!Array.isArray(page) || page.some(log => !log.systemMessageId || !requested.has(log.systemMessageId))) throw new Error("Import logs unavailable");
+    logs.push(...page);
+    if (page.length < pageSize || logs.length >= response.data.dataManagerLogsCount) return logs;
+  }
+}
+
 export interface ShopifyOrderSyncSearchResult extends Record<string, any> {}
 
 /** Shared monitoring session state — the store's non-entity fields. */
 const state = reactive({
+  importConfigIds: [...ORDER_SYNC_FEATURE.importConfigIds],
+  importConfigsAvailable: false,
   selectedShopId: "",
   runtimeTimeZone: "",
   loading: false,
@@ -4645,11 +4567,18 @@ const state = reactive({
   error: "" as string,
   activeMutation: "" as string,
   lastRunResult: null as any,
+  historyError: false,
   recentOrders: [] as ShopifyOrderSyncRecentOrder[],
-  recentErrors: [] as any[],
-  recentRequestErrors: [] as any[],
-  recentAudits: [] as any[],
+  historyLoading: false,
+  historySource: null as "history" | "orders" | null,
 });
+
+const shopImportFeature = {
+  ...ORDER_SYNC_FEATURE,
+  get importConfigIds() { return state.importConfigIds; },
+};
+
+let orderHistoryRequest = 0;
 
 export function useShopifyOrderSync() {
   const { updateJob, runNow: runJobNow } = useServiceJob();
@@ -4676,15 +4605,19 @@ export function useShopifyOrderSync() {
   });
 
   /** Batch requests = this remote's `ShopifyOrderSync` messages, newest first. */
-  const { records: batches, hydrated } = useShopifySyncMessages(ORDER_SYNC_FEATURE, ctx, {
+  const { records: batches, hydrated: messagesHydrated } = useShopifySyncMessages(ORDER_SYNC_FEATURE, ctx, {
     limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT,
   });
 
   /** Historical alias: order sync's only message type IS its batch request. */
   const systemMessages = batches;
 
-  const { bySystemMessageId: importsBySystemMessageId, failed: failedDataManagerLogs } =
-    useShopifySyncImports(ORDER_SYNC_FEATURE);
+  const imports = useShopifySyncImports(shopImportFeature);
+  const hydrated = computed(() => ctx.hydrated.value && messagesHydrated.value && imports.hydrated.value);
+  const importsBySystemMessageId = computed<Record<string, ShopifyOrderSyncImport[]>>(() => Object.fromEntries(batches.value.map(batch => [
+    batch.systemMessageId, imports.bySystemMessageId.value[batch.systemMessageId] ?? [],
+  ])));
+  const failedDataManagerLogs = computed(() => imports.failed.value.filter(log => log.systemMessageId in importsBySystemMessageId.value));
 
   const {
     salesChannelMappings, paymentMethodMappings, shippingMethodMappings,
@@ -4704,10 +4637,14 @@ export function useShopifyOrderSync() {
     state.monitoringError = "";
     state.error = "";
     state.lastRunResult = null;
+    state.monitoringLoadedAt = null;
+    state.historyError = false;
+    state.importConfigIds = [...ORDER_SYNC_FEATURE.importConfigIds];
+    state.importConfigsAvailable = false;
+    state.historySource = null;
     state.recentOrders = [];
-    state.recentErrors = [];
-    state.recentRequestErrors = [];
-    state.recentAudits = [];
+    orderHistoryRequest++;
+    state.historyLoading = false;
   }
 
   /**
@@ -4722,15 +4659,19 @@ export function useShopifyOrderSync() {
     state.loading = !state.monitoringLoadedAt;
     state.monitoringRefreshing = true;
     try {
-      await Promise.all([loadHistory(shopId), loadLandmarkDates()]);
+      await Promise.all([loadHistory(shopId), loadLandmarkDates(), loadImportConfigs(shopId)]);
+      if (shopId !== state.selectedShopId) return;
       state.monitoringLoadedAt = Date.now();
       state.monitoringError = "";
     } catch (error: any) {
+      if (shopId !== state.selectedShopId) return;
       state.monitoringError = error?.message || "Failed to load Order Sync monitoring.";
       logger.error("Order Sync monitoring failed", error);
     } finally {
-      state.loading = false;
-      state.monitoringRefreshing = false;
+      if (shopId === state.selectedShopId) {
+        state.loading = false;
+        state.monitoringRefreshing = false;
+      }
     }
   }
 
@@ -4740,26 +4681,116 @@ export function useShopifyOrderSync() {
     await loadLandmarkDates();
   }
 
-  /**
-   * The processed-order history.
-   *
-   * `shopify/order-sync/{shopId}/history` is the ONE bespoke endpoint that works, and it is a
-   * projection with no generic equivalent, so it stays live.
-   */
-  async function loadHistory(shopId: string) {
+  async function loadImportConfigs(shopId: string) {
+    const types = ["SHPFY_CRT_ORDER", "SHPFY_UPD_ORDER"];
     try {
-      const resp: any = await api({
-        url: `shopify/order-sync/${encodeURIComponent(shopId)}/history`,
-        method: "get",
-        params: { pageSize: SHOPIFY_ORDER_SYNC_RESULT_LIMIT },
-      });
-      const rows = resp?.data?.orderSyncHistory ?? resp?.orderSyncHistory ?? [];
-      state.recentOrders = normalizeRecentProcessedOrders(rows) as any[];
-      state.recentAudits = state.recentOrders;
-    } catch (error) {
-      logger.error("Failed to load Order Sync history", error);
-      state.recentOrders = [];
-      state.recentAudits = [];
+      const response = await api({ url: "sob/shopify/shopSetting", method: "get", params: {
+        shopId, settingTypeEnumId: types.join(","), settingTypeEnumId_op: "in", pageSize: types.length,
+      } });
+      if (shopId !== state.selectedShopId) return;
+      const settings: { shopId: string; settingTypeEnumId: string; settingValue: string }[] = response.data;
+      const ids = types.map((type, i) => settings.find(row => row.shopId === shopId && row.settingTypeEnumId === type)?.settingValue
+        || ORDER_SYNC_FEATURE.importConfigIds[i]);
+      if (ids.some((id, i) => id !== state.importConfigIds[i])) state.importConfigIds = ids;
+      state.importConfigsAvailable = true;
+    } catch {
+      if (shopId === state.selectedShopId) state.importConfigsAvailable = false;
+    }
+  }
+
+  async function readMappedOrders(shopId: string) {
+    // A direct link can enter the page before the shop table has emitted its first row.
+    if (!ctx.hydrated.value) {
+      await new Promise<void>(resolve => watch(ctx.hydrated, () => resolve(), { once: true }));
+    }
+    const storeId = shop.value?.shopId === shopId && shop.value.productStoreId;
+    if (!storeId) throw new Error("Product store unavailable");
+    const response = await api({
+      url: "graphql", method: "post",
+      data: {
+        query: `query RecentMappedOrders($filter: String!, $limit: Int!) {
+          orders(query: $filter, first: $limit, sortKey: ORDER_DATE, reverse: true) {
+            edges { node { orderId orderName orderDate shopifyOrder { shopId shopifyOrderId } } }
+          }
+        }`,
+        variables: { filter: `productStoreId:${JSON.stringify(storeId)} orderTypeId:SALES_ORDER`, limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT },
+      },
+    });
+    const edges = response.data?.data?.orders?.edges;
+    if (response.data?.errors?.length || !Array.isArray(edges)) throw new Error("OMS order history unavailable");
+    const rows: ShopifyOrderSyncRecentOrder[] = [];
+    for (const { node } of edges) {
+      const mapping = node.shopifyOrder;
+      if (mapping?.shopId === shopId && mapping.shopifyOrderId && node.orderId) {
+        rows.push({ shopId, shopifyOrderId: mapping.shopifyOrderId, orderId: node.orderId, orderName: node.orderName, orderDate: node.orderDate });
+      }
+    }
+    return rows;
+  }
+
+  async function addImportDates(rows: ShopifyOrderSyncRecentOrder[]) {
+    const ids = rows.flatMap(row => row.orderId ? [row.orderId] : []);
+    if (!ids.length) return;
+    // ORDER search documents repeat by line. Read one header per mapped order in a single request.
+    const response = await useSolrSearch().runSolrQuery({ json: {
+      query: "*:*", filter: ["docType:ORDER", "{!terms f=orderId}" + ids.join(",")],
+      params: { fl: "orderId,orderDate,entryDate", rows: ids.length, group: true, "group.field": "orderId", "group.limit": 1 },
+    } });
+    const groups = response.data?.grouped?.orderId?.groups;
+    if (!Array.isArray(groups)) throw new Error("Order dates unavailable");
+    const dates = new Map<string, { orderDate?: string; entryDate?: string }>();
+    for (const group of groups) {
+      const doc = group.doclist?.docs?.[0];
+      if (doc?.orderId) dates.set(doc.orderId, doc);
+    }
+    for (const row of rows) {
+      const doc = row.orderId && dates.get(row.orderId);
+      if (!doc) continue;
+      row.orderDate ??= doc.orderDate;
+      row.importedAt = doc.entryDate;
+    }
+  }
+
+  async function loadHistory(shopId: string) {
+    if (shopId !== state.selectedShopId) return;
+    const request = ++orderHistoryRequest;
+    state.historyLoading = true;
+    try {
+      const maarg = useMaargConfig();
+      await maarg.load();
+      if (request !== orderHistoryRequest) return;
+      const version = maarg.componentVersion("shopify-connector").value || "";
+      const [major, minor] = version.replace(/^v/, "").split(".").map(Number);
+      // The shop-scoped history resource first shipped in connector 4.4.
+      const nativeHistory = major > 4 || (major === 4 && minor >= 4);
+      let rows: ShopifyOrderSyncRecentOrder[];
+      if (nativeHistory) {
+        const response = await api({
+          url: `sob/shopify/syncHistory/${encodeURIComponent(shopId)}/order`, method: "get",
+          params: { pageSize: SHOPIFY_ORDER_SYNC_RESULT_LIMIT, orderByField: "-lastUpdatedStamp,shopifyOrderId" },
+        });
+        if (!Array.isArray(response.data) || commonUtil.hasError(response)) throw new Error("Order sync history unavailable");
+        rows = response.data.filter(row => row.shopId === shopId && row.shopifyOrderId).map(row => ({
+          shopId, shopifyOrderId: row.shopifyOrderId, orderName: row.shopifyOrderName,
+          orderId: row.primaryOrder?.orderId, historyUpdatedAt: row.lastUpdatedStamp,
+        }));
+      } else {
+        rows = await readMappedOrders(shopId);
+      }
+      if (request !== orderHistoryRequest) return;
+      try {
+        await addImportDates(rows);
+      } catch {
+        logger.warn("Could not load order import dates.");
+      }
+      if (request !== orderHistoryRequest) return;
+      state.recentOrders = rows;
+      state.historySource = nativeHistory ? "history" : "orders";
+      state.historyError = false;
+    } catch {
+      if (request === orderHistoryRequest) state.historyError = true;
+    } finally {
+      if (request === orderHistoryRequest) state.historyLoading = false;
     }
   }
 
@@ -4887,7 +4918,7 @@ export function useShopifyOrderSync() {
    * straight off the returned object to drive their paging loop, and nesting them only under
    * `pageInfo` left both undefined — a search silently stopped after its first page.
    */
-  async function searchShopifyOrders(input: { queryString: string; after?: string; pageSize?: number; shopId?: string },) {
+  async function searchShopifyOrders(input: { queryString: string; after?: string; pageSize?: number; shopId?: string; idsOnly?: boolean }) {
     assertShop(input.shopId);
     const systemMessageRemoteId = remoteId.value;
     if(!systemMessageRemoteId) {throw new Error("The selected Shopify shop remote is unavailable.");}
@@ -4896,7 +4927,11 @@ export function useShopifyOrderSync() {
       method: "post",
       data: {
         systemMessageRemoteId,
-        queryText: ORDER_SEARCH_QUERY,
+        queryText: input.idsOnly ? `query ReplayOrderIds($query:String!, $first:Int!, $after:String) {
+          orders(query:$query, first:$first, after:$after, sortKey:UPDATED_AT) {
+            edges { node { legacyResourceId } } pageInfo { hasNextPage endCursor }
+          }
+        }` : ORDER_SEARCH_QUERY,
         variables: { query: input.queryString, first: input.pageSize ?? 25, after: input.after ?? null },
       },
     });
@@ -4905,7 +4940,9 @@ export function useShopifyOrderSync() {
     // `response` branch made every search return [] against the real backend — found by QA driving
     // the modal live, while the `data`-shaped unit fixtures kept passing.
     const payload = resp?.data?.response ?? resp?.data?.data ?? resp?.data ?? {};
-    const edges = payload?.orders?.edges ?? [];
+    const edges = payload?.orders?.edges;
+    if (resp?.data?.errors?.length || payload.errors?.length || !Array.isArray(edges) || (input.idsOnly && typeof payload.orders?.pageInfo?.hasNextPage !== "boolean")) throw new Error("Shopify order search is unavailable.");
+    if (input.idsOnly && edges.some((edge: any) => !edge?.node?.legacyResourceId)) throw new Error("Shopify returned an order without an ID.");
     const pageInfo = payload?.orders?.pageInfo ?? null;
 
     return {
@@ -4916,141 +4953,46 @@ export function useShopifyOrderSync() {
     };
   }
 
-  /**
-   * Targeted order retry — the WINDOW-REPLAY alternate to the broken bespoke endpoint.
-   *
-   * `POST shopify/order-sync/{shopId}/retry` 400s (`Cannot get property 'hotwax' on null object`,
-   * verified live 2026-07-26), and the generic surface has no message-production route either:
-   * `POST admin/systemMessages` and `admin/systemMessages/produce` both 405, and `runNow` ignores
-   * body parameter overrides (all probed live 2026-07-27). What IS proven live (run M2399240 →
-   * message M228628): the job's `fromDate` PARAMETER drives the sync window, `[fromDate, now]`.
-   *
-   * So a targeted retry becomes a WINDOW import: swap `fromDate` to just before the oldest selected
-   * order's `updatedAt`, run the job once, restore the parameter. Orders inside the window that were
-   * not selected re-import too — the import is idempotent, so the over-coverage is harmless — which
-   * is why these mutations report one covering RUN, not per-order queue ids.
-   */
-
-  /** `yyyy-MM-dd HH:mm:ss`, read as UTC — the only timestamp format the job runner accepts (ISO
-   * errored live: `Timestamp format must be yyyy-mm-dd hh:mm:ss[.fffffffff]`, run M2399238). */
-  function toJobTimestamp(iso: string): string {
-    const date = new Date(iso);
-    if(Number.isNaN(date.getTime())) {throw new Error("A valid from date is required to replay orders.");}
-
-    return date.toISOString().slice(0, 19).replace("T", " ");
+  async function importOrderIds(shopId: string, ids: Iterable<string>) {
+    const failed: string[] = [];
+    let imported = 0;
+    for (const shopifyOrderId of new Set(ids)) {
+      try {
+        const response: any = await api({
+          url: "sob/orders/import", method: "post", data: { shopId, shopifyOrderId },
+        });
+        if (commonUtil.hasError(response) || !response?.data?.orderId) failed.push(shopifyOrderId);
+        else imported++;
+      } catch {
+        failed.push(shopifyOrderId);
+      }
+    }
+    return { imported, failed };
   }
 
-  /**
-   * The primitive every retry path composes: PUT the job's parameter set with `fromDate` swapped in,
-   * run the job once, restore the original set.
-   *
-   * The COMPLETE current set is re-sent rather than a one-parameter patch: merge-vs-replace semantics
-   * of `serviceJobParameters` on the PUT are undocumented, and the full-set shape is the one proven
-   * live. The restore runs in `finally` so a failed run cannot leave a stale window pinned to the
-   * job. Known race: if the job's cron fires between swap and restore (~2s against a >=5-minute
-   * cron), that scheduled run imports the replay window too — idempotent, so at worst a duplicate
-   * import of the same orders.
-   */
-  async function replayWindow(fromDateIso: string, shopId?: string) {
-    const jobName = resolveJobName(shopId);
-    const currentParameters: any[] = Array.isArray(job.value?.serviceJobParameters)
-      ? job.value.serviceJobParameters
-      : [];
-    const baseline = currentParameters.map((parameter: any) => ({
-      parameterName: parameter.parameterName,
-      parameterValue: parameter.parameterValue ?? null,
-    }));
-    // REFUSE on a parameter-less row rather than PUT a lone `fromDate`: if the PUT replaces the whole
-    // set, that write would strip the remote/type parameters and orphan the job from its shop.
-    if(!baseline.some((parameter) => parameter.parameterName === "systemMessageRemoteId" && parameter.parameterValue)) {
-      throw new Error("The Order Sync job's parameters are unavailable. Refresh and try again.");
-    }
-    if(!baseline.some((parameter) => parameter.parameterName === "fromDate")) {
-      baseline.push({ parameterName: "fromDate", parameterValue: null });
-    }
-    const swapped = baseline.map((parameter) =>
-      parameter.parameterName === "fromDate"
-        ? { ...parameter, parameterValue: toJobTimestamp(fromDateIso) }
-        : parameter);
-    await writeParameters(jobName, swapped);
-    try {
-      const resp: any = await runJobNow(jobName);
-      const result = { jobName, fromDate: fromDateIso, ...(resp?.data ?? {}) };
-      state.lastRunResult = result;
+  const requestSelectedOrders = (input: { ids: string[]; shopId: string }) => withMutation("request-orders", () => {
+    assertShop(input.shopId);
+    return importOrderIds(input.shopId, input.ids);
+  });
 
-      return result;
-    } finally {
-      await writeParameters(jobName, baseline);
-    }
-  }
-
-  /**
-   * `updateJob` for the replay's swap and restore, where only a failed cache refresh after the PUT
-   * is tolerated: the PUT landed either way. Letting it throw skipped the run and the restore after
-   * the swap, pinning the replay window to the job, and after the restore reported a replay that
-   * ran as failed, inviting a second one. `updateJob` records the failure as a sync error.
-   */
-  async function writeParameters(jobName: string, serviceJobParameters: any[]) {
-    try {
-      await updateJob({ jobName, serviceJobParameters });
-    } catch (error) {
-      if(!isCacheReconciliationError(error)) throw error;
-      logger.warn(`Updated ${jobName}'s parameters, but its cached job row could not be refreshed`, error);
-    }
-  }
-
-  /** Replay every order the shop changed since `fromDate` (ISO). The replay-modal path. */
-  const replayOrdersFromDate = (input: { fromDate: string; shopId?: string }) =>
-    withMutation("replay-orders", () => replayWindow(input.fromDate, input.shopId));
-
-  const requestSelectedOrders = (input: {
-    orders: Array<{ legacyResourceId?: string; id?: string; updatedAt?: string; createdAt?: string }>;
-    shopId?: string;
-  }) =>
-    withMutation("request-orders", async () => {
-      assertShop(input.shopId);
-      const orders = (input.orders ?? []).filter((order) => order.legacyResourceId || order.id);
-      if(!orders.length) {throw new Error("Select at least one Shopify order to request.");}
-      const stamps = orders
-        .map((order) => Date.parse(order.updatedAt || order.createdAt || ""))
-        .filter((stamp) => !Number.isNaN(stamp));
-      if(!stamps.length) {
-        throw new Error("The selected Shopify orders are missing their update dates. Search again and retry.");
-      }
-      // One minute of cushion so a subsecond-truncated `updatedAt` cannot fall outside the window.
-      const run = await replayWindow(new Date(Math.min(...stamps) - 60_000).toISOString(), input.shopId);
-
-      return {
-        queued: orders.map((order) => ({
-          shopifyOrderId: String(order.legacyResourceId || order.id),
-          jobRunId: run.jobRunId,
-        })),
-        failedOrderIds: [] as string[],
-        ...run,
-      };
-    });
-
-  /** `errorId` is accepted for caller compatibility; the window mechanism has no use for it. */
-  const retryIndividualOrder = (input: { errorId?: string; shopifyOrderId: string; shopId?: string }) =>
-    withMutation("retry-order", async () => {
-      assertShop(input.shopId);
-      const search = await searchShopifyOrders({
-        queryString: `id:${input.shopifyOrderId}`,
-        pageSize: 5,
-        shopId: input.shopId,
-      });
-      const order = search.orders.find((candidate: any) => String(candidate.legacyResourceId ?? "") === String(input.shopifyOrderId),) ?? search.orders[0];
-      if(!order) {
-        throw new Error(`Shopify order ${input.shopifyOrderId} was not found on the connected shop.`);
-      }
-      const basis = Date.parse(order.updatedAt || order.createdAt || "");
-      if(Number.isNaN(basis)) {
-        throw new Error(`Shopify order ${input.shopifyOrderId} is missing its update date.`);
-      }
-      const run = await replayWindow(new Date(basis - 60_000).toISOString(), input.shopId);
-
-      return { shopifyOrderId: input.shopifyOrderId, ...run };
-    });
+  const replayOrdersFromDate = (input: { fromDate: string; shopId: string }) => withMutation("replay-orders", async () => {
+    assertShop(input.shopId);
+    const from = new Date(input.fromDate);
+    const through = new Date();
+    if (!Number.isFinite(from.getTime()) || from > through) throw new Error("Choose a valid replay start date.");
+    const queryString = `updated_at:>='${from.toISOString()}' updated_at:<='${through.toISOString()}'`;
+    const ids = new Set<string>();
+    let after: string | undefined;
+    do {
+      const page = await searchShopifyOrders({ shopId: input.shopId, queryString, after, pageSize: 100, idsOnly: true });
+      for (const order of page.orders) ids.add(String(order.legacyResourceId));
+      if (!page.hasNextPage) break;
+      if (!page.endCursor || after === page.endCursor) throw new Error("Shopify did not return the next order page.");
+      after = page.endCursor;
+    } while (after);
+    assertShop(input.shopId);
+    return importOrderIds(input.shopId, ids);
+  });
 
   /** ⚠️ Also blocked: wraps the same broken `/job` resource. See the module note. */
   const configure = (input: { shopId?: string } = {}) => withMutation("configure", async () => {
@@ -5066,7 +5008,6 @@ export function useShopifyOrderSync() {
     return landmarkDates.value.launchDate || "";
   }
 
-  const filteredErrors = (query: string) => searchLoadedOrderErrors(state.recentErrors as any, query);
 
   /**
    * Returned as ONE `reactive` object so callers keep store-style access — `orderSync.job`,
@@ -5081,16 +5022,19 @@ export function useShopifyOrderSync() {
     ...toRefs(state),
     hydrated,
     // cached entities
-    shop, productStore, remote, job, templateJob, isPaused, isConfigured, landmarkDates,
+    shop, productStore, remote, remoteIds: ctx.remoteIds, job, templateJob, isPaused, isConfigured, landmarkDates,
     batches, systemMessages, importsBySystemMessageId, failedDataManagerLogs,
+    latestImportChange: computed(() => {
+      const log = imports.records.value[0];
+      return log && [log.logId, log.statusId, log.finishDateTime].join("/");
+    }),
     salesChannelMappings, paymentMethodMappings, shippingMethodMappings,
     mappingReadiness, configurationState,
     // session control
-    resetForShop, loadMonitoring, loadConfiguration, loadHistory, refresh, suggestOldestOrderDate,
+    resetForShop, loadImportConfigs, loadMonitoring, loadConfiguration, loadHistory, refresh, suggestOldestOrderDate,
     // mutations
     updateSchedule, updateJobStatus, runNow, setLandmarkDate,
-    searchShopifyOrders, requestSelectedOrders, retryIndividualOrder, replayOrdersFromDate, configure,
-    filteredErrors,
+    searchShopifyOrders, requestSelectedOrders, replayOrdersFromDate, configure,
   });
 }
 
@@ -5544,7 +5488,7 @@ export interface OrderSyncSessionOptions {
 /** The DataManagerLog configs an order import writes under. */
 
 export function useShopifyOrderSyncPolling(options: OrderSyncSessionOptions) {
-  return useShopifySyncSession(ORDER_SYNC_FEATURE, {
+  return useShopifySyncSession(shopImportFeature, {
     active: options.batchActive,
     refresh: options.refresh,
     onError: options.onError,
@@ -5573,7 +5517,7 @@ export function useShopifyOrderSyncHistorySession(options: {
   refresh?: () => Promise<void>;
   onError?: (error: unknown) => void;
 }) {
-  return useShopifySyncSession(ORDER_SYNC_FEATURE, {
+  return useShopifySyncSession(shopImportFeature, {
     active: () => true,
     refresh: options.refresh,
     refreshWorker: true,

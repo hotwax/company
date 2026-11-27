@@ -39,7 +39,7 @@
                 </ion-card-subtitle>
               </ion-card-header>
               <ion-list lines="full">
-                <ion-item v-for="row in 4" :key="row">
+                <ion-item v-for="row in (card === 1 ? 4 : 3)" :key="row">
                   <ion-label>
                     <ion-skeleton-text animated style="width: 45%" />
                     <p><ion-skeleton-text animated style="width: 65%" /></p>
@@ -92,7 +92,7 @@
               <ion-card-header>
                 <ion-card-title>{{ translate("Summary") }}</ion-card-title>
                 <ion-card-subtitle>
-                  {{ translate("Latest scheduled batch activity for this Shopify instance") }}
+                  {{ shopName }}
                 </ion-card-subtitle>
                 <ion-buttons>
                   <ion-button
@@ -109,61 +109,30 @@
 
               <ion-list lines="full">
                 <ion-item>
-                  <ion-label>
-                    {{ translate("Shopify instance") }}
-                    <p>{{ translate("Shop ID") }}: {{ id }}</p>
+                  <ion-label class="ion-text-wrap">{{ translate("Orders imported in the last hour") }}</ion-label>
+                  <ion-label slot="end" class="ion-text-end">{{ arrivals?.count ?? unavailable }}</ion-label>
+                </ion-item>
+                <ion-item :href="latestOrderHref || undefined" :detail="!!latestOrderHref" target="_blank" rel="noopener noreferrer">
+                  <ion-label>{{ translate("Last order imported") }}
+                    <p v-if="arrivals?.latest">{{ arrivals.latest.orderName || arrivals.latest.shopifyOrderId }}</p>
                   </ion-label>
-                  <ion-note slot="end">
-                    {{ shopName }}, {{ shopifyShopId || translate("Not available") }}
-                  </ion-note>
+                  <ion-label slot="end" class="ion-text-end">{{ latestArrivalLabel }}</ion-label>
                 </ion-item>
                 <ion-item>
-                  <ion-label>
-                    {{ translate("Last completed batch") }}
-                    <p>{{ lastCompletedBatchLabel }}</p>
-                  </ion-label>
-                  <ion-note slot="end">{{ latestCompletedBatchId }}</ion-note>
-                </ion-item>
-                <ion-item>
-                  <ion-label>
-                    {{ translate("Next batch sync") }}
-                    <p>{{ nextRunLabel }}</p>
-                  </ion-label>
-                  <ion-badge v-if="orderSync.isPaused" slot="end" color="warning">
-                    {{ translate("Paused") }}
-                  </ion-badge>
-                </ion-item>
-                <ion-item>
-                  <ion-label>{{ translate("Orders processed") }}</ion-label>
-                  <ion-note slot="end">{{ summary.processedOrderCount }}</ion-note>
-                </ion-item>
-                <ion-item>
-                  <ion-label>
-                    {{ translate("Latest batch outcome") }}
-                    <p>{{ latestBatch?.systemMessageId || translate("Awaiting first run") }}</p>
-                  </ion-label>
-                  <ion-badge slot="end" :color="progressColor(summary.overallStatus)">
-                    {{ progressStateLabel(summary.overallStatus) }}
-                  </ion-badge>
-                </ion-item>
-                <ion-item>
-                  <ion-label>{{ translate("Pending batch requests") }}</ion-label>
-                  <ion-badge slot="end" :color="summary.pendingBatchRequests ? 'primary' : 'medium'">
-                    {{ summary.pendingBatchRequests }}
-                  </ion-badge>
+                  <ion-label>{{ translate("Median sync delay") }}<p>{{ translate("Orders imported in the last hour") }}</p></ion-label>
+                  <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ medianLabel }}</ion-label>
                 </ion-item>
                 <ion-item lines="none">
-                  <ion-label>
-                    {{ translate("Product store") }}
-                    <p>{{ productStoreId || translate("Not linked") }}</p>
+                  <ion-label>{{ translate("Next scheduled sync") }}</ion-label>
+                  <ion-label slot="end" class="ion-text-end">{{ nextRunLabel }}
+                    <p v-if="nextRun">{{ relativeTime(nextRun) }}</p>
                   </ion-label>
-                  <ion-note slot="end">{{ productStoreName }}</ion-note>
                 </ion-item>
               </ion-list>
 
-              <ion-card-content v-if="runNowExplanation || actionMessage || actionError" class="action-feedback">
-                <p v-if="runNowExplanation">{{ runNowExplanation }}</p>
-                <p v-if="actionMessage" class="ion-text-success" role="status">{{ actionMessage }}</p>
+              <ion-card-content v-if="(!canRunNow && runNowDisabledReason) || actionMessage || actionError" class="action-feedback">
+                <p v-if="!canRunNow && runNowDisabledReason">{{ runNowDisabledReason }}</p>
+                <p v-if="actionMessage" role="status">{{ actionMessage }}</p>
                 <p v-if="actionError" class="ion-text-danger" role="alert">{{ actionError }}</p>
                 <p v-if="orderSync.lastRunResult?.systemMessageId">
                   {{ translate("Queued SystemMessage") }}:
@@ -176,75 +145,63 @@
 
             <ion-card class="progress">
               <ion-card-header>
-                <ion-card-title>{{ translate("Track sync progress") }}</ion-card-title>
-                <ion-card-subtitle>
-                  {{ translate("Follow the Shopify request and the resulting HotWax order imports") }}
-                </ion-card-subtitle>
+                <ion-card-title>{{ translate("Latest run") }}</ion-card-title>
                 <ion-buttons>
                   <ion-button
                     fill="clear"
                     :router-link="`${connectionDetailsHref}/order-sync/history`"
-                    :aria-label="translate('View import history')"
+                    :aria-label="translate('Batch history')"
                   >
-                    <ion-icon slot="icon-only" :icon="timeOutline" />
+                    {{ translate("Batch history") }}
                   </ion-button>
                 </ion-buttons>
               </ion-card-header>
 
               <ion-list lines="full">
-                <ion-item
-                  v-for="row in progressRows"
-                  :key="row.id"
-                  class="progress-item"
-                  :button="(row.id === 'batch-request' && !!latestBatch?.systemMessageId) || (row.id === 'hotwax-import' && !!progressImports[0]?.logId)"
-                  :detail="(row.id === 'batch-request' && !!latestBatch?.systemMessageId) || (row.id === 'hotwax-import' && !!progressImports[0]?.logId)"
-                  @click="openProgressDetails(row)"
-                >
-                  <ion-label>
-                    {{ progressRowTitle(row.id) }}
-                    <p>{{ progressDetailLabel(row) }}</p>
-
-                    <template v-if="row.id === 'batch-request'">
-                      <p v-if="latestBatch?.systemMessageId">
-                        {{ translate("SystemMessage") }}: {{ latestBatch.systemMessageId }}
-                      </p>
-                      <p v-else>{{ translate("SystemMessage not created yet") }}</p>
-                      <p>{{ translate("Requested") }}: {{ batchRequestedLabel }}</p>
-                      <p>{{ translate("Job run") }}: {{ latestBatch?.createdByJobRunId || translate("Not available") }}</p>
-                    </template>
-
-                    <template v-else>
-                      <p v-if="!progressImports.length && row.state === 'completed'">
-                        {{ translate("Completed with 0 actionable order changes. No DataManager import was required.") }}
-                      </p>
-                      <p v-else-if="!progressImports.length">
-                        {{ translate("Waiting for the Shopify batch request to produce an order import.") }}
-                      </p>
-                      <template v-else>
-                        <p v-for="log in progressImports" :key="log.logId || log.configId">
-                          <ion-button class="progress-fact-button" fill="clear" size="small" @click.stop="openMdmLogDetails(log.logId)">
-                            {{ importLabel(log.configId) }}, {{ rawStatusLabel(log.statusId, log.failedRecordCount, log.successRecordCount) }}, {{ log.totalRecordCount }} {{ translate("records") }}
-                          </ion-button>
-                        </p>
-                      </template>
-                    </template>
-                  </ion-label>
-                  <ion-badge slot="end" :color="progressColor(row.state)">
-                    {{ progressStateLabel(row.state) }}
-                  </ion-badge>
+                <ion-item>
+                  <ion-label>{{ translate("Queue sync window") }}<p v-if="latestBatch">{{ batchRequestedLabel }}</p></ion-label>
+                  <ion-label slot="end" class="ion-text-end">{{ latestBatch ? translate("Queued") : translate("Awaiting first run") }}</ion-label>
                 </ion-item>
+                <ion-item :button="!!latestBatch" :detail="!!latestBatch" @click="openSystemMessageDetails(latestBatch?.systemMessageId)">
+                  <ion-label class="ion-text-wrap">{{ translate("Fetch and stage changed orders") }}</ion-label>
+                  <ion-label slot="end" class="ion-text-end" :color="progressColor(summary.batchStatus)">{{ progressStateLabel(summary.batchStatus) }}</ion-label>
+                </ion-item>
+                <ion-item>
+                  <ion-label>{{ translate("Import into OMS") }}</ion-label>
+                  <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ importStepLabel }}</ion-label>
+                </ion-item>
+                <template v-for="group in (latestBatch && runLogs && !runReadFailed && orderSync.importConfigsAvailable ? importGroups : [])" :key="group.label">
+                  <ion-item :button="group.logs.length === 1" :detail="group.logs.length === 1" @click="group.logs.length === 1 && openMdmLogDetails(group.logs[0].logId)">
+                    <ion-label>{{ group.label }}</ion-label>
+                    <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ group.logs.length ? importCountsLabel(group.logs) : emptyImportLabel(summary.batchStatus) }}</ion-label>
+                  </ion-item>
+                  <template v-if="group.logs.length > 1">
+                    <ion-item v-for="log in group.logs" :key="log.logId" button detail @click="openMdmLogDetails(log.logId)">
+                      <ion-label>{{ translate("Import log") }} {{ log.logId }}</ion-label>
+                      <ion-label slot="end" class="ion-text-end">{{ progressStateLabel(orderImportState(log)) }}</ion-label>
+                    </ion-item>
+                  </template>
+                </template>
               </ion-list>
             </ion-card>
           </section>
 
-          <section class="sync-monitor" aria-labelledby="sync-monitor-heading">
-            <ion-item lines="none">
-              <ion-label>
-                {{ translate("Sync monitor") }}
-                <p>{{ translate("Review the jobs and pipeline that move orders from Shopify into HotWax") }}</p>
-              </ion-label>
-            </ion-item>
+          <ion-card v-if="failedImportLogs.length">
+            <ion-card-header>
+              <ion-card-title>{{ translate("Failed imports") }} ({{ failedImportLogs.length }})</ion-card-title>
+              <ion-card-subtitle>{{ translate("Across the latest {count} batches", { count: SHOPIFY_ORDER_SYNC_RESULT_LIMIT }) }}</ion-card-subtitle>
+            </ion-card-header>
+            <ion-list>
+              <ion-item v-for="log in failedImportLogs" :key="log.logId" button detail @click="openMdmLogDetails(log.logId)">
+                <ion-label>{{ importLabel(log.configId) }} · {{ log.logId }}
+                  <p>{{ translate("Batch") }} {{ log.systemMessageId }} · {{ formatDate(log.finishDateTime || log.createdDate) }}</p>
+                </ion-label>
+                <ion-note slot="end">{{ importCountsLabel([log]) }}</ion-note>
+              </ion-item>
+            </ion-list>
+          </ion-card>
 
+          <section class="sync-monitor" :aria-label="translate('Order sync jobs')">
             <ion-card>
               <ion-card-header>
                 <ion-card-title>{{ translate("Order sync jobs") }}</ion-card-title>
@@ -306,43 +263,7 @@
               </ion-list>
             </ion-card>
 
-            <ion-card>
-              <ion-card-header>
-                <ion-card-title>{{ translate("Pipeline") }}</ion-card-title>
-                <ion-card-subtitle>{{ translate("Monitor how the order sync pipeline is performing") }}</ion-card-subtitle>
-              </ion-card-header>
-              <ion-list>
-                <ion-item>
-                  <ion-label>
-                    {{ translate("Pending batch requests") }}
-                    <p>{{ translate("Shopify requests waiting to be processed") }}</p>
-                  </ion-label>
-                  <ion-label slot="end">{{ summary.pendingBatchRequests }}</ion-label>
-                </ion-item>
-                <ion-item>
-                  <ion-label>
-                    {{ translate("Current Shopify request status") }}
-                    <p>{{ latestBatch?.systemMessageId || translate("No recent request") }}</p>
-                  </ion-label>
-                  <ion-badge slot="end" :color="progressColor(summary.batchStatus)">
-                    {{ progressStateLabel(summary.batchStatus) }}
-                  </ion-badge>
-                </ion-item>
-                <ion-item>
-                  <ion-label>{{ translate("Order history records") }}</ion-label>
-                  <ion-label slot="end">{{ orderSync.recentOrders.length }}</ion-label>
-                </ion-item>
-                <ion-item>
-                  <ion-label>
-                    {{ translate("Failed DataManager runs") }}
-                    <p>{{ translate("Order imports with one or more error records") }}</p>
-                  </ion-label>
-                  <ion-label slot="end">{{ failedImportLogs.length }}</ion-label>
-                </ion-item>
-              </ion-list>
-            </ion-card>
-
-            <ShopifyOrderSyncCustomRequestCard @open-search="openCustomOrderRequest" @open-replay="openOrdersReplay" />
+            <ShopifyOrderSyncCustomRequestCard :disabled="!!orderSync.activeMutation || !capabilities.canRetryIndividualOrder || !loadedShopMatchesRoute" @open-search="openCustomOrderRequest" @open-replay="openOrdersReplay" />
           </section>
 
           <section class="sync-stat" aria-labelledby="recent-orders-heading">
@@ -355,36 +276,31 @@
               <ion-item class="stat-title" lines="none">
                 <ion-label>
                   {{ translate("Recent order sync history") }}
-                  <p>{{ translate("Latest 100 records stitched from Shopify order history models, newest first") }}</p>
+                  <p>{{ orderSync.historySource === "orders" ? translate("Shopify matches among the latest 100 OMS sales orders for this product store") : translate("Latest order sync records for this shop") }}</p>
                 </ion-label>
-                <ion-badge slot="end" color="medium">{{ orderSync.recentOrders.length }}</ion-badge>
+                <ion-badge v-if="!orderSync.historyError" slot="end" color="medium">{{ orderSync.recentOrders.length }}</ion-badge>
               </ion-item>
               <ion-searchbar
                 :value="ordersQuery"
-                :debounce="0"
-                :placeholder="translate('Search the loaded orders by Shopify name or ID')"
+                :disabled="!orderSync.recentOrders.length"
+                :placeholder="translate('Search by order name, Shopify ID, or OMS ID')"
                 :aria-label="translate('Search order sync history')"
                 @ionInput="ordersQuery = String($event.detail.value || '')"
               />
             </div>
+            <ion-item v-if="orderSync.historyError" role="status">
+              <ion-label>{{ translate("Order history is unavailable.") }}
+                <p v-if="orderSync.recentOrders.length">{{ translate("Showing the last loaded orders.") }}</p>
+              </ion-label>
+              <ion-button slot="end" :disabled="orderSync.historyLoading" @click="orderSync.loadHistory(id)">{{ translate("Retry") }}</ion-button>
+            </ion-item>
             <div class="stat-data" role="list">
               <transition-group name="list" tag="div" class="list-transition-group">
-                <ion-card v-for="order in filteredOrders" :key="order.id" role="listitem">
+                <ion-card v-for="order in filteredOrders" :key="order.orderId || order.shopifyOrderId" role="listitem">
                   <ion-list lines="full">
                     <ion-item>
                       <ion-label class="ion-text-wrap">
                         {{ order.orderName || order.shopifyOrderId }}
-                        <p>{{ translate("Shopify order") }} {{ order.shopifyOrderId || translate("Not available") }}</p>
-                        <p>{{ translate("Processed") }}: {{ formatDate(order.processedAt) }}</p>
-                      </ion-label>
-                      <ion-badge slot="end" :color="order.outcome === 'Created' ? 'success' : 'primary'">
-                        {{ translate(order.outcome) }}
-                      </ion-badge>
-                    </ion-item>
-                    <ion-item>
-                      <ion-label>
-                        {{ translate("Shopify order ID") }}
-                        <p>{{ order.shopifyOrderId }}</p>
                       </ion-label>
                       <ion-button
                         v-if="shopifyAdminOrderUrl(order)"
@@ -400,97 +316,44 @@
                         <ion-icon slot="icon-only" :icon="openOutline" />
                       </ion-button>
                     </ion-item>
-                    <ion-card-content v-if="order.outcome === 'Updated'">
-                      <p class="history-object-heading">{{ translate("Updated objects") }}</p>
-                      <div v-if="order.updatedObjects.length" class="history-object-list">
-                        <ion-chip v-for="object in order.updatedObjects" :key="object.objectType">
-                          <ion-label>{{ historyObjectLabel(object.objectType, object.count) }}</ion-label>
-                        </ion-chip>
-                      </div>
-                      <p v-if="order.updatedObjects.length && !order.changeDetailsComplete" class="ion-no-margin">
-                        {{ translate("Legacy history may not include every updated object.") }}
-                      </p>
-                      <p v-else class="ion-no-margin">
-                        {{ order.changeDetailsComplete
-                          ? translate("No tracked order objects changed.")
-                          : translate("Object-level details were not recorded for this legacy update.") }}
-                      </p>
-                    </ion-card-content>
+                    <ion-item>
+                      <ion-label>{{ translate("Shopify order ID") }}</ion-label>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ order.shopifyOrderId }}</ion-label>
+                    </ion-item>
+                    <ion-item v-if="order.orderId">
+                      <ion-label>{{ translate("OMS order ID") }}</ion-label>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ order.orderId }}</ion-label>
+                    </ion-item>
+                    <ion-item>
+                      <ion-label>{{ translate("Order placed") }}</ion-label>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ formatOrderTimestamp(order.orderDate) }}</ion-label>
+                    </ion-item>
+                    <ion-item>
+                      <ion-label>{{ translate("Imported into OMS") }}</ion-label>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ formatOrderTimestamp(order.importedAt) }}</ion-label>
+                    </ion-item>
+                    <ion-item>
+                      <ion-label>{{ translate("Time to import") }}</ion-label>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ importDelay(order) }}</ion-label>
+                    </ion-item>
+                    <ion-item v-if="order.historyUpdatedAt">
+                      <ion-label>{{ translate("History updated") }}</ion-label>
+                      <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ formatDate(order.historyUpdatedAt) }}</ion-label>
+                    </ion-item>
                   </ion-list>
                 </ion-card>
               </transition-group>
-              <ion-card v-if="!filteredOrders.length">
+              <ion-card v-if="!filteredOrders.length && !orderSync.historyError">
                 <ion-item lines="none">
                   <ion-label class="ion-text-center">
                     <p v-if="ordersQuery">{{ translate("No loaded orders match this search.") }}</p>
-                    <p v-else>{{ recentOrdersEmptyMessage }}</p>
+                    <p v-else>{{ translate("No matching orders in the loaded history.") }}</p>
                   </ion-label>
                 </ion-item>
               </ion-card>
             </div>
           </section>
 
-          <section class="sync-stat" aria-labelledby="failed-import-logs-heading">
-            <div class="stat-header">
-              <ion-item class="stat-title" lines="none">
-                <ion-label>
-                  {{ translate("Failed DataManager runs") }}
-                  <p>{{ translate("Latest Order Sync imports with one or more error records, newest first") }}</p>
-                </ion-label>
-                <ion-badge slot="end" :color="failedImportLogs.length ? 'danger' : 'medium'">
-                  {{ failedImportLogs.length }}
-                </ion-badge>
-              </ion-item>
-            </div>
-
-            <div class="stat-data" role="list">
-              <transition-group name="list" tag="div" class="list-transition-group">
-                <ion-card v-for="log in failedImportLogs" :key="log.logId" role="listitem">
-                  <ion-list lines="full">
-                    <ion-item>
-                      <ion-label>{{ translate("Log ID") }}</ion-label>
-                      <ion-note slot="end">{{ log.logId }}</ion-note>
-                    </ion-item>
-                    <ion-item>
-                      <ion-label>{{ translate("Created") }}</ion-label>
-                      <ion-note slot="end">{{ formatDate(log.createdDate) }}</ion-note>
-                    </ion-item>
-                    <ion-item>
-                      <ion-label>{{ translate("Start time") }}</ion-label>
-                      <ion-note slot="end">{{ formatDate(log.startDateTime) }}</ion-note>
-                    </ion-item>
-                    <ion-item>
-                      <ion-label>{{ translate("End time") }}</ion-label>
-                      <ion-note slot="end">{{ formatDate(log.finishDateTime || log.lastUpdatedTxStamp) }}</ion-note>
-                    </ion-item>
-                    <ion-item>
-                      <ion-label>{{ translate("Records") }}</ion-label>
-                      <ion-note slot="end">
-                        {{ log.totalRecordCount }} {{ translate(log.totalRecordCount === 1 ? "record" : "records") }},
-                        {{ log.failedRecordCount }} {{ translate(log.failedRecordCount === 1 ? "error record" : "error records") }}
-                      </ion-note>
-                    </ion-item>
-                    <ion-item lines="none">
-                      <ion-button
-                        slot="end"
-                        fill="clear"
-                        @click="openMdmLogDetails(log.logId)"
-                      >
-                        {{ translate("View DataManager run") }}
-                      </ion-button>
-                    </ion-item>
-                  </ion-list>
-                </ion-card>
-              </transition-group>
-              <ion-card v-if="!failedImportLogs.length">
-                <ion-item lines="none">
-                  <ion-label class="ion-text-center">
-                    <p>{{ translate("No DataManager runs with error records were found for this Shopify instance.") }}</p>
-                  </ion-label>
-                </ion-item>
-              </ion-card>
-            </div>
-          </section>
         </template>
       </main>
     </ion-content>
@@ -565,39 +428,18 @@
       </ion-header>
       <ion-content>
         <ion-list lines="full">
-          <ion-item lines="none">
-            <ion-label class="ion-text-wrap">
-              {{ translate("Replay orders from a date range") }}
-              <p>{{ translate("Re-import Shopify orders through the standard import path. The run covers every order updated since the From date; the date range previews the orders it targets.") }}</p>
+          <ion-item>
+            <ion-label class="ion-text-wrap">{{ shopName }}
+              <p>{{ translate("Import orders updated from midnight on the chosen date through the start of this replay ({zone}). Keep this page open until it finishes.", { zone: replayZone }) }}</p>
             </ion-label>
           </ion-item>
           <ion-item>
-            <ion-select
-              :label="translate('Match orders by')"
-              :value="replayBasis"
-              interface="popover"
-              @ionChange="replayBasis = $event.detail.value === 'created_at' ? 'created_at' : 'updated_at'"
-            >
-              <ion-select-option value="updated_at">{{ translate("Updated time") }}</ion-select-option>
-              <ion-select-option value="created_at">{{ translate("Created time") }}</ion-select-option>
-            </ion-select>
+            <ion-input type="date" :label="translate('Updated since')" :max="replayToday" v-model="replayFromDate" />
           </ion-item>
-          <ion-item class="replay-date-range" lines="none">
-            <ion-input type="date" :value="replayFromDate" label-placement="stacked" clear-input :aria-label="translate('From date')" @ionInput="replayFromDate = String($event.detail.value || '')">
-              <div slot="label">{{ translate("From date") }}</div>
-            </ion-input>
-            <ion-input type="date" :value="replayThruDate" label-placement="stacked" clear-input :aria-label="translate('Thru date')" @ionInput="replayThruDate = String($event.detail.value || '')">
-              <div slot="label">{{ translate("Thru date") }}</div>
-            </ion-input>
-          </ion-item>
-          <ion-note v-if="replayDateRangeError" color="danger" class="replay-date-range-error">{{ replayDateRangeError }}</ion-note>
-          <ion-note v-else class="replay-date-range-help">
-            {{ translate("Dates are inclusive and use the OMS runtime timezone: {timeZone}.", { timeZone: orderSync.runtimeTimeZone || "UTC" }) }}
-          </ion-note>
           <ion-item lines="none" class="replay-actions">
-            <ion-button fill="clear" :disabled="isReplayStarting" @click="showReplayOrdersModal = false">{{ translate("Cancel") }}</ion-button>
-            <ion-button fill="solid" color="primary" :disabled="isReplayStarting" @click="startOrdersReplay">
-              <ion-spinner v-if="isReplayStarting" name="crescent" />
+            <ion-button fill="clear" :disabled="orderSync.activeMutation === 'replay-orders'" @click="showReplayOrdersModal = false">{{ translate("Cancel") }}</ion-button>
+            <ion-button fill="solid" color="primary" :disabled="!replayFromDate || replayFromDate > replayToday || !!orderSync.activeMutation" @click="startOrdersReplay">
+              <ion-spinner v-if="orderSync.activeMutation === 'replay-orders'" name="crescent" />
               <span v-else>{{ translate("Start replay") }}</span>
             </ion-button>
           </ion-item>
@@ -664,7 +506,7 @@
       <ion-footer>
         <ion-toolbar>
           <ion-buttons slot="start"><ion-button fill="clear" :disabled="!selectedOrders.length" @click="selectedOrdersById = {}">{{ translate("Clear") }}</ion-button></ion-buttons>
-          <ion-buttons slot="end"><ion-button fill="solid" color="primary" :disabled="!selectedOrders.length" @click="submit">{{ translate("Download selected orders") }} ({{ selectedOrders.length }})</ion-button></ion-buttons>
+          <ion-buttons slot="end"><ion-button fill="solid" color="primary" :disabled="!selectedOrders.length || !!orderSync.activeMutation" @click="submit">{{ translate("Download selected orders") }} ({{ selectedOrders.length }})</ion-button></ion-buttons>
         </ion-toolbar>
       </ion-footer>
     </ion-modal>
@@ -711,7 +553,6 @@ import {
   IonCardSubtitle,
   IonCardTitle,
   IonCheckbox,
-  IonChip,
   IonContent,
   IonDatetime,
   IonDatetimeButton,
@@ -731,8 +572,6 @@ import {
   IonPopover,
   IonProgressBar,
   IonSearchbar,
-  IonSelect,
-  IonSelectOption,
   IonSkeletonText,
   IonSpinner,
   IonTitle,
@@ -745,12 +584,14 @@ import {
   isOrderSyncBatchActive,
   ORDER_SYNC_FEATURE,
   getSyncCapabilities,
+  getNextSyncRun,
+  fetchOrderRunImports,
+  deriveSyncProgress,
   orderSyncRunNowDisabledReason,
   orderSyncSummary,
   useShopifyOrderSyncPolling,
   useShopifyOrderSync,
-  type SyncProgressRow,
-  type SyncProgressState,
+  SHOPIFY_ORDER_SYNC_RESULT_LIMIT,
   type ShopifyOrderSyncImport,
   type ShopifyOrderSyncRecentOrder,
   type ShopifyOrderSyncSearchResult,
@@ -758,8 +599,11 @@ import {
 import { commonUtil, logger, translate } from "@common";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { DateTime } from "luxon";
-import { closeOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
-import { formatDateTime } from "@/utils";
+import { closeOutline, flashOutline, openOutline, refreshOutline } from "ionicons/icons";
+import { formatDateTime, parseDateTimeValue } from "@/utils";
+import { formatSyncDuration } from "@/utils/shopifyTransferSyncPresentation";
+import { importCountsLabel, orderImportGroups, emptyImportLabel, orderImportState, progressColor, progressStateLabel, sumReported } from "@/utils/orderImportDisplay";
+import { useOrderArrivalMetrics } from "@/composables/useOrderArrivalMetrics";
 import { useUserStore } from "@/store/user";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
@@ -815,6 +659,7 @@ async function refreshStore() {
 
 const polling = useShopifyOrderSyncPolling({
   batchActive: () => isBatchActive.value,
+  remoteIds: () => orderSync.remoteIds,
   refresh: refreshStore,
   onError: (error) => {
     pollingError.value = errorMessage(error, translate("Order Sync monitoring could not be refreshed."));
@@ -849,13 +694,13 @@ watch(() => props.id, (nextId, previousId) => {
 const connectionDetailsHref = computed(() => `/shopify-connection-details/${encodeURIComponent(props.id)}`);
 const configurationHref = computed(() => `${connectionDetailsHref.value}/order-sync/configure`);
 const hasLoadedMonitoring = computed(() => Boolean(orderSync.monitoringLoadedAt));
-const isInitialLoading = computed(() => !hasLoadedMonitoring.value && !orderSync.monitoringError);
+const isInitialLoading = computed(() => (!hasLoadedMonitoring.value || !orderSync.hydrated) && !orderSync.monitoringError && !pollingError.value);
 const isRefreshing = computed(() => orderSync.monitoringRefreshing || polling.isRefreshing.value);
 const fatalLoadError = computed(() => hasLoadedMonitoring.value ? "" : (orderSync.monitoringError || pollingError.value));
 const staleRefreshError = computed(() => hasLoadedMonitoring.value ? (orderSync.monitoringError || pollingError.value) : "");
 const selectedShopMatchesRoute = computed(() => Boolean(props.id) && orderSync.selectedShopId === props.id);
 const loadedShopMatchesRoute = computed(() => selectedShopMatchesRoute.value && orderSync.shop?.shopId === props.id);
-const canRunForSelectedShop = computed(() => loadedShopMatchesRoute.value && canRunNow.value);
+const canRunForSelectedShop = computed(() => loadedShopMatchesRoute.value && capabilities.value.canRunNow && canRunNow.value && !orderSync.activeMutation);
 const canEditJobFromModal = computed(() => loadedShopMatchesRoute.value
   && capabilities.value.canEditSchedule
   && capabilities.value.canActivate
@@ -864,115 +709,108 @@ const editJobDisabledReason = computed(() => canEditJobFromModal.value
   ? ""
   : translate("COMMON_ADMIN permission is required to edit Order Sync."));
 const shopName = computed(() => orderSync.shop?.name || translate("Shopify instance {id}", { id: props.id }));
-const shopifyShopId = computed(() => orderSync.shop?.shopifyShopId || "");
-const productStoreId = computed(() => orderSync.productStore?.productStoreId || orderSync.shop?.productStoreId || "");
-const productStoreName = computed(() => orderSync.productStore?.storeName || orderSync.productStore?.name || orderSync.shop?.productStoreName || translate("Not linked"));
 const latestBatch = computed(() => summary.value.latestBatch);
-const latestCompletedBatchId = computed(() => summary.value.latestCompletedBatch?.systemMessageId || translate("None"));
-const progressRows = computed<readonly [SyncProgressRow, SyncProgressRow]>(() => summary.value.progressRows);
-const progressImports = computed<ShopifyOrderSyncImport[]>(() => {
-  const systemMessageId = latestBatch.value?.systemMessageId;
-  return systemMessageId ? orderSync.importsBySystemMessageId[systemMessageId] || [] : [];
+const { metrics, failed: metricsFailed, now, refresh: refreshMetrics } = useOrderArrivalMetrics(
+  () => props.id,
+  () => loadedShopMatchesRoute.value ? orderSync.shop?.productStoreId || "" : "",
+  polling.isPageActive,
+  () => orderSync.latestImportChange,
+);
+const arrivals = computed(() => metricsFailed.value ? undefined : metrics.value);
+const unavailable = computed(() => metricsFailed.value || !orderSync.shop?.productStoreId ? translate("Not available") : translate("Loading"));
+const latestOrderHref = computed(() => arrivals.value?.latest ? shopifyAdminOrderUrl(arrivals.value.latest) : "");
+function relativeTime(value: Date | string) {
+  const date = parseDateTimeValue(value);
+  return date?.toRelative({ base: DateTime.fromMillis(now.value) }) || translate("Not available");
+}
+const latestArrivalLabel = computed(() => arrivals.value?.latest ? relativeTime(arrivals.value.latest.entryDate)
+  : arrivals.value ? translate("No imports recorded") : unavailable.value);
+const medianLabel = computed(() => {
+  if (!arrivals.value) return unavailable.value;
+  if (!arrivals.value.count) return translate("No imports in the last hour");
+  const ms = arrivals.value.medianMs;
+  return ms == null ? translate("Not available") : formatDelay(ms);
 });
+const runLogs = ref<{ id: string; logs: ShopifyOrderSyncImport[] }>();
+const runReadFailed = ref(false);
+watch([() => polling.isPageActive.value && latestBatch.value?.systemMessageId, () => latestBatch.value?.statusId, () => orderSync.latestImportChange, () => orderSync.monitoringLoadedAt],
+  async ([id], _, onCleanup) => {
+    if (id !== runLogs.value?.id) runLogs.value = undefined;
+    if (!id) return;
+    let current = true;
+    onCleanup(() => { current = false; });
+    runReadFailed.value = false;
+    try {
+      const logs = await fetchOrderRunImports(id);
+      if (current) runLogs.value = { id, logs };
+    } catch {
+      if (current) runReadFailed.value = true;
+    }
+  }, { immediate: true });
+const progressImports = computed(() => runLogs.value?.id === latestBatch.value?.systemMessageId ? runLogs.value?.logs || [] : []);
+const visibleLogs = computed(() => [...progressImports.value, ...Object.values(orderSync.importsBySystemMessageId).flat()]);
 const selectedSystemMessageDetails = computed(() => {
   const message = (orderSync.systemMessages || [])
     .find((row) => row.systemMessageId === selectedSystemMessageId.value);
-  const imports = orderSync.importsBySystemMessageId[selectedSystemMessageId.value] || [];
-  const successfulAudit = (orderSync.recentAudits || [])
-    .find((row) => row.systemMessageId === selectedSystemMessageId.value);
-  const requestFailure = (orderSync.recentRequestErrors || [])
-    .find((row) => row.systemMessageId === selectedSystemMessageId.value);
-  const importFailure = (orderSync.recentErrors || [])
-    .find((row) => row.systemMessageId === selectedSystemMessageId.value);
-  const totalRecordCount = imports.length
-    ? imports.reduce((total, row) => total + row.totalRecordCount, 0)
-    : successfulAudit ? 1 : undefined;
-  const failedRecordCount = imports.length
-    ? imports.reduce((total, row) => total + row.failedRecordCount, 0)
-    : undefined;
-  const importStatuses = imports.map((row) => String(row.statusId || "").toLocaleLowerCase());
-  const importsFailed = imports.length > 0 && ((failedRecordCount ?? 0) > 0
-    || importStatuses.some((status) => status.includes("fail") || status.includes("crash") || status.includes("reject")));
-  const importsActive = imports.length > 0
-    && importStatuses.some((status) => status.includes("pending") || status.includes("run") || status.includes("process"));
-  const importsCompleted = imports.length > 0
-    && !importsFailed
-    && !importsActive
-    && importStatuses.every((status) => status.includes("finish") || status.includes("complete") || status.includes("success"));
+  const imports = runLogs.value?.id === selectedSystemMessageId.value ? progressImports.value : orderSync.importsBySystemMessageId[selectedSystemMessageId.value] || [];
   return {
-    statusId: requestFailure
-      ? "Failed"
-      : importsFailed
-        ? "Failed"
-        : importsActive
-          ? "In progress"
-          : importsCompleted
-            ? "Completed"
-            : message?.statusId || (importFailure ? "Failed" : successfulAudit ? "Completed" : undefined),
-    systemMessageTypeId: message?.systemMessageTypeId || (successfulAudit || requestFailure || importFailure ? "ShopifyOrderSync" : undefined),
+    statusId: message?.statusId,
+    systemMessageTypeId: message?.systemMessageTypeId,
     systemMessageRemoteId: message?.systemMessageRemoteId,
-    requestedAt: message?.initDate || requestFailure?.occurredAt,
-    completedAt: message?.processedDate || message?.lastUpdatedStamp || successfulAudit?.processedAt || requestFailure?.occurredAt || importFailure?.occurredAt,
-    totalRecordCount,
-    failureCount: failedRecordCount !== undefined ? failedRecordCount : (requestFailure || importFailure ? 1 : successfulAudit ? 0 : undefined),
-    requestFailedBeforeImport: !!requestFailure,
-    requestFailureText: requestFailure?.errorText,
+    requestedAt: message?.initDate,
+    completedAt: message?.processedDate,
+    totalRecordCount: sumReported(imports, "totalRecordCount"),
+    failureCount: sumReported(imports, "failedRecordCount"),
   };
 });
 const selectedMdmLogDetails = computed(() => {
-  const imports = Object.values(orderSync.importsBySystemMessageId || {}).flat();
-  const imported = imports.find((entry) => entry.logId === selectedMdmLogId.value);
-  const successfulAudits = (orderSync.recentAudits || [])
-    .filter((order) => order.logId === selectedMdmLogId.value);
-  const failed = (orderSync.recentErrors || [])
-    .find((error) => error.logId === selectedMdmLogId.value);
-  const latestAudit = successfulAudits
-    .slice()
-    .sort((first, second) => second.processedAtMillis - first.processedAtMillis)[0];
-  return {
-    statusId: imported?.statusId || (successfulAudits.length ? "DmlsFinished" : failed ? "DmlsFailed" : undefined),
-    configId: imported?.configId || latestAudit?.configId || failed?.configId,
-    systemMessageId: imported?.systemMessageId || latestAudit?.systemMessageId || failed?.systemMessageId,
-    startedAt: imported?.createdDate,
-    completedAt: imported?.finishDateTime || latestAudit?.processedAt || failed?.occurredAt,
-    totalRecordCount: imported?.totalRecordCount ?? (successfulAudits.length || (failed ? 1 : undefined)),
-    successRecordCount: imported?.successRecordCount ?? (successfulAudits.length || (failed ? 0 : undefined)),
-    failedRecordCount: imported?.failedRecordCount ?? (successfulAudits.length ? 0 : failed ? 1 : undefined),
-  };
+  const log = visibleLogs.value.find(entry => entry.logId === selectedMdmLogId.value);
+  return { ...log, startedAt: log?.startDateTime, completedAt: log?.finishDateTime };
+});
+const importGroups = computed(() => orderImportGroups(progressImports.value, orderSync.importConfigIds));
+const importStepLabel = computed(() => {
+  if ((!orderSync.importConfigsAvailable || runReadFailed.value) && latestBatch.value) return translate("Import status unavailable");
+  if (latestBatch.value && !runLogs.value) return translate("Loading");
+  const [batch, imports] = deriveSyncProgress(latestBatch.value, progressImports.value);
+  return progressImports.value.length ? progressStateLabel(imports.state) : emptyImportLabel(batch.state);
 });
 const filteredOrders = computed(() => filterRecentOrders(orderSync.recentOrders, ordersQuery.value));
-const failedImportLogs = computed(() => {
-  return orderSync.failedDataManagerLogs || [];
-});
+const failedImportLogs = computed(() => orderSync.failedDataManagerLogs);
 
 const jobStateLabel = computed(() => {
   if (!orderSync.job) return translate("Setup required");
   return orderSync.isPaused ? translate("Paused") : translate("Active");
 });
 const jobStateColor = computed(() => !orderSync.job ? "medium" : orderSync.isPaused ? "warning" : "success");
-const lastCompletedBatchLabel = computed(() => summary.value.lastCompletedAt
-  ? formatDate(summary.value.lastCompletedAt)
-  : translate("No completed batch recorded"));
+const nextRun = computed(() => orderSync.job && !orderSync.isPaused
+  ? getNextSyncRun(orderSync.job.cronExpression, {
+    currentDate: new Date(now.value), timeZone: orderSync.productStore?.defaultTimeZone || orderSync.productStore?.timeZone,
+  }) : null);
 const nextRunLabel = computed(() => {
   if (!orderSync.job) return translate("Not configured");
   if (orderSync.isPaused) return translate("Paused");
-  return summary.value.nextRunTime ? formatDate(summary.value.nextRunTime) : translate("Not scheduled");
+  return nextRun.value ? formatDateTime(nextRun.value, "h:mm a ZZZZ") : translate("Not scheduled");
 });
 const batchRequestedLabel = computed(() => latestBatch.value?.initDate
   ? formatDate(latestBatch.value.initDate)
   : translate("Not requested yet"));
-const runNowExplanation = computed(() => {
-  if (canRunNow.value) {
-    return translate("Queues the standard next batch window from the existing job configuration.");
-  }
-  return runNowDisabledReason.value;
-});
-const recentOrdersEmptyMessage = computed(() => {
-  return translate("No order sync history records were found for this Shopify instance.");
-});
-
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function formatOrderTimestamp(value?: string) {
+  return formatDateTime(value, "LLL d, yyyy, h:mm:ss a ZZZZ") || translate("Not available");
+}
+
+function importDelay(order: ShopifyOrderSyncRecentOrder) {
+  const placed = parseDateTimeValue(order.orderDate);
+  const imported = parseDateTimeValue(order.importedAt);
+  if (!placed || !imported) return translate("Not available");
+  return formatDelay(imported.toMillis() - placed.toMillis());
+}
+
+function formatDelay(ms: number) {
+  return (ms < 0 ? "−" : "") + formatSyncDuration(Math.abs(ms));
 }
 
 function formatDate(value: unknown): string {
@@ -986,87 +824,11 @@ function landmarkDateLabel(value: string): string {
   return formatDateTime(value) || value;
 }
 
-function progressRowTitle(id: SyncProgressRow["id"]): string {
-  return id === "batch-request"
-    ? translate("Shopify order batch request")
-    : translate("HotWax order import");
-}
-
-function progressStateLabel(state: SyncProgressState): string {
-  if (state === "completed") return translate("Completed");
-  if (state === "partial") return translate("Partially completed");
-  if (state === "failed") return translate("Failed");
-  if (state === "active") return translate("In progress");
-  return translate("Waiting");
-}
-
-function progressDetailLabel(row: SyncProgressRow): string {
-  if (row.id === "batch-request") {
-    if (row.state === "completed") return translate("Request completed");
-    if (row.state === "failed") return translate("Request failed");
-    if (row.state === "active") return translate("Request in progress");
-    return translate("Waiting for request");
-  }
-  if (row.state === "completed") {
-    return row.successfulRecords === 1
-      ? translate("Completed, {count} order", { count: row.successfulRecords })
-      : translate("Completed, {count} orders", { count: row.successfulRecords });
-  }
-  if (row.state === "partial") {
-    return translate("Partially completed, {processed} processed, {failed} failed", {
-      processed: row.successfulRecords,
-      failed: row.failedRecords,
-    });
-  }
-  if (row.state === "failed" && row.failedRecords) {
-    return row.failedRecords === 1
-      ? translate("Failed, {count} record", { count: row.failedRecords })
-      : translate("Failed, {count} records", { count: row.failedRecords });
-  }
-  return progressStateLabel(row.state);
-}
-
-function progressColor(state: SyncProgressState): string {
-  if (state === "completed") return "success";
-  if (state === "partial") return "warning";
-  if (state === "failed") return "danger";
-  if (state === "active") return "primary";
-  return "medium";
-}
-
-function normalizedStatus(status: unknown): string {
-  return String(status || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function rawStatusLabel(status: unknown, failed = 0, successful = 0): string {
-  const value = normalizedStatus(status);
-  if (failed > 0 && successful > 0) return translate("Partially completed");
-  if (failed > 0 || value.includes("error") || value.includes("fail") || value.includes("reject")) return translate("Failed");
-  if (value.includes("complete") || value.includes("success") || value.includes("finish") || value.includes("sent") || value.includes("consumed") || value.includes("confirmed")) return translate("Completed");
-  if (value.includes("running") || value.includes("active") || value.includes("processing") || value.includes("sending") || value.includes("produced")) return translate("In progress");
-  if (value.includes("pause")) return translate("Paused");
-  return status ? String(status) : translate("Not available");
-}
-
 /** `configId` is optional on a cached import row, so the label must accept its absence. */
 function importLabel(configId: string | undefined): string {
-  return configId === "SYNC_SHOPIFY_ORDER"
+  return configId === orderSync.importConfigIds[0]
     ? translate("New order import")
     : translate("Updated order import");
-}
-
-function historyObjectLabel(objectType: string, count: number): string {
-  const labels: Record<string, [string, string]> = {
-    Order: ["Order", "Orders"],
-    OrderItem: ["Order item", "Order items"],
-    Transaction: ["Transaction", "Transactions"],
-    Refund: ["Refund", "Refunds"],
-    Return: ["Return", "Returns"],
-    Fulfillment: ["Fulfillment", "Fulfillments"],
-    FulfillmentLocation: ["Fulfillment location", "Fulfillment locations"],
-  };
-  const [singular, plural] = labels[objectType] || [objectType, objectType];
-  return `${translate(count === 1 ? singular : plural)}: ${count}`;
 }
 
 function openSystemMessageDetails(systemMessageId: unknown) {
@@ -1079,12 +841,7 @@ function openSystemMessageDetails(systemMessageId: unknown) {
 function openMdmLogDetails(logId: unknown) {
   const id = String(logId || "").trim();
   if (!id) return;
-  const safeLogIds = new Set([
-    ...Object.values(orderSync.importsBySystemMessageId || {}).flat().map((entry) => entry.logId),
-    ...(orderSync.recentAudits || []).map((order) => order.logId),
-    ...(orderSync.recentErrors || []).map((error) => error.logId),
-  ].filter(Boolean));
-  if (!safeLogIds.has(id)) return;
+  if (!visibleLogs.value.some(log => log.logId === id)) return;
   selectedMdmLogId.value = id;
   showMdmLogModal.value = true;
 }
@@ -1125,14 +882,15 @@ function openCustomOrderRequest() {
 async function searchOrders(after?: string) {
   isLoading.value = true;
   const currentRequestId = ++requestId;
+  const shopId = props.id;
   try {
-    const result = await orderSync.searchShopifyOrders({ queryString: queryString.value.trim(), after, pageSize: 20 });
-    if (currentRequestId !== requestId) return;
+    const result = await orderSync.searchShopifyOrders({ queryString: queryString.value.trim(), after, pageSize: 20, shopId });
+    if (currentRequestId !== requestId || shopId !== props.id) return;
     orders.value = after ? orders.value.concat(result.orders) : result.orders;
     hasNextPage.value = result.hasNextPage;
     endCursor.value = result.endCursor ?? "";
   } catch (error) {
-    if (currentRequestId !== requestId) return;
+    if (currentRequestId !== requestId || shopId !== props.id) return;
     const serverError = commonUtil.getErrorMessage(error);
     logger.error(error);
     commonUtil.showToast(`${translate("Failed to search Shopify orders.")} ${serverError}`);
@@ -1170,32 +928,27 @@ function toggleAll() {
 function isSelected(id: string) { return Boolean(selectedOrdersById.value[id]); }
 function formatOrderDate(value?: string) { return value ? formatDateTime(value) : translate("Date unavailable"); }
 
-async function submit() {
-  const selectedIds = selectedOrders.value.map((order) => order.legacyResourceId);
-  showCustomOrderRequestModal.value = false;
-  if (!selectedIds.length) return;
-  const requestedShopId = props.id;
-  actionMessage.value = "";
+async function runImport(importOrders: () => Promise<{ imported: number; failed: string[] }>) {
+  const shopId = props.id;
+  actionMessage.value = translate("Import in progress. Keep this page open.");
   actionError.value = "";
   try {
-    const result = await orderSync.requestSelectedOrders({ orders: selectedOrders.value, shopId: requestedShopId });
-    if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
-    if (result.queued.length === 1) {
-      actionMessage.value = translate("Requested import run {id} covering Shopify order {order}.", {
-        order: result.queued[0].shopifyOrderId,
-        id: result.jobRunId,
-      });
-    } else {
-      actionMessage.value = translate("Requested import run {id} covering {count} Shopify orders.", {
-        count: result.queued.length,
-        id: result.jobRunId,
-      });
-    }
-    await polling.manualRefresh();
+    const result = await importOrders();
+    if (props.id !== shopId) return;
+    actionMessage.value = translate("{succeeded} succeeded · {failed} failed", { succeeded: result.imported, failed: result.failed.length });
+    if (result.failed.length) actionError.value = translate("Could not confirm import for Shopify orders: {ids}", { ids: result.failed.join(", ") });
+    void polling.manualRefresh().catch(error => logger.error(error));
   } catch (error) {
-    if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
-    actionError.value = errorMessage(error, translate("The selected Shopify orders could not be queued."));
+    if (props.id !== shopId) return;
+    actionMessage.value = "";
+    actionError.value = errorMessage(error, translate("Order import failed."));
   }
+}
+
+function submit() {
+  if (!capabilities.value.canRetryIndividualOrder || orderSync.activeMutation || !selectedOrders.value.length) return;
+  showCustomOrderRequestModal.value = false;
+  void runImport(() => orderSync.requestSelectedOrders({ ids: Object.keys(selectedOrdersById.value), shopId: props.id }));
 }
 
 onBeforeUnmount(() => { if (debounceTimer) window.clearTimeout(debounceTimer); });
@@ -1273,100 +1026,36 @@ function toDatetimeInput(value: string): string {
   return formatDateTime(value, "yyyy-MM-dd'T'HH:mm:ss") || "";
 }
 
-const REPLAY_ORDER_LIMIT = 50;
 const showReplayOrdersModal = ref(false);
-const replayBasis = ref<"updated_at" | "created_at">("updated_at");
 const replayFromDate = ref("");
-const replayThruDate = ref("");
-const isReplayStarting = ref(false);
-const replayDateRangeError = computed(() => {
-  if (!replayFromDate.value || !replayThruDate.value || replayFromDate.value <= replayThruDate.value) return "";
-  return translate("From date must be on or before Thru date.");
-});
+const replayZone = computed(() => orderSync.productStore?.defaultTimeZone || userStore.getUserTimeZone || "UTC");
+const replayToday = ref("");
 
 function openOrdersReplay() {
-  if (!capabilities.value.canRetryIndividualOrder) {
-    actionError.value = translate("Administrator permission is required to download specific orders.");
-    return;
-  }
-  if (!orderSync.remote?.systemMessageRemoteId) {
-    commonUtil.showToast(translate("Shopify order search is unavailable for this shop."));
-    return;
-  }
-  replayBasis.value = "updated_at";
+  if (!capabilities.value.canRetryIndividualOrder || orderSync.activeMutation) return;
+  replayToday.value = DateTime.now().setZone(replayZone.value).toISODate() || "";
   replayFromDate.value = "";
-  replayThruDate.value = "";
   showReplayOrdersModal.value = true;
 }
 
-async function startOrdersReplay() {
-  if (!replayFromDate.value || !replayThruDate.value) {
-    commonUtil.showToast(translate("Please select both From and Thru dates."));
-    return;
-  }
-  if (replayDateRangeError.value) {
-    return;
-  }
-  const requestedShopId = props.id;
-  isReplayStarting.value = true;
-  actionMessage.value = "";
-  actionError.value = "";
-  try {
-    const zone = orderSync.runtimeTimeZone || "UTC";
-    const fromDateTime = DateTime.fromISO(replayFromDate.value, { zone }).startOf("day").toUTC().toISO() || "";
-    const thruDateTime = DateTime.fromISO(replayThruDate.value, { zone }).endOf("day").toUTC().toISO() || "";
-    const basis = replayBasis.value;
-    const search = await orderSync.searchShopifyOrders({
-      queryString: `${basis}:>=${fromDateTime} ${basis}:<=${thruDateTime}`,
-      pageSize: REPLAY_ORDER_LIMIT,
-      shopId: requestedShopId,
-    });
-    if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
-
-    if (!search.orders.length) {
-      actionMessage.value = translate("No Shopify orders were found in the selected date range.");
-      showReplayOrdersModal.value = false;
-      return;
-    }
-
-    // The window import covers every order updated since the From date in ONE run, so the matched
-    // count is a preview, not a cap — `hasNextPage` only means the preview stopped counting.
-    const result = await orderSync.replayOrdersFromDate({ fromDate: fromDateTime, shopId: requestedShopId });
-    if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
-    actionMessage.value = search.hasNextPage
-      ? translate("Requested import run {id} covering more than {limit} Shopify orders.", {
-        id: result.jobRunId,
-        limit: REPLAY_ORDER_LIMIT,
-      })
-      : translate("Requested import run {id} covering {count} Shopify orders.", {
-        count: search.orders.length,
-        id: result.jobRunId,
-      });
-    showReplayOrdersModal.value = false;
-    await polling.manualRefresh();
-  } catch (error) {
-    if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
-    actionError.value = errorMessage(error, translate("The selected Shopify orders could not be queued."));
-  } finally {
-    isReplayStarting.value = false;
-  }
+function startOrdersReplay() {
+  const start = DateTime.fromISO(replayFromDate.value, { zone: replayZone.value }).startOf("day");
+  if (!capabilities.value.canRetryIndividualOrder || orderSync.activeMutation || !start.isValid || start > DateTime.now()) return;
+  showReplayOrdersModal.value = false;
+  void runImport(() => orderSync.replayOrdersFromDate({ fromDate: start.toUTC().toISO()!, shopId: props.id }));
 }
 
-function openProgressDetails(row: SyncProgressRow) {
-  if (row.id === "batch-request" && latestBatch.value?.systemMessageId) {
-    openSystemMessageDetails(latestBatch.value.systemMessageId);
-    return;
-  }
-  if (row.id === "hotwax-import" && progressImports.value[0]?.logId) {
-    openMdmLogDetails(progressImports.value[0].logId);
-  }
-}
+watch(() => props.id, () => {
+  requestId++;
+  selectedOrdersById.value = {};
+  showCustomOrderRequestModal.value = showReplayOrdersModal.value = showLandmarkDateModal.value = false;
+  showMdmLogModal.value = showSystemMessageModal.value = showJobDetailsModal.value = false;
+});
 
 function shopifyAdminOrderUrl(order: ShopifyOrderSyncRecentOrder): string {
   if (
     order.shopId !== props.id
     || orderSync.shop?.shopId !== props.id
-    || order.shopifyFetchVerified !== true
     || !/^(?!0+$)[0-9]{1,30}$/.test(order.shopifyOrderId)
   ) return "";
 
@@ -1379,6 +1068,7 @@ function shopifyAdminOrderUrl(order: ShopifyOrderSyncRecentOrder): string {
 }
 
 async function handleManualRefresh() {
+  void refreshMetrics();
   actionError.value = "";
   await polling.manualRefresh();
 }
@@ -1518,9 +1208,6 @@ ion-buttons {
   gap: 8px;
 }
 
-.replay-date-range { gap: 12px; }
-.replay-date-range ion-input { flex: 1 1 180px; min-width: 0; }
-.replay-date-range-help, .replay-date-range-error { display: block; margin: 0 16px 8px; }
 .stat-data {
   display: flex;
   flex-wrap: nowrap;
@@ -1530,26 +1217,6 @@ ion-buttons {
 
 .stat-data ion-card {
   flex: 0 0 375px;
-}
-
-.progress-fact-button {
-  --padding-start: 0;
-  --padding-end: 0;
-  height: auto;
-  margin: 0;
-  text-align: start;
-  white-space: normal;
-}
-
-.history-object-heading {
-  margin: 0 0 8px;
-  font-weight: 600;
-}
-
-.history-object-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
 }
 
 @media screen and (max-width: 430px) {
@@ -1566,8 +1233,6 @@ ion-buttons {
     width: 100%;
   }
 
-  .replay-date-range { flex-wrap: wrap; }
-  .replay-date-range ion-input { flex-basis: calc(50% - 6px); }
   .stat-data ion-card {
     flex-basis: min(100%, 375px);
     max-width: 100%;

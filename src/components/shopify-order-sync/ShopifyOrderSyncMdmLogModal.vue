@@ -72,6 +72,7 @@ import {
 import { closeOutline } from "ionicons/icons";
 import { computed } from "vue";
 import { translate } from "@common";
+import { orderImportState, progressColor, progressStateLabel } from "@/utils/orderImportDisplay";
 import { formatDateTime } from "@/utils";
 
 interface SafeShopifyOrderSyncMdmLogDetails {
@@ -92,17 +93,9 @@ const props = withDefaults(defineProps<{
 }>(), { details: () => ({}) });
 const emit = defineEmits<{ close: [] }>();
 
-const statusLabel = computed(() => {
-  const status = String(props.details.statusId || "").trim();
-  const normalized = status.toLocaleLowerCase();
-  if (normalized.includes("finish") || normalized.includes("complete") || normalized.includes("success")) return translate("Completed");
-  if (normalized.includes("fail") || normalized.includes("crash") || normalized.includes("cancel")) return translate("Failed");
-  if (normalized.includes("run") || normalized.includes("process") || normalized.includes("pending")) return translate("In progress");
-  return status;
-});
-const statusColor = computed(() => statusLabel.value === translate("Completed")
-  ? "success"
-  : statusLabel.value === translate("Failed") ? "danger" : statusLabel.value === translate("In progress") ? "primary" : "medium");
+const state = computed(() => orderImportState(props.details));
+const statusLabel = computed(() => progressStateLabel(state.value));
+const statusColor = computed(() => progressColor(state.value));
 
 function formatDate(value: unknown): string {
   return formatDateTime(value) || "";
