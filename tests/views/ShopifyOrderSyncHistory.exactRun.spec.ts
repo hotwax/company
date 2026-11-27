@@ -78,6 +78,7 @@ vi.mock("@/composables/useServiceJobs", () => ({
 describe("ShopifyOrderSyncHistory exact run context", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    harness.orderSync.importConfigsAvailable = true
     harness.route.query = {}
     harness.onboardingBatches = ref([])
     harness.readLogs.mockReset().mockResolvedValue([])
@@ -113,11 +114,24 @@ describe("ShopifyOrderSyncHistory exact run context", () => {
     await flushPromises()
     const rows = wrapper.findAll('ion-accordion > [slot="header"]')
     expect(rows).toHaveLength(2)
-    expect(rows[0].findAll(".run-summary > ion-label")).toHaveLength(3) // Batch ID and two steps
+    expect(rows[0].findAll(".list-item > .stat ion-chip")).toHaveLength(2)
     expect(rows[0].text()).toMatch(/Fetch Shopify orders\s*Queued at .+2026.*Import into OMS/s)
     expect(rows[0].text()).toContain("New orders · 4 succeeded · 1 failed")
     expect(rows[0].text()).toContain("Order updates · 0 succeeded · 0 failed")
     expect(rows[1].text()).toContain("Order updates · No import recorded")
+  })
+
+  it("shows the import outcome and reported counts before the shop configuration is available", async () => {
+    harness.orderSync.importConfigsAvailable = false
+    harness.readLogs.mockResolvedValue([{
+      systemMessageId: "NEWER-MESSAGE", configId: "CUSTOM_UPDATE", logId: "U", successRecordCount: 3, failedRecordCount: 0
+    }])
+    const View = (await import("@/views/ShopifyOrderSyncHistory.vue")).default
+    const wrapper = mount(View, { props: { id: "SHOP" }, global: { stubs: { IonBackButton: true } } })
+    await flushPromises()
+    const row = wrapper.find('ion-accordion > [slot="header"]').text()
+    expect(row).toMatch(/Completed\s*Import into OMS/)
+    expect(row).toContain("CUSTOM_UPDATE · 3 succeeded · 0 failed")
   })
 
   it("finds a batch by job ID and clears the shared filters back to all runs", async () => {

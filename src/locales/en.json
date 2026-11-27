@@ -4698,7 +4698,7 @@
   "Queued at {time}": "Queued at {time}",
   "Import into OMS": "Import into OMS",
   "No import recorded": "No import recorded",
-  "Import status unavailable": "Import status unavailable",
+  "Could not load import logs": "Could not load import logs",
   "No imports recorded": "No imports recorded",
   "No imports in the last hour": "No imports in the last hour",
   "Latest run": "Latest run",

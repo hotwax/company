@@ -171,7 +171,7 @@
                   <ion-label>{{ translate("Import into OMS") }}</ion-label>
                   <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ importStepLabel }}</ion-label>
                 </ion-item>
-                <template v-for="group in (latestBatch && runLogs && !runReadFailed && orderSync.importConfigsAvailable ? importGroups : [])" :key="group.label">
+                <template v-for="group in (latestBatch && runLogs && !runReadFailed ? importGroups : [])" :key="group.label">
                   <ion-item :button="group.logs.length === 1" :detail="group.logs.length === 1" @click="group.logs.length === 1 && openMdmLogDetails(group.logs[0].logId)">
                     <ion-label class="ion-padding-start">{{ group.label }}</ion-label>
                     <ion-label slot="end" class="ion-text-end ion-text-wrap">{{ group.logs.length ? importCountsLabel(group.logs) : emptyImportLabel(summary.batchStatus) }}</ion-label>
@@ -768,9 +768,9 @@ const selectedMdmLogDetails = computed(() => {
   const log = visibleLogs.value.find(entry => entry.logId === selectedMdmLogId.value);
   return { ...log, startedAt: log?.startDateTime, completedAt: log?.finishDateTime };
 });
-const importGroups = computed(() => orderImportGroups(progressImports.value, orderSync.importConfigIds));
+const importGroups = computed(() => orderImportGroups(progressImports.value, orderSync.importConfigsAvailable ? orderSync.importConfigIds : []));
 const importStepLabel = computed(() => {
-  if ((!orderSync.importConfigsAvailable || runReadFailed.value) && latestBatch.value) return translate("Import status unavailable");
+  if (runReadFailed.value && latestBatch.value) return translate("Could not load import logs");
   if (latestBatch.value && !runLogs.value) return translate("Loading");
   const [batch, imports] = deriveSyncProgress(latestBatch.value, progressImports.value);
   return progressImports.value.length ? progressStateLabel(imports.state) : emptyImportLabel(batch.state);

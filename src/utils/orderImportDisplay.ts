@@ -57,10 +57,11 @@ export function progressColor(state: SyncProgressState): string {
 
 export function orderImportGroups(logs: ShopifyOrderSyncImport[], configIds: string[]) {
   const [created, updated] = configIds;
-  const labels = new Map<string | undefined, string>([
-    [created, translate("New orders")], [updated, translate("Order updates")],
-  ]);
-  if (created === updated) labels.set(created, translate("New orders and updates"));
+  const labels = new Map<string | undefined, string>();
+  if (created && updated) {
+    labels.set(created, translate("New orders"));
+    labels.set(updated, created === updated ? translate("New orders and updates") : translate("Order updates"));
+  }
   for (const log of logs) {
     if (!labels.has(log.configId)) labels.set(log.configId, log.configId === "BULK_ORDER_HISTORY"
       ? translate("Historic order import") : log.configId || translate("Import log"));

@@ -89,19 +89,22 @@
         <ion-accordion-group>
           <ion-accordion v-for="run in runs" :key="run.id" :value="run.id">
             <ion-item slot="header" :class="{ 'requested-run': run.id === requestedRun?.id }">
-              <div class="run-summary">
-                <ion-label class="ion-text-wrap">
-                  <strong>{{ translate("Batch {id}", { id: run.id }) }}</strong>
-                  <ion-badge v-if="run.id === requestedRun?.id" color="primary">{{ translate("Requested run") }}</ion-badge>
-                </ion-label>
-                <ion-label class="ion-text-wrap">
-                  {{ translate("Fetch Shopify orders") }}
+              <div class="list-item">
+                <ion-item lines="none">
+                  <ion-icon slot="start" :icon="runIcons[run.overallState]" :color="progressColor(run.overallState)" />
+                  <ion-label>
+                    {{ run.id }}
+                    <ion-badge v-if="run.id === requestedRun?.id" color="primary">{{ translate("Requested run") }}</ion-badge>
+                  </ion-label>
+                </ion-item>
+                <ion-label class="stat tablet ion-text-wrap">
+                  <ion-chip outline :color="progressColor(run.batchRow.state)">{{ progressStateLabel(run.batchRow.state) }}</ion-chip>
+                  <p>{{ translate("Fetch Shopify orders") }}</p>
                   <p v-if="run.batch.initDate">{{ translate("Queued at {time}", { time: formatDate(run.batch.initDate) }) }}</p>
-                  <p>{{ progressStateLabel(run.batchRow.state) }}</p>
                 </ion-label>
-                <ion-label class="ion-text-wrap">
-                  {{ translate("Import into OMS") }}
-                  <p>{{ run.importStatus }}</p>
+                <ion-label class="stat tablet ion-text-wrap">
+                  <ion-chip outline :color="run.importColor">{{ run.importStatus }}</ion-chip>
+                  <p>{{ translate("Import into OMS") }}</p>
                   <p v-for="group in run.groups" :key="group.label">
                     {{ group.label }} · {{ group.logs.length ? importCountsLabel(group.logs) : emptyImportLabel(run.batchRow.state) }}
                   </p>
@@ -146,11 +149,11 @@
 import { translate } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
-  IonCardContent, IonCardHeader, IonCardTitle, IonContent, IonHeader, IonIcon, IonInput,
+  IonCardContent, IonCardHeader, IonCardTitle, IonChip, IonContent, IonHeader, IonIcon, IonInput,
   IonItem, IonLabel, IonList, IonListHeader, IonNote, IonPage, IonSelect, IonSelectOption, IonSpinner,
   IonTitle, IonToolbar, onIonViewWillEnter
 } from "@ionic/vue";
-import { refreshOutline } from "ionicons/icons";
+import { alertCircleOutline, checkmarkCircleOutline, helpCircleOutline, refreshOutline, syncCircleOutline } from "ionicons/icons";
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import SearchFilterCard from "@/components/common/SearchFilterCard.vue";
@@ -185,6 +188,7 @@ interface OrderSyncHistoryRun {
   imports: ShopifyOrderSyncImport[];
   batchRow: SyncProgressRow;
   importStatus: string;
+  importColor: string;
   groups: ReturnType<typeof orderImportGroups>;
   overallState: SyncProgressState;
   requestedTime: number;
@@ -238,7 +242,7 @@ const logsByRun = ref<Record<string, ShopifyOrderSyncImport[]>>({});
 const logReadFailed = ref(false);
 watch([() => historySession.isPageActive.value && props.id, runIds, () => orderSync.latestImportChange, refreshVersion],
   async ([shop, ids], old, onCleanup) => {
-    if (shop !== old?.[0]) logsByRun.value = {};
+    if (shop !== old?.[0]) { logsByRun.value = {}; logReadFailed.value = false; }
     if (!shop || !ids) return;
     let current = true;
     onCleanup(() => { current = false; });
@@ -284,6 +288,11 @@ const outcomeOptions = computed(() => ([
   { value: "pending", label: progressStateLabel("pending") },
 ]));
 
+const runIcons: Record<SyncProgressState, string> = {
+  completed: checkmarkCircleOutline, partial: alertCircleOutline, failed: alertCircleOutline,
+  active: syncCircleOutline, pending: helpCircleOutline,
+};
+
 const allRuns = computed<OrderSyncHistoryRun[]>(() => batches.value.flatMap((batch) => {
   const id = String(batch.systemMessageId || "").trim();
   if(!id) {return [];}
@@ -296,8 +305,9 @@ const allRuns = computed<OrderSyncHistoryRun[]>(() => batches.value.flatMap((bat
     batch,
     imports,
     batchRow,
-    groups: logs && !logReadFailed.value && orderSync.importConfigsAvailable ? orderImportGroups(logs, orderSync.importConfigIds) : [],
-    importStatus: logReadFailed.value || !orderSync.importConfigsAvailable ? translate("Import status unavailable")
+    groups: logs && !logReadFailed.value ? orderImportGroups(logs, orderSync.importConfigsAvailable ? orderSync.importConfigIds : []) : [],
+    importColor: imports.length && !logReadFailed.value ? progressColor(importRow.state) : "medium",
+    importStatus: logReadFailed.value ? translate("Could not load import logs")
       : !logs ? translate("Loading") : logs.length ? progressStateLabel(importRow.state) : emptyImportLabel(batchRow.state),
     overallState: deriveSyncOverallState(batchRow, importRow),
     requestedTime: toMillis(batch.initDate),
@@ -370,14 +380,14 @@ function closeMdmLogDetails() {
 </script>
 
 <style scoped>
-.run-summary {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1.35fr;
-  gap: var(--spacer-sm);
-  align-items: start;
+.list-item {
+  --columns-desktop: 4;
+  --columns-tablet: 4;
   width: 100%;
   padding-block: var(--spacer-sm);
 }
+
+.list-item > .stat:last-child { justify-self: center; }
 
 .requested-run-card p {
   margin-block: var(--spacer-xs);
@@ -389,8 +399,9 @@ function closeMdmLogDetails() {
   background: rgba(var(--ion-color-primary-rgb), 0.08);
 }
 
-@media (max-width: 700px) {
-  .run-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .run-summary > :first-child { grid-column: 1 / -1; }
+@media (max-width: 699px) {
+  .list-item { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .list-item > ion-item { grid-column: 1 / -1; }
+  .list-item > .stat { display: block; align-self: start; }
 }
 </style>
