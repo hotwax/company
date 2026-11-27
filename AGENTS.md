@@ -344,6 +344,10 @@ once, and each composable holding module-level session state registers its own r
   product-store-onboarding,chat}/`. Put a new component in its domain folder; `common/` is for
   genuinely cross-domain pieces (`Menu`, `SearchFilterCard`, `UniformFilterLayout`,
   `TimezoneModal`, `Image`, animated number/duration).
+- For a find or history page with search and filters, follow [Find Facilities](src/views/FindFacilities.vue).
+  Use `SearchFilterCard` with `UniformFilterLayout` in its default slot, stacked outlined controls,
+  and a single Clear filters action that resets the search and filter defaults. The components own
+  spacing and responsive layout. Verify filtering, reset, and the narrow viewport.
 - Modals and popovers live with their domain and are opened from the view that owns the interaction.
 - Add a route by adding a lazy `() => import(...)` plus the right guard. Permission-gated routes use
   `requirePermission` with an `"A OR B"` expression matching the backend permission ids.

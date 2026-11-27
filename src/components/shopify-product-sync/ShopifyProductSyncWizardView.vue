@@ -327,7 +327,7 @@
             </ion-label>
             <ion-badge slot="end" :color="systemMessageStatusColor">{{ systemMessageStatusLabel }}</ion-badge>
           </ion-item>
-          <ion-item lines="none" v-if="systemMessageFsmState.nextJob || systemMessageFsmState.primaryAction || systemMessageFsmState.secondaryActions.length">
+          <ion-item lines="none" v-if="systemMessageFsmState.nextJob || systemMessageFsmState.secondaryActions.length">
             <ion-label>
               <p>{{ translate("Next step") }}</p>
               <p>{{ systemMessageFsmState.nextJobReason }}</p>
@@ -336,15 +336,6 @@
               </p>
             </ion-label>
             <ion-buttons slot="end">
-              <ion-button
-                v-if="systemMessageFsmState.primaryAction"
-                fill="clear"
-                :disabled="!!systemMessageActionLoadingId"
-                @click="$emit('run-system-message-action', systemMessageFsmState.primaryAction.id)"
-              >
-                <ion-spinner v-if="systemMessageActionLoadingId === systemMessageFsmState.primaryAction.id" slot="start" name="crescent" />
-                <span v-else>{{ systemMessageFsmState.primaryAction.label }}</span>
-              </ion-button>
               <ion-button
                 v-for="action in systemMessageFsmState.secondaryActions"
                 :key="action.id"
@@ -693,7 +684,6 @@ const emit = defineEmits([
   "go-back",
   "go-next",
   "identifier-change",
-  "load-progress",
   "open-mistake-modal",
   "open-start-sync-modal",
   "open-step-details",

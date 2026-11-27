@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   DATA_MANAGER_LOG_STATUS_IDS,
   aggregateCounts,
+  finishedImportCounts,
   correlateByMessage,
+  countFailedRecordsInLastDay,
+  countOpenImports,
   isTerminal,
   logOutcome,
   logState,
@@ -111,4 +114,40 @@ describe("aggregateCounts + correlateByMessage", () => {
     expect(correlateByMessage(logs, "SM_A")[0].systemMessageId).toBe("SM_A");
     expect(correlateByMessage(logs, "")).toEqual([]);
   });
+});
+
+describe("countFailedRecordsInLastDay", () => {
+  it("ages out historical failures while keeping completed imports within the window", () => {
+    const now = Date.parse("2026-11-26T12:00:00Z");
+    const logs = [
+      makeLog({ finishDateTime: "2026-11-16T01:07:35Z", failedRecordCount: 7789 }),
+      makeLog({ finishDateTime: "2026-11-25T12:00:00Z", failedRecordCount: 2 }),
+      makeLog({ finishDateTime: now, failedRecordCount: 3 }),
+      makeLog({ finishDateTime: undefined, failedRecordCount: 4 }),
+      makeLog({ finishDateTime: now + 1_000, failedRecordCount: 5 }),
+    ];
+    expect(countFailedRecordsInLastDay(logs, now)).toBe(5);
+    expect(countFailedRecordsInLastDay(logs.slice(0, 3), now + 1)).toBe(3);
+  });
+});
+
+describe("finished import counts", () => {
+  it("reports only the records that succeeded and preserves a genuine zero", () => {
+    const log = { logStatusId: "DmlsFinished", totalRecordCount: 10 };
+    expect(finishedImportCounts({ ...log, failedRecordCount: 3 })).toEqual({ succeeded: 7, failed: 3 });
+    expect(finishedImportCounts({ ...log, failedRecordCount: 10 })).toEqual({ succeeded: 0, failed: 10 });
+    expect(finishedImportCounts({ ...log, totalRecordCount: 0, failedRecordCount: 0 })).toEqual({ succeeded: 0, failed: 0 });
+    expect(finishedImportCounts(log)).toBeUndefined();
+    expect(finishedImportCounts({ ...log, failedRecordCount: 11 })).toBeUndefined();
+    const crashed = { ...log, logStatusId: "DmlsCrashed", failedRecordCount: 1 };
+    expect(finishedImportCounts(crashed)).toBeUndefined();
+    expect(finishedImportCounts({ ...crashed, successRecordCount: 2 })).toEqual({ succeeded: 2, failed: 1 });
+  });
+});
+
+it("counts distinct open imports and waits for missing status", () => {
+  const open = { logId: "12", logStatusId: "DmlsQueued" };
+  expect(countOpenImports([open, open, {}, { logId: "20", logStatusId: "DmlsFinished" }])).toBe(1);
+  expect(countOpenImports([])).toBe(0);
+  expect(countOpenImports([{ logId: "30" }])).toBeUndefined();
 });

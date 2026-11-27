@@ -20,14 +20,14 @@
       <ion-list lines="full">
         <ion-item>
           <ion-label>
-            {{ translate("Last sync") }}
+            {{ translate(isPinned ? "Requested at" : "Last sync") }}
             <p>{{ lastSyncLabel }}</p>
           </ion-label>
           <ion-label slot="end">{{ lastSyncRelativeLabel }}</ion-label>
         </ion-item>
         <ion-item>
-          <ion-label>{{ translate("Updates synced") }}</ion-label>
-          <ion-label slot="end"><AnimatedNumber :value="Number(lastSyncTotalRecordCount) || 0" /></ion-label>
+          <ion-label>{{ translate("Import result") }}<p v-if="importLogId">{{ translate("Log ID") }}: {{ importLogId }}</p></ion-label>
+          <ion-label slot="end">{{ importCounts ? translate("{succeeded} succeeded · {failed} failed", importCounts) : translate("Unavailable") }}</ion-label>
         </ion-item>
         <ion-item :button="!isSecondaryLoading && isSyncScheduled" :detail="!isSecondaryLoading && isSyncScheduled" @click="!isSecondaryLoading && isSyncScheduled ? emit('open-sync-job-details') : undefined">
           <ion-label>{{ translate("Next sync time") }}
@@ -40,8 +40,8 @@
           <ion-button slot="end" fill="outline" color="primary" v-else @click.stop="emit('open-sync-job-details', syncJobObj)">{{ translate("Schedule") }}</ion-button>
         </ion-item>
         <ion-item button detail @click="emit('open-unsynced-updates')">
-          <ion-label>{{ translate("Un-synced updates") }}</ion-label>
-          <ion-badge slot="end" color="medium"><AnimatedNumber :value="Number(unsyncedUpdatesCount) || 0" /></ion-badge>
+          <ion-label>{{ translate("Updated Shopify products") }}<p v-if="unsyncedUpdatesCount != null">{{ updatesSince ? translate("Since {time}", { time: updatesSince }) : translate("Entire catalog") }}</p><p v-if="countsCheckedAt">{{ translate("Checked at {time}", { time: countsCheckedAt }) }}</p></ion-label>
+          <ion-badge slot="end" color="medium">{{ unsyncedUpdatesCount ?? translate("Unavailable") }}</ion-badge>
         </ion-item>
         <ion-item lines="none">
           <ion-label>{{ translate("Product store") }}</ion-label>
@@ -83,32 +83,9 @@
             </ion-label>
             <ion-badge slot="end" :color="currentSyncRun.systemMessage?.statusColor || 'medium'">{{ currentSyncRun.systemMessage?.statusLabel || translate("Pending") }}</ion-badge>
           </ion-item>
-          <ion-item v-if="hasNextStepBar" lines="none">
-            <ion-progress-bar :value="nextStepProgressValue" />
-            <ion-buttons slot="end">
-              <ion-button
-                v-if="systemMessageFsmState.primaryAction"
-                :disabled="!!systemMessageActionLoadingId"
-                @click="emit('run-system-message-action', systemMessageFsmState.primaryAction.id)"
-              >
-                <ion-spinner v-if="systemMessageActionLoadingId === systemMessageFsmState.primaryAction.id" name="crescent" />
-                <template v-else>{{ systemMessageFsmState.primaryAction.label }}</template>
-              </ion-button>
-              <ion-button
-                v-for="action in systemMessageFsmState.secondaryActions"
-                :key="action.id"
-                fill="clear"
-                color="medium"
-                :disabled="!!systemMessageActionLoadingId"
-                @click="emit('run-system-message-action', action.id)"
-              >
-                <ion-spinner v-if="systemMessageActionLoadingId === action.id" name="crescent" />
-                <span v-else>{{ action.label }}</span>
-              </ion-button>
-            </ion-buttons>
-          </ion-item>
-          <ion-item v-else-if="systemMessageFsmState.nextJob || systemMessageFsmState.primaryAction || systemMessageFsmState.secondaryActions.length" lines="none">
-            <ion-label>
+          <ion-item v-if="hasNextStepBar || systemMessageFsmState.nextJob || systemMessageFsmState.secondaryActions.length" lines="none">
+            <ion-progress-bar v-if="hasNextStepBar" :value="nextStepProgressValue" />
+            <ion-label v-else>
               {{ translate("Next step") }}
               <p>{{ systemMessageFsmState.nextJobReason }}</p>
               <p v-if="systemMessageFsmState.nextJob">
@@ -116,15 +93,6 @@
               </p>
             </ion-label>
             <ion-buttons slot="end">
-              <ion-button
-                v-if="systemMessageFsmState.primaryAction"
-                fill="clear"
-                :disabled="!!systemMessageActionLoadingId"
-                @click="emit('run-system-message-action', systemMessageFsmState.primaryAction.id)"
-              >
-                <ion-spinner v-if="systemMessageActionLoadingId === systemMessageFsmState.primaryAction.id" slot="start" name="crescent" />
-                <span v-else>{{ systemMessageFsmState.primaryAction.label }}</span>
-              </ion-button>
               <ion-button
                 v-for="action in systemMessageFsmState.secondaryActions"
                 :key="action.id"
@@ -254,18 +222,19 @@
             {{ translate("Current Shopify request status")}}
             <p>{{ currentShopifyRequestSubtitle }}</p>
           </ion-label>
-          <ion-badge slot="end" :color="hasCurrentShopifyRequest ? currentShopifyRequestStatusColor : 'medium'">{{ hasCurrentShopifyRequest ? currentShopifyRequestStatusLabel : translate("Idle") }}</ion-badge>
+          <ion-badge slot="end" :color="hasCurrentShopifyRequest ? currentShopifyRequestStatusColor : 'medium'">{{ currentShopifyRequestStatusLabel }}</ion-badge>
         </ion-item>
         <ion-item>
           <ion-label>
-            {{ translate("Update files to process")}}
+            {{ translate("Open imports") }}
+            <p>{{ translate("Across the latest {count} requests", { count: requestWindow }) }}</p>
           </ion-label>
-          <ion-label slot="end"><AnimatedNumber :value="Number(updateFilesToProcessCount) || 0" /></ion-label>
+          <ion-label slot="end">{{ updateFilesToProcessCount ?? translate("Unavailable") }}</ion-label>
         </ion-item>
         <ion-item>
           <ion-label>
             {{ translate("Error records")}}
-            <p>{{ translate("In the last 24 hours") }}</p>
+            <p>{{ translate("Finished in the last 24 hours, across the latest {count} imports", { count: errorLookbackCount }) }}</p>
           </ion-label>
           <ion-label slot="end"><AnimatedNumber :value="Number(errorRecordCount) || 0" /></ion-label>
         </ion-item>
@@ -513,9 +482,12 @@ const props = defineProps<{
 
   isSyncScheduled?: boolean
   isSyncPaused?: boolean
+  isPinned: boolean
   lastSyncLabel: string
   lastSyncRelativeLabel: string
-  lastSyncTotalRecordCount: number | string
+  importLogId?: string
+  importCounts?: { succeeded: number; failed: number }
+  countsCheckedAt: string
   nextSyncLabel: string
   nextSyncRelativeLabel: string
   systemMessageProgressLabel: string
@@ -540,7 +512,9 @@ const props = defineProps<{
     details: Array<{ type: string, label: string, value: string, items?: Array<{ label?: string, value: string }> }>
   }>
   selectedProductStoreName: string
-  unsyncedUpdatesCount: number | string
+  updatesSince?: string
+  requestWindow: number
+  unsyncedUpdatesCount?: number | string
   pendingUpdateRequestsCount: number | string
   pendingUpdateRequestsSubtitle: string
   queueUpdateRequestsLastRunLabel: string
@@ -562,7 +536,7 @@ const props = defineProps<{
   detailedErrorQuery: string
   hasDetailedErrors: boolean
   totalDetailedErrorsCount: number
-  updateFilesToProcessCount: number | string
+  updateFilesToProcessCount?: number
   isWebhookSubscribed?: boolean
   isWebhookLoading?: boolean
   isWebhookSupported?: boolean

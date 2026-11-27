@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ref } from "vue";
+import { computed, effectScope, ref } from "vue";
 
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
@@ -61,11 +61,11 @@ vi.mock("@/db/appDbSync", () => ({
 }));
 
 import {
+  useSelectedProductSyncMessage,
   fetchProductMappings,
   useTransferMappingResolution,
   refreshMappedProductSearchIndex,
   fetchShopSystemMessageRemoteId,
-  fetchUpdateFilesToProcessCount,
   fetchSetupState,
   fetchShopifyShopProductCount,
   fetchUnsyncedProductUpdates,
@@ -198,6 +198,39 @@ function serverHistory(entityValueList: any[]) {
 const documentCalls = () => harness.api.mock.calls.filter(([config]) => config.url === "oms/dataDocumentView");
 const shopifyQuery = () => harness.api.mock.calls.find(([config]) => config.url === "shopify/graphql")?.[0].data.queryText ?? "";
 
+describe("selected product sync run", () => {
+  it("follows newer runs until pinned and ignores late results after switching shops", async () => {
+    const shop = ref("A");
+    const pin = ref<string>();
+    const rows = ref([{ systemMessageId: "1" }]);
+    const scope = effectScope();
+    const { selectedMessage, resolving } = scope.run(() => useSelectedProductSyncMessage(() => shop.value, computed(() => pin.value), () => rows.value))!;
+    expect(selectedMessage.value?.systemMessageId).toBe("1");
+    rows.value.unshift({ systemMessageId: "2" });
+    expect(selectedMessage.value?.systemMessageId).toBe("2");
+    pin.value = "1";
+    expect(selectedMessage.value?.systemMessageId).toBe("1");
+    let reply!: (result: any) => void;
+    harness.api.mockImplementationOnce(() => new Promise(resolve => { reply = resolve; }));
+    pin.value = "old";
+    expect(selectedMessage.value).toBeUndefined();
+    const oldRun = { systemMessageId: "old", systemMessageTypeId: "BulkQueryShopifyProductUpdates", remoteInternalId: "A" };
+    serverHistory([oldRun]);
+    shop.value = "B";
+    reply({ data: { entityValueList: [oldRun] } });
+    await vi.waitFor(() => expect(resolving.value).toBe(false));
+    expect(selectedMessage.value).toBeUndefined();
+    shop.value = "A";
+    await vi.waitFor(() => expect(selectedMessage.value).toEqual(oldRun));
+    expect(documentCalls().at(-1)?.[0].data.customParametersMap).toMatchObject({ remoteInternalId: "A", systemMessageId: "old" });
+    serverHistory([{ ...oldRun, systemMessageId: "another", systemMessageTypeId: "OrderImport" }]);
+    pin.value = "another";
+    await vi.waitFor(() => expect(resolving.value).toBe(false));
+    expect(selectedMessage.value).toBeUndefined();
+    scope.stop();
+  });
+});
+
 describe("fetchSetupState — the wizard decision", () => {
   const accessState = { systemMessageRemoteId: "RemoteA", accessScopeEnumId: "SHOP_RW_ACCESS", hasWriteAccess: true, status: "write", label: "Write access" };
 
@@ -254,24 +287,6 @@ describe("unsynced product counts — the last-sync date", () => {
 
     expect(documentCalls()).toHaveLength(1);
     expect(shopifyQuery()).not.toContain("updated_at");
-  });
-});
-
-describe("fetchUpdateFilesToProcessCount", () => {
-  it("excludes exactly the canonical terminal DataManager statuses", async () => {
-    harness.api.mockResolvedValue({ data: { entityValueListCount: 3 } });
-
-    await expect(fetchUpdateFilesToProcessCount({ shopId: SHOP_ID })).resolves.toBe(3);
-
-    const request = harness.api.mock.calls[0][0];
-    expect(request.data.customParametersMap.statusId).toEqual([
-      "DmlsFinished",
-      "DmlsFailed",
-      "DmlsCrashed",
-      "DmlsCancelled",
-    ]);
-    expect(request.data.customParametersMap.statusId).not.toContain("DmlSuccess");
-    expect(request.data.customParametersMap.statusId).not.toContain("DmlError");
   });
 });
 
