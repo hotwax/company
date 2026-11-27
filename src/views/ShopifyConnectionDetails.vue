@@ -62,53 +62,13 @@
 
         <div class="ion-margin-top">
           <h1>{{ translate("Products and Inventory") }}</h1>
-          <!-- The same card shell the loaded state uses, down to the grid classes, with skeleton text
-               in place of the values. A standalone 180px block stood in for a 282px card, so every
-               load moved everything below it by roughly 100px; built out of the real shell, the box
-               is the right size by construction at any width. -->
-          <ion-card v-if="isProductSyncCardLoading" class="widget product-sync" aria-busy="true">
-            <div>
-              <!-- Every label on this card is a constant, so the shell prints them rather than
-                   skeletonising them: the text sizes each row exactly as the loaded card will, and
-                   the reader gets the card's structure while only the figures are still pending. -->
-              <ion-card-header>
-                <ion-card-title>{{ translate("Product sync") }}</ion-card-title>
-                <ion-card-subtitle><ion-skeleton-text animated class="skeleton-line" /></ion-card-subtitle>
-              </ion-card-header>
-              <div class="product-sync-activity-graph">
-                <div class="product-sync-activity-canvas">
-                  <ion-skeleton-text animated class="product-sync-activity-placeholder" />
-                </div>
-              </div>
-              <div class="history">
-                <ion-list lines="full">
-                  <ion-item lines="full">
-                    <ion-label>
-                      {{ translate("Records processed in last sync") }}
-                      <p><ion-skeleton-text animated class="skeleton-line-short" /></p>
-                    </ion-label>
-                    <ion-label slot="end"><ion-skeleton-text animated class="skeleton-count" /></ion-label>
-                  </ion-item>
-                  <ion-item lines="full">
-                    <ion-label>
-                      {{ translate("Unsynced events") }}
-                      <!-- Two lines: this row's explanation wraps in the loaded card, and a one-line
-                           stand-in left the shell ~20px short of it. -->
-                      <p><ion-skeleton-text animated class="skeleton-line-long" /></p>
-                      <p><ion-skeleton-text animated class="skeleton-line-short" /></p>
-                    </ion-label>
-                    <ion-label slot="end"><ion-skeleton-text animated class="skeleton-count" /></ion-label>
-                  </ion-item>
-                </ion-list>
-              </div>
-            </div>
-          </ion-card>
           <ion-card
-            v-else-if="shouldShowProductSyncWidget"
+            v-if="isProductSyncCardLoading || shouldShowProductSyncWidget"
             class="widget product-sync"
-            role="button"
-            button
-            tabindex="0"
+            :aria-busy="isProductSyncCardLoading"
+            :role="isProductSyncCardLoading ? undefined : 'button'"
+            :button="!isProductSyncCardLoading"
+            :tabindex="isProductSyncCardLoading ? undefined : 0"
             @pointerup.capture="openProductSyncEntry()"
             @keydown.enter="openProductSyncEntry()"
             @keydown.space.prevent="openProductSyncEntry()"
@@ -116,7 +76,10 @@
             <div>
             <ion-card-header>
               <ion-card-title @click.capture="openProductSyncEntry()">{{ translate("Product sync") }}</ion-card-title>
-              <ion-card-subtitle @click.capture="openProductSyncEntry()">{{ productSyncCardSubtitle }}</ion-card-subtitle>
+              <ion-card-subtitle @click.capture="openProductSyncEntry()">
+                <ion-skeleton-text v-if="isProductSyncCardLoading" animated class="skeleton-line-short" />
+                <template v-else>{{ productSyncCardSubtitle }}</template>
+              </ion-card-subtitle>
             </ion-card-header>
             <div class="product-sync-activity-graph">
               <div class="product-sync-activity-canvas" @click.capture="openProductSyncEntry()">
@@ -126,34 +89,46 @@
                   width="100%"
                   preserveAspectRatio="xMidYMid meet"
                   role="img"
-                  :aria-label="activityGraphAriaLabel"
+                  :aria-hidden="isProductSyncCardLoading || undefined"
+                  :aria-label="isProductSyncCardLoading ? undefined : activityGraphAriaLabel"
                 >
-                  <title>{{ activityGraphAriaLabel }}</title>
-                  <path
-                    d="M 12 84 H 308"
-                    fill="none"
-                    stroke="#d7dce4"
-                    stroke-width="1"
-                  />
-                  <path
-                    :d="activityGraphAreaPath"
-                    fill="rgba(45, 211, 111, 0.14)"
-                  />
-                  <polyline
-                    :points="activityGraphPolylinePoints"
-                    fill="none"
-                    stroke="#2dd36f"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                  <circle
-                    v-if="activityGraphLatestPoint"
-                    :cx="activityGraphLatestPoint.x"
-                    :cy="activityGraphLatestPoint.y"
-                    r="3"
-                    fill="#2dd36f"
-                  />
+                  <g v-if="isProductSyncCardLoading" class="activity-guides">
+                    <path d="M12 12H308 M12 48H308" stroke-dasharray="3 5" />
+                    <path d="M12 84H308" />
+                  </g>
+                  <g v-else-if="!activityGraphTotalCount">
+                    <text class="activity-empty-label" x="308" y="52" text-anchor="end">{{ translate("No syncs in the last 24 hours") }}</text>
+                    <path class="activity-guides" d="M12 84H308" />
+                  </g>
+                  <g v-else>
+                    <title>{{ activityGraphAriaLabel }}</title>
+                    <path
+                      d="M 12 84 H 308"
+                      fill="none"
+                      stroke="#d7dce4"
+                      stroke-width="1"
+                    />
+                    <path
+                      class="activity-area"
+                      :d="activityGraphAreaPath"
+                      fill="rgba(45, 211, 111, 0.14)"
+                    />
+                    <polyline
+                      :points="activityGraphPolylinePoints"
+                      fill="none"
+                      stroke="#2dd36f"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                    <circle
+                      v-if="activityGraphLatestPoint"
+                      :cx="activityGraphLatestPoint.x"
+                      :cy="activityGraphLatestPoint.y"
+                      r="3"
+                      fill="#2dd36f"
+                    />
+                  </g>
                 </svg>
               </div>
             </div>
@@ -162,43 +137,35 @@
                 <ion-item lines="full">
                   <ion-label>
                     {{ translate("Records processed in last sync") }}
-                    <p>{{ recordsProcessedDetail }}</p>
+                    <p>{{ isProductSyncCardLoading ? translate("From the most recent completed import run.") : recordsProcessedDetail }}</p>
                   </ion-label>
-                  <ion-label slot="end">{{ recordsProcessedLabel }}</ion-label>
+                  <ion-skeleton-text v-if="isProductSyncCardLoading" slot="end" animated class="skeleton-count" />
+                  <ion-label v-else slot="end">{{ recordsProcessedLabel }}</ion-label>
                 </ion-item>
                 <ion-item lines="full">
                   <ion-label>
                     {{ translate("Unsynced events") }}
-                    <p>{{ unsyncedEventsDetail }}</p>
+                    <p>{{ isProductSyncCardLoading ? translate("Shopify product updates waiting to be imported since the last sync.") : unsyncedEventsDetail }}</p>
                   </ion-label>
-                  <ion-badge slot="end" color="medium">{{ unsyncedEventsLabel }}</ion-badge>
+                  <ion-skeleton-text v-if="isProductSyncCardLoading" slot="end" animated class="skeleton-count" />
+                  <ion-badge v-else slot="end" color="medium">{{ unsyncedEventsLabel }}</ion-badge>
                 </ion-item>
               </ion-list>
             </div>
-            <div class="current" v-if="currentSyncRun && currentSyncRun.systemMessageId" @click.capture="openProductSyncEntry()">
-             <ion-list>
-              <ion-item lines="full">
-                <ion-label>
-                  {{ translate("System message") }}
-                  <p>{{ systemMessageDetail }}</p>
-                </ion-label>
-                <ion-badge slot="end" :color="systemMessageStatusColor">{{ systemMessageStatusLabel }}</ion-badge>
-              </ion-item>
-              <ion-item lines="full">
-                <ion-label>
-                  {{ translate("Shopify bulk operation") }}
-                  <p>{{ bulkOperationDetail }}</p>
-                </ion-label>
-                <ion-badge slot="end" :color="bulkOperationStatusColor">{{ bulkOperationStatusLabel }}</ion-badge>
-              </ion-item>
-              <ion-item lines="none">
-                <ion-label>
-                  {{ translate("HotWax bulk import") }}
-                  <p>{{ hotwaxImportDetail }}</p>
-                </ion-label>
-                <ion-badge slot="end" :color="hotwaxImportStatusColor">{{ hotwaxImportStatusLabel }}</ion-badge>
-              </ion-item>
-             </ion-list>
+            <div class="current" @click.capture="openProductSyncEntry()">
+              <ion-list>
+                <ion-item v-for="row in progressRows" :key="row.label" :lines="row.lines">
+                  <ion-label>
+                    {{ row.label }}
+                    <p>
+                      <ion-skeleton-text v-if="isProductSyncCardLoading" animated class="skeleton-line-short" />
+                      <template v-else>{{ row.detail }}</template>
+                    </p>
+                  </ion-label>
+                  <ion-skeleton-text v-if="isProductSyncCardLoading" slot="end" animated class="skeleton-count" />
+                  <ion-badge v-else slot="end" :color="row.color">{{ row.status }}</ion-badge>
+                </ion-item>
+              </ion-list>
             </div>
             </div>
           </ion-card>
@@ -886,6 +853,11 @@ const hotwaxImportDetail = computed(() => {
 
   return translate("Not started");
 });
+const progressRows = computed(() => [
+  { label: translate("System message"), detail: systemMessageDetail.value, status: systemMessageStatusLabel.value, color: systemMessageStatusColor.value, lines: "full" },
+  { label: translate("Shopify bulk operation"), detail: bulkOperationDetail.value, status: bulkOperationStatusLabel.value, color: bulkOperationStatusColor.value, lines: "full" },
+  { label: translate("HotWax bulk import"), detail: hotwaxImportDetail.value, status: hotwaxImportStatusLabel.value, color: hotwaxImportStatusColor.value, lines: "none" },
+] as const);
 const productSyncActivityRuns = computed(() => {
   const windowStart = DateTime.now().minus({ hours: PRODUCT_SYNC_ACTIVITY_HOUR_COUNT }).toMillis();
   const systemMessages = productSyncSummary.value.syncRunState?.systemMessages || [];
@@ -956,13 +928,10 @@ const activityGraphLatestPoint = computed(() => {
   return activityGraphPoints.value[activityGraphPoints.value.length - 1] || null;
 });
 const activityGraphCaption = computed(() => {
-  if (!activityGraphTotalCount.value) {
-    return `${translate("No sync activity recorded in the last")} ${PRODUCT_SYNC_ACTIVITY_HOUR_COUNT} ${translate("hours")}.`;
-  }
-
   return `${activityGraphTotalCount.value} ${translate("sync runs")}, ${activityGraphActiveHourCount.value} ${translate("active hours")}`;
 });
 const activityGraphAriaLabel = computed(() => {
+  if (!activityGraphTotalCount.value) return translate("No syncs in the last 24 hours");
   return `${translate("Product sync activity over the last")} ${PRODUCT_SYNC_ACTIVITY_HOUR_COUNT} ${translate("hours")}. ${activityGraphCaption.value}. ${translate("Peak")} ${activityGraphPeakCount.value}/${translate("hour")}.`;
 });
 
@@ -1071,7 +1040,6 @@ async function loadProductsInventorySummary() {
   legacyStateLoaded.value = false;
   // Nothing to reset for the run state or the record count — both are cached projections that
   // re-derive from whichever shop is selected.
-  clearSyncRun();
 
   if (!props.id) {
     isSyncSummaryLoading.value = false;
@@ -1494,6 +1462,7 @@ async function updateProductStoreMapping() {
 }
 
 function openProductSyncEntry() {
+  if (isProductSyncCardLoading.value) return;
   if (productSyncMigrationNotice.value?.action === "upgrade-assistant") {
     router.push(`/shopify-connection-details/${props.id}/product-sync/upgrade-assistant`);
   } else {
@@ -1651,7 +1620,7 @@ ion-card.widget:hover {
   animation: drawLine 2s ease-out forwards;
 }
 
-.product-sync-activity-svg path:nth-of-type(2) {
+.product-sync-activity-svg .activity-area {
   opacity: 0;
   animation: fadeArea 1s ease-out 0.3s forwards;
 }
@@ -1716,26 +1685,23 @@ ion-item[data-sync-state="teardown-needed"]::part(native) {
   inline-size: 50%;
 }
 
-.skeleton-line-long {
-  inline-size: 92%;
-}
-
-/* `ion-skeleton-text` inherits its height from the line it replaces, so a skeleton standing in for a
-   value that is not there yet has nothing to inherit from and collapses to zero -- measured before
-   this rule: header 0, graph 0, list 0, whole card 0. `1lh` is the line box of whatever it sits in,
-   so each stand-in occupies exactly the line its value will. */
-.product-sync[aria-busy="true"] ion-skeleton-text {
-  height: 1lh;
+.product-sync ion-skeleton-text {
+  display: inline-block;
+  height: 0.7em;
+  margin-block: 0;
+  vertical-align: middle;
   border-radius: 4px;
 }
 
+.activity-guides {
+  fill: none;
+  stroke: var(--ion-color-medium);
+  opacity: 0.35;
+}
 
-.product-sync-activity-placeholder {
-  position: absolute;
-  inset: 0;
-  height: 100%;
-  width: 100%;
-  margin: 0;
+.activity-empty-label {
+  fill: var(--ion-color-step-600, var(--ion-text-color));
+  font-size: 15px;
 }
 
 @media screen and (min-width: 700px) {

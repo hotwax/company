@@ -2317,6 +2317,7 @@
   "No SKU": "No SKU",
   "No store mappings configured for this carrier.": "No store mappings configured for this carrier.",
   "No sync activity recorded in the last": "No sync activity recorded in the last",
+  "No syncs in the last 24 hours": "No syncs in the last 24 hours",
   "No sync evidence appeared for the accepted request. Refresh, then retry if needed.": "No sync evidence appeared for the accepted request. Refresh, then retry if needed.",
   "No sync request has been produced yet.": "No sync request has been produced yet.",
   "No SystemMessage errors found": "No SystemMessage errors found",
