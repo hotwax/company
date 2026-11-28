@@ -21,10 +21,6 @@
     "systemMessageTypes": "systemMessageTypeId, parentTypeId",
     "apps": "appId",
     "shopifyBulkOperations": "id, status, systemMessageRemoteId, completedAt",
-    "netSuiteRuleGroups": "ruleGroupId, productStoreId, groupTypeEnumId, statusId, jobName",
-    "netSuiteDecisionRules": "ruleId, ruleGroupId, statusId, sequenceNum, [ruleGroupId+sequenceNum]",
-    "netSuiteRuleGroupRuns": "ruleGroupRunId, ruleGroupId, productStoreId, hasError, startDate, [ruleGroupId+startDate]",
-    "netSuiteOrderPushBacklog": "productStoreId, checkedAt",
     "systemMessageErrors": "[systemMessageId+errorDate], systemMessageId, errorDate, attemptedStatusId",
     "productUpdateHistories": "[shopId+productId], shopId, productId, systemMessageId, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
     "shopifyInventoryAdjustmentDetails": "[eventTypeId+eventReferenceId+inventoryChannelId+shopifyInventoryItemId], shopId, systemMessageId, createdDate, [shopId+createdDate], [shopId+detailLastUpdatedStamp], [shopId+systemMessageLastUpdatedStamp]",
@@ -35,7 +31,6 @@
     "shopifyTypeMappings": "[shopId+mappedTypeId+mappedKey], shopId, mappedTypeId, mappedKey",
     "shopifyCarrierShipments": "[shopId+carrierPartyId+shipmentMethodTypeId], shopId, carrierPartyId, shipmentMethodTypeId",
     "facilityGroupProductStores": "[facilityGroupId+productStoreId+fromDate], facilityGroupId, productStoreId, fromDate, thruDate",
-    "enumGroupMembers": "[enumerationGroupId+enumId+fromDate], enumerationGroupId, enumId",
     "facilityIdentifications": "[facilityId+facilityIdenTypeId+fromDate], facilityId, facilityIdenTypeId, thruDate",
     "appVersions": "[appId+environmentTypeId], appId, environmentTypeId"
   }

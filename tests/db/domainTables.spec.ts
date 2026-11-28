@@ -20,7 +20,6 @@ import { shopifyFulfillmentHistoryDomain } from "@/workers/domains/shopifyFulfil
 import { shopifyPendingFulfillmentDomain } from "@/workers/domains/shopifyPendingFulfillmentDomain";
 import { shopifyFulfillmentHealthDomain } from "@/workers/domains/shopifyFulfillmentHealthDomain";
 import { shopifyOrderSyncHistoryDomain } from "@/workers/domains/shopifyOrderSyncHistoryDomain";
-import { netSuiteOrderPushDomain } from "@/workers/domains/netSuiteOrderPushDomain";
 import { referenceDomains } from "@/workers/domains/referenceDomains";
 
 /** Every domain the worker entry registers, minus the framework seed domains it shares unchanged. */
@@ -40,7 +39,6 @@ const companyOwnDomains: SyncDomain[] = [
   shopifyPendingFulfillmentDomain,
   shopifyFulfillmentHealthDomain,
   shopifyOrderSyncHistoryDomain,
-  netSuiteOrderPushDomain,
   ...referenceDomains,
 ];
 

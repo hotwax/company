@@ -5,6 +5,7 @@ import { companyDb } from "@/db/companyDb";
 import { refreshAfterMutation } from "@/db/appDbSync";
 import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { onSessionCleared } from "./sessionScope";
+import { parameterMap } from "@/utils/serviceJob";
 
 /**
  * Service job master entity — job definitions, plus the live detail/history surface.
@@ -61,6 +62,15 @@ export const useServiceJobRecord = (jobName: string | undefined) => {
   const { first: record, hydrated } = useLiveEntity<any>(companyDb.tables.serviceJobs, () => jobName ? { equals: { jobName } } : { filter: () => false });
   return { record, hydrated };
 };
+
+export function useCachedServiceJob(jobName: () => string | undefined) {
+  const { first: job } = useLiveEntity<any>(companyDb.tables.serviceJobs, () => jobName() ? { equals: { jobName: jobName() } } : { filter: () => false });
+  return {
+    scheduleText: computed(() => (job.value?.cronExpression ? job.value.cronDescription || getCronString(job.value.cronExpression) : "")),
+    nextRunTime: computed(() => job.value?.nextExecutionDateTime),
+    parameters: computed(() => parameterMap(job.value)),
+  };
+}
 
 /**
  * Cached runs for one job, newest first — index-backed via `[jobName+startTime]`.

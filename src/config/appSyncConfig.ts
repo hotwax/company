@@ -160,3 +160,22 @@ export const TRANSFER_ORDER_PAGE = 10;
  * `dataManagerErrorRecord` domain prunes rows past it, and screens hide them until then.
  */
 export const ERROR_RECORD_TTL_MS = 2 * 60 * 60 * 1000;
+
+export const NETSUITE_STEP_COUNTS_DOMAIN = "netSuiteStepCounts";
+export const NETSUITE_STEP_FAILURES_DOMAIN = "netSuiteStepFailures";
+export const NETSUITE_STEP_LIST_DOMAIN = "netSuiteStepList";
+export const NETSUITE_STEP_LIST_PAGE = 50;
+export const NETSUITE_SENDING_COUNTS_DOMAIN = "netSuiteSendingCounts";
+export const NETSUITE_SHIPMENT_STEP_COUNTS_DOMAIN = "netSuiteShipmentStepCounts";
+export const NETSUITE_SHIPMENT_STEP_LIST_DOMAIN = "netSuiteShipmentStepList";
+export const NETSUITE_SHIPMENTS_SETUP_DOMAIN = "netSuiteShipmentsSetup";
+export const NETSUITE_SENDING_LIST_DOMAIN = "netSuiteSendingList";
+export const NETSUITE_ORDERS_KEY_DATES_DOMAIN = "netSuiteOrdersKeyDates";
+export const NETSUITE_ORDERS_SETUP_DOMAIN = "netSuiteOrdersSetup";
+export const NETSUITE_ORDERS_SETUP_LIST_DOMAIN = "netSuiteOrdersSetupList";
+export const NETSUITE_SUBSIDIARIES_DOMAIN = "netSuiteSubsidiaries";
+export const NETSUITE_COMPANY_SETUP_DOMAIN = "netSuiteCompanySetup";
+export const NETSUITE_REVIEW_SUBSIDIARIES_DOMAIN = "netSuiteReviewSubsidiaries";
+export const NETSUITE_REVIEW_LOCATIONS_DOMAIN = "netSuiteReviewLocations";
+export const NETSUITE_REVIEW_DEPARTMENTS_DOMAIN = "netSuiteReviewDepartments";
+export const NETSUITE_REVIEW_SHARING_DOMAIN = "netSuiteReviewSharing";
