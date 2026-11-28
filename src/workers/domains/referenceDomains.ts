@@ -329,19 +329,6 @@ defineSnapshotDomain({
 }),
 
 
-// NetSuite reference sets: the reason group it maps variances to, and the facility identifications
-// it uses as departments. Both are filtered server-side to the single id the app cares about.
-defineSnapshotDomain({
-  name: "enumGroupMember",
-  label: "NetSuite reason group",
-  syncClass: "B",
-  table: "enumGroupMembers",
-  projection: companyDb.entities.enumGroupMembers,
-  listUrl: "admin/enumGroups/IA_VAR_NETSUITE/members",
-  collectionKey: null,
-  listParams: { enumerationGroupId: "IA_VAR_NETSUITE" },
-}),
-
 /**
  * Every facility's identifications, ALL types — the detail page lists them and the find page will
  * search them. Deliberately unfiltered: a `facilityIdenTypeId: "ORDR_ORGN_DPT"` filter used to sit

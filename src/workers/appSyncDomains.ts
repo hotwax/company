@@ -33,7 +33,20 @@ import { shopifyFulfillmentHistoryDomain } from "./domains/shopifyFulfillmentHis
 import { shopifyPendingFulfillmentDomain } from "./domains/shopifyPendingFulfillmentDomain";
 import { shopifyFulfillmentHealthDomain } from "./domains/shopifyFulfillmentHealthDomain";
 import { shopifyOrderSyncHistoryDomain } from "./domains/shopifyOrderSyncHistoryDomain";
-import { netSuiteOrderPushDomain } from "./domains/netSuiteOrderPushDomain";
+import { netSuiteStepCountsDomain } from "./domains/netSuiteStepCountsDomain";
+import { netSuiteStepFailuresDomain } from "./domains/netSuiteStepFailuresDomain";
+import { netSuiteStepListDomain } from "./domains/netSuiteStepListDomain";
+import { netSuiteSendingCountsDomain } from "./domains/netSuiteSendingCountsDomain";
+import { netSuiteShipmentStepCountsDomain } from "./domains/netSuiteShipmentStepCountsDomain";
+import { netSuiteShipmentStepListDomain } from "./domains/netSuiteShipmentStepListDomain";
+import { netSuiteShipmentsSetupDomain } from "./domains/netSuiteShipmentsSetupDomain";
+import { netSuiteSubsidiariesDomain } from "./domains/netSuiteSubsidiariesDomain";
+import { netSuiteCompanySetupDomain } from "./domains/netSuiteCompanySetupDomain";
+import { netSuiteReviewDepartmentsDomain, netSuiteReviewLocationsDomain, netSuiteReviewSharingDomain, netSuiteReviewSubsidiariesDomain } from "./domains/netSuiteSetupReviewDomains";
+import { netSuiteSendingListDomain } from "./domains/netSuiteSendingListDomain";
+import { netSuiteOrdersKeyDatesDomain } from "./domains/netSuiteOrdersKeyDatesDomain";
+import { netSuiteOrdersSetupDomain } from "./domains/netSuiteOrdersSetupDomain";
+import { netSuiteOrdersSetupListDomain } from "./domains/netSuiteOrdersSetupListDomain";
 import { referenceDomains } from "./domains/referenceDomains";
 
 import { companyDb } from "@/db/companyDb";
@@ -71,6 +84,22 @@ export const appSyncDomains: SyncDomain[] = [
   shopifyPendingFulfillmentDomain,
   shopifyFulfillmentHealthDomain,
   shopifyOrderSyncHistoryDomain,
-  netSuiteOrderPushDomain,
+  netSuiteStepCountsDomain,
+  netSuiteStepFailuresDomain,
+  netSuiteStepListDomain,
+  netSuiteSendingCountsDomain,
+  netSuiteShipmentStepCountsDomain,
+  netSuiteShipmentStepListDomain,
+  netSuiteShipmentsSetupDomain,
+  netSuiteSendingListDomain,
+  netSuiteOrdersKeyDatesDomain,
+  netSuiteOrdersSetupDomain,
+  netSuiteOrdersSetupListDomain,
+  netSuiteSubsidiariesDomain,
+  netSuiteCompanySetupDomain,
+  netSuiteReviewSubsidiariesDomain,
+  netSuiteReviewLocationsDomain,
+  netSuiteReviewDepartmentsDomain,
+  netSuiteReviewSharingDomain,
   ...referenceDomains,
 ];

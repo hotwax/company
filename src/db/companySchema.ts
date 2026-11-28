@@ -595,110 +595,278 @@ export const companySchema = defineSchema({
     },
   }),
 
-  // =============================================================================================
-  // NetSuite order push — the rule-group export path (co.hotwax.netsuite.OrderServices)
-  //
-  // Deepak's rule-group push replaced the single scheduled feed job with a RuleGroup of
-  // DecisionRules, each carrying RuleConditions that narrow which orders that rule exports. All
-  // three are the SHARED `co.hotwax.rule.*` model the safety-stock screens already drive through
-  // `available-to-promise/*`, so nothing here is NetSuite-specific except the
-  // `groupTypeEnumId = RG_NS_ORDER_PUSH` scope the reads apply.
-  //
-  // Rule groups and their rules are class B config: small, read constantly by the monitor, and
-  // refetched after a mutation rather than polled. Runs are class A, cursored on `startDate`.
-  // =============================================================================================
-
-  /**
-   * RuleGroup — one NetSuite order-push configuration for a product store.
-   *
-   * `jobName` is the link to the scheduled job that runs the group; the schedule itself lives on
-   * `moqui.service.job.ServiceJob` and is read through `ruleGroups/{id}/schedule`, not stored here.
-   */
-  netSuiteRuleGroups: defineEntity({
-    primaryKey: "ruleGroupId",
+  netSuiteStepCounts: defineEntity({
+    primaryKey: "productStoreId,step",
     fields: {
-      ruleGroupId: "text",
       productStoreId: "text",
-      groupName: "text",
-      groupTypeEnumId: "text",
-      statusId: "text",
-      sequenceNum: "count",
+      step: "text",
       jobName: "text",
-      description: "text",
-      createdDate: "date",
-      lastModifiedDate: "date",
+      isOn: "text",
+      lastRunTime: "date",
+      failedCount: "count",
+      stuckCount: "count",
+      pendingOverOneDayCount: "count",
+      notPickedCount: "count",
+      openBatches: [{ systemMessageRemoteId: "text", productStoreId: "text", openCount: "count" }],
     },
-    indexes: ["productStoreId", "groupTypeEnumId", "statusId", "jobName"],
   }),
 
-  /**
-   * DecisionRule — one rule inside a group.
-   *
-   * The rule's conditions arrive nested on the `default` master (`ruleConditions`), so they are kept
-   * on the row as structured data rather than given their own table: a rule is never rendered
-   * without them, and the composite PK (ruleId + conditionSeqId) would otherwise need a synthetic key
-   * for no read that asks for conditions independently.
-   */
-  netSuiteDecisionRules: defineEntity({
-    primaryKey: "ruleId",
+  netSuiteShipmentStepCounts: defineEntity({
+    primaryKey: "productStoreId,step",
     fields: {
-      ruleId: "text",
-      ruleGroupId: "text",
-      ruleName: "text",
-      statusId: "text",
-      sequenceNum: "count",
-      createdDate: "date",
-      ruleConditions: "structured",
-      ruleActions: "structured",
-    },
-    indexes: ["ruleGroupId", "statusId", "sequenceNum", "[ruleGroupId+sequenceNum]"],
-  }),
-
-  /**
-   * RuleGroupRun — one execution of a rule group. This is the run history the monitor renders.
-   *
-   * ⚠️ Written by `co.hotwax.rule.DecisionRuleServices`, NOT by
-   * `co.hotwax.netsuite.OrderServices.run#NetSuiteDMOrderFeed` itself — that service iterates the
-   * rules and creates a DataManagerLog per generated file, and never stamps a RuleGroupRun. So a
-   * group invoked directly as a plain ServiceJob produces job runs and MDM logs but NO rows here.
-   * Treat an empty run history as "not driven through the rule-group scheduler", never as "no syncs".
-   */
-  netSuiteRuleGroupRuns: defineEntity({
-    primaryKey: "ruleGroupRunId",
-    fields: {
-      ruleGroupRunId: "text",
-      ruleGroupId: "text",
       productStoreId: "text",
-      hasError: "text",
-      startDate: "date",
-      endDate: "date",
-      ruleGroupRunResult: "text",
+      step: "text",
+      jobName: "text",
+      isOn: "text",
+      lastRunTime: "date",
+      failedCount: "count",
+      stuckCount: "count",
+      waitingCount: "count",
+      readUpTo: "text",
     },
-    indexes: ["ruleGroupId", "productStoreId", "hasError", "startDate", "[ruleGroupId+startDate]"],
   }),
 
-  /**
-   * The pending-to-sync backlog, as a single row per product store.
-   *
-   * A scalar count has no entity of its own, so it is stored keyed by `productStoreId` — that is what
-   * makes it readable through the same `live()` path as every other cached read, so the monitor card
-   * re-renders from the worker's write with no main-thread fetch.
-   *
-   * `isSupported` records whether the backing endpoint exists on this instance at all:
-   * `netsuite/orderPushPending/count` ships in mantle-netsuite-connector and an instance that has not
-   * taken that release 404s. That is a "cannot know" answer, which must render differently from a
-   * genuine zero backlog — see `useNetSuiteOrderPushBacklog`. One row per product store, not a
-   * server entity — see `netSuiteOrderPushBacklogProjection`.
-   */
-  netSuiteOrderPushBacklog: defineEntity({
+  netSuiteShipmentsSetup: defineEntity({
+    primaryKey: "flow",
+    fields: {
+      flow: "text",
+      warehouseCount: "count",
+      warehousesWithoutId: [{ facilityId: "text", facilityName: "text", externalId: "text" }],
+      readShipmentCount: "count",
+      unmappedShipMethodIds: "structured",
+      shipmentsWithoutCarrierCount: "count",
+      oldFeedJobNames: "structured",
+      oldFeedJobNamesOn: "structured",
+    },
+  }),
+
+  netSuiteShipmentStepLists: defineEntity({
+    primaryKey: "productStoreId,step,list",
+    fields: {
+      productStoreId: "text",
+      step: "text",
+      list: "text",
+      jobName: "text",
+      minAgeHours: "count",
+      recordCount: "count",
+      ledgerRowCount: "count",
+      ledgerRows: [{ netsuiteFulfillmentId: "text", fulfillmentNumber: "text", netsuiteOrderId: "text", orderId: "text", orderName: "text", errorMessage: "text", receivedDate: "date", attemptCount: "count", packageReadCount: "count", lastAttemptDate: "date" }],
+      fileCount: "count",
+      failedRecordCount: "count",
+      files: [{ logId: "text", configId: "text", statusId: "text", createdDate: "date", finishDateTime: "date", totalRecordCount: "count", failedRecordCount: "count" }],
+      orderCount: "count",
+      orders: [{ orderId: "text", orderName: "text", orderDate: "date", netsuiteOrderId: "text", sentDate: "date", openItemCount: "count" }],
+    },
+  }),
+
+  netSuiteStepFailures: defineEntity({
+    primaryKey: "productStoreId,step",
+    fields: {
+      productStoreId: "text",
+      step: "text",
+      selectedErrorMessage: "text",
+      failureCount: "count",
+      failures: [{ recordId: "text", recordName: "text", recordDetail: "text", recordDate: "date", claimedDate: "date", errorMessage: "text", attemptCount: "count", attemptLimit: "count", nextTryDate: "date" }],
+      errorGroups: [{ errorMessage: "text", recordCount: "count" }],
+    },
+  }),
+
+  netSuiteOrdersKeyDates: defineEntity({
     primaryKey: "productStoreId",
     fields: {
       productStoreId: "text",
-      pendingCount: "count",
-      isSupported: "text",
-      checkedAt: "date",
+      customerRuleGroupId: "text",
+      customerGoLiveDate: "date",
+      customerGoLiveMoves: [{ changedDate: "date", changedByUsername: "text", oldGoLiveDate: "date", newGoLiveDate: "date", changeReason: "text", ruleCount: "count" }],
+      customerRules: [{ ruleId: "text", ruleName: "text", statusId: "text", hasGoLiveFilter: "structured", conditions: [{ conditionSeqId: "text", fieldName: "text", operator: "text", fieldValue: "text" }] }],
+      customerFacts: "structured",
+      orderRuleGroupId: "text",
+      orderGoLiveDate: "date",
+      orderGoLiveMoves: [{ changedDate: "date", changedByUsername: "text", oldGoLiveDate: "date", newGoLiveDate: "date", changeReason: "text", ruleCount: "count" }],
+      orderRules: [{ ruleId: "text", ruleName: "text", statusId: "text", hasGoLiveFilter: "structured", conditions: [{ conditionSeqId: "text", fieldName: "text", operator: "text", fieldValue: "text" }] }],
+      orderFacts: "structured",
+      paymentRuleGroupId: "text",
+      paymentGoLiveDate: "date",
+      paymentGoLiveMoves: [{ changedDate: "date", changedByUsername: "text", oldGoLiveDate: "date", newGoLiveDate: "date", changeReason: "text", ruleCount: "count" }],
+      paymentRules: [{ ruleId: "text", ruleName: "text", statusId: "text", hasGoLiveFilter: "structured", conditions: [{ conditionSeqId: "text", fieldName: "text", operator: "text", fieldValue: "text" }] }],
+      paymentFacts: "structured",
+      exchangePaymentRuleGroupId: "text",
+      refundRuleGroupId: "text",
+      storeShipmentRuleGroupId: "text",
+      storeShipmentGoLiveDate: "date",
+      storeShipmentGoLiveMoves: [{ changedDate: "date", changedByUsername: "text", oldGoLiveDate: "date", newGoLiveDate: "date", changeReason: "text", ruleCount: "count" }],
     },
-    indexes: ["checkedAt"],
+  }),
+
+  netSuiteOrdersSetup: defineEntity({
+    primaryKey: "productStoreId",
+    fields: {
+      productStoreId: "text",
+      goLiveDate: "date",
+      productCount: "count",
+      facilityCount: "count",
+      customerServiceName: "text",
+      locationCustomerCount: "count",
+    },
+  }),
+
+  netSuiteOrdersSetupLists: defineEntity({
+    primaryKey: "productStoreId,list",
+    fields: {
+      productStoreId: "text",
+      list: "text",
+      recordCount: "count",
+      records: [{ recordId: "text", recordName: "text", recordDetail: "text", orderCount: "count", firstOrderDate: "date" }],
+    },
+  }),
+
+  netSuiteReviewSubsidiaries: defineEntity({
+    primaryKey: "subsidiaryId",
+    fields: {
+      subsidiaryId: "text",
+      name: "text",
+      parentId: "text",
+      isElimination: "text",
+      isInactive: "text",
+      partyId: "text",
+      expectedParentPartyId: "text",
+      currentParentPartyIds: "structured",
+      reviewStatus: "text",
+      differences: "structured",
+    },
+  }),
+
+  netSuiteReviewLocations: defineEntity({
+    primaryKey: "netSuiteLocationId",
+    fields: {
+      netSuiteLocationId: "text",
+      name: "text",
+      subsidiaryId: "text",
+      isInactive: "text",
+      expectedOwnerPartyId: "text",
+      facilities: "structured",
+      reviewStatus: "text",
+      warnings: "structured",
+    },
+  }),
+
+  netSuiteReviewFacilities: defineEntity({
+    primaryKey: "facilityId",
+    fields: {
+      facilityId: "text",
+      facilityName: "text",
+      externalId: "text",
+      ownerPartyId: "text",
+      problem: "text",
+    },
+  }),
+
+  netSuiteReviewDepartments: defineEntity({
+    primaryKey: "departmentId",
+    fields: {
+      departmentId: "text",
+      name: "text",
+      subsidiaryIds: "structured",
+      companySubsidiaryIds: "structured",
+      isInactive: "text",
+      parties: "structured",
+      reviewStatus: "text",
+    },
+  }),
+
+  netSuiteReviewUnknownDepartments: defineEntity({
+    primaryKey: "partyId",
+    fields: {
+      partyId: "text",
+      groupName: "text",
+      externalId: "text",
+    },
+  }),
+
+  netSuiteReviewSharing: defineEntity({
+    primaryKey: "relationshipId",
+    fields: {
+      relationshipId: "text",
+      originatingSubsidiaryId: "text",
+      originatingSubsidiaryName: "text",
+      inventorySubsidiaryId: "text",
+      inventorySubsidiaryName: "text",
+      allowsFulfillment: "text",
+      allowsCustomerReturn: "text",
+      allLocationsForFulfillment: "text",
+      allLocationsForCustomerReturn: "text",
+      isInactive: "text",
+    },
+  }),
+
+  netSuiteAccountFeatures: defineEntity({
+    primaryKey: "featureId",
+    fields: {
+      featureId: "text",
+      isEnabled: "text",
+    },
+  }),
+
+  netSuiteSubsidiaries: defineEntity({
+    primaryKey: "subsidiaryId",
+    fields: {
+      subsidiaryId: "text",
+      name: "text",
+      parentId: "text",
+      country: "text",
+      currencyId: "text",
+      isElimination: "text",
+      isInactive: "text",
+      partyId: "text",
+      status: "text",
+      locationCount: "count",
+    },
+  }),
+
+  netSuiteCompanySetup: defineEntity({
+    primaryKey: "partyId",
+    fields: {
+      partyId: "text",
+      locations: [{ facilityId: "text", facilityName: "text", externalId: "text" }],
+      stores: [{ productStoreId: "text", storeName: "text", locationCount: "count" }],
+    },
+  }),
+
+  netSuiteSendingCounts: defineEntity({
+    primaryKey: "way",
+    fields: {
+      way: "text",
+      sendJobName: "text",
+      sendIsOn: "text",
+      sendLastRunTime: "date",
+      pollJobName: "text",
+      pollIsOn: "text",
+      pollLastRunTime: "date",
+      waitingToSendCount: "count",
+      waitingForAnswerCount: "count",
+      errorCount: "count",
+    },
+  }),
+
+  netSuiteSendingLists: defineEntity({
+    primaryKey: "way,list",
+    fields: {
+      way: "text",
+      list: "text",
+      messageCount: "count",
+      messages: [{ systemMessageId: "text", systemMessageTypeId: "text", statusId: "text", productStoreId: "text", initDate: "date", lastAttemptDate: "date", failCount: "count", remoteMessageId: "text", errorText: "text" }],
+    },
+  }),
+
+  netSuiteStepLists: defineEntity({
+    primaryKey: "productStoreId,step,list",
+    fields: {
+      productStoreId: "text",
+      step: "text",
+      list: "text",
+      recordCount: "count",
+      records: [{ recordId: "text", recordName: "text", recordDetail: "text", recordDate: "date", systemMessageId: "text", batchInitDate: "date" }],
+    },
   }),
 
   // =============================================================================================
@@ -970,27 +1138,6 @@ export const companySchema = defineSchema({
       thruDate: "date",
     },
     indexes: ["facilityGroupId", "productStoreId", "fromDate", "thruDate"],
-  }),
-
-  /**
-   * EnumerationGroupMember — date-effective, keyed (enumerationGroupId, enumId, fromDate), the
-   * entity's own PK.
-   *
-   * Removing a reason stamps a `thruDate` and re-adding it inserts a NEW row with a later `fromDate`,
-   * so the members endpoint returns the expired row alongside its replacement. Keyed on group + enum
-   * alone those two collapsed into one and whichever came first won — the expired one, leaving the
-   * re-added reason unchecked. Readers pick the live row with `isEffectiveNow`.
-   */
-  enumGroupMembers: defineEntity({
-    primaryKey: "enumerationGroupId,enumId,fromDate",
-    fields: {
-      enumerationGroupId: "text",
-      enumId: "text",
-      description: "text",
-      fromDate: "date",
-      thruDate: "date",
-    },
-    indexes: ["enumerationGroupId", "enumId"],
   }),
 
   /**

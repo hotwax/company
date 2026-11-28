@@ -58,16 +58,6 @@ export function useIntegrationTypeMappings(integrationTypeId?: string) {
   return { mappings: records, valueByKey, mappingByKey, byType, records, hydrated };
 }
 
-/** Enum group members for one group (e.g. sales channel / variance reason sets). */
-export function useEnumGroupMembers(enumerationGroupId?: string) {
-  const { records, hydrated } = useLiveEntity<any>(companyDb.tables.enumGroupMembers);
-  // The stored field is `enumerationGroupId`; with no group named, every cached member is returned.
-  const members = computed(() => enumerationGroupId
-    ? records.value.filter((row: any) => row.enumerationGroupId === enumerationGroupId)
-    : records.value);
-  return { members, hydrated };
-}
-
 /** Facility identifications (party/facility external-id mappings). */
 export function useFacilityIdentifications() {
   const { records, hydrated } = useLiveEntity<any>(companyDb.tables.facilityIdentifications);
@@ -146,44 +136,6 @@ export function useNetSuite(integrationTypeId?: any) {
     });
     if (commonUtil.hasError(resp)) throw resp;
     await resyncDomain("facilityIdentification");
-    return resp;
-  }
-
-  /**
-   * Add (or date-expire) an enum's membership in the NetSuite reason group.
-   * Passing `thruDate` expires the membership rather than creating a new one.
-   */
-  async function setEnumGroupMembership(payload: any) {
-    const resp: any = await api({
-      url: `admin/enumGroups/${payload.enumerationGroupId}/members`,
-      method: "post",
-      data: payload,
-    });
-    if (commonUtil.hasError(resp)) throw resp;
-    await resyncDomain("enumGroupMember");
-    return resp;
-  }
-
-  /**
-   * Enum code edit (used for sales channels and variance reasons).
-   *
-   * Enums are cached as ONE domain and sliced by `enumTypeId` on read, so a change resyncs that
-   * single domain rather than a per-type one.
-   */
-  async function updateEnumCode(payload: any) {
-    const resp: any = await api({ url: `admin/enums/${payload.enumId}`, method: "put", data: payload });
-    if (commonUtil.hasError(resp)) throw resp;
-    await resyncDomain("enum");
-    return resp;
-  }
-
-  /**
-   * SFTP transfer settings for the NetSuite connector. Nothing here is cached — it is connector
-   * configuration rather than reference data — so there is no resync to follow.
-   */
-  async function updateSftpConfig(payload: any) {
-    const resp: any = await api({ url: "netsuite/sftpConfig", method: "post", data: payload });
-    if (commonUtil.hasError(resp)) throw resp;
     return resp;
   }
 
@@ -274,8 +226,7 @@ export function useNetSuite(integrationTypeId?: any) {
     // reads
     mappings, valueByKey, mappingByKey, hydrated,
     // raw writes
-    addMapping, updateMapping, removeMapping, updateFacilityIdentification, updateEnumCode,
-    setEnumGroupMembership, updateSftpConfig,
+    addMapping, updateMapping, removeMapping, updateFacilityIdentification,
     refreshMappings,
     // prompt-driven helpers
     editNetSuiteId, addNetSuiteId, updateNetSuiteId, removeNetSuiteId,

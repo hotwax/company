@@ -13,11 +13,11 @@ describe("Company app database wiring", () => {
       tables: Object.keys(companyDb.tables),
       domains: appSyncDomains,
       filledBy: {
-        netSuiteDecisionRules: "netSuiteOrderPush",
-        netSuiteRuleGroupRuns: "netSuiteOrderPush",
-        netSuiteOrderPushBacklog: "netSuiteOrderPush",
         shopifyFulfillmentHistorySupport: "shopifyFulfillmentHistory",
         shopifyPendingFulfillmentStatus: "shopifyPendingFulfillment",
+        netSuiteReviewFacilities: "netSuiteReviewLocations",
+        netSuiteAccountFeatures: "netSuiteReviewSharing",
+        netSuiteReviewUnknownDepartments: "netSuiteReviewDepartments",
       },
       unfilled: {
         users: "declared when the old cache was ported; nothing registers, fills or reads it",

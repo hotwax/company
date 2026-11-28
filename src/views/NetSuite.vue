@@ -10,41 +10,87 @@
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding-horizontal">
-      <!--
-        Sync monitoring. This replaces three hardcoded placeholder counts; only the order backlog is
-        shown because it is the only one the OMS can actually answer today. Customer and product
-        "pending" counts had no backing query, and inventing plausible numbers for an operations
-        screen is worse than omitting them.
-      -->
-      <ion-card button class="ion-margin-top" @click="openSyncMonitor()">
+      <ion-card class="ion-margin-top" data-testid="netsuite-connection-card">
         <ion-card-header>
-          <ion-card-subtitle>{{ translate("Orders pending sync") }}</ion-card-subtitle>
+          <ion-card-subtitle>{{ translate("Connection") }}</ion-card-subtitle>
           <ion-card-title>
-            <template v-if="!backlogHydrated">
-              <ion-skeleton-text :animated="true" class="count-skeleton" />
+            <ion-skeleton-text v-if="isConnectionLoading" :animated="true" class="count-skeleton" />
+            <template v-else-if="netSuiteAccountId">
+              {{ translate(isSandbox ? "Login saved for NetSuite sandbox {accountId}" : "Login saved for NetSuite account {accountId}", { accountId: netSuiteAccountId }) }}
             </template>
-            <template v-else-if="pendingCount !== undefined">{{ pendingCount }}</template>
-            <template v-else>{{ translate("Unavailable") }}</template>
+            <template v-else>{{ translate("No NetSuite login saved") }}</template>
           </ion-card-title>
         </ion-card-header>
+      </ion-card>
+
+      <ion-item v-if="setupState === 'MATCHES'" lines="none" data-testid="netsuite-setup-done">
+        <ion-label class="ion-text-wrap">
+          {{ translate("Company setup matches NetSuite.") }}
+          <p v-if="lastSave">{{ translate("Last saved by {username}, {date}", { username: lastSave.username, date: commonUtil.getDateAndTime(lastSave.savedDate) }) }}</p>
+        </ion-label>
+        <ion-button slot="end" fill="clear" data-testid="netsuite-setup-review-again" @click="router.push(reviewRoute('subsidiaries'))">{{ translate("Review again") }}</ion-button>
+      </ion-item>
+      <ion-card v-else-if="setupCard" data-testid="netsuite-setup-card">
+        <ion-card-header>
+          <ion-card-subtitle>{{ translate("Next step") }}</ion-card-subtitle>
+          <ion-card-title>{{ setupCard.title }}</ion-card-title>
+        </ion-card-header>
         <ion-card-content>
-          <p v-if="pendingCount !== undefined">
-            {{ translate("Sales orders with no NetSuite order ID yet.") }}
-          </p>
-          <p v-else-if="backlogHydrated">
-            {{ translate("This OMS does not expose the pending order count yet.") }}
-          </p>
-          <p v-if="failedRuns.length" class="overline">
-            {{ failedRuns.length }} {{ translate("recent sync failures") }}
-          </p>
+          <p>{{ setupCard.note }}</p>
+          <ion-button v-if="setupCard.action" class="ion-margin-top" data-testid="netsuite-setup-action" @click="router.push(reviewRoute(tabToFix))">{{ setupCard.action }}</ion-button>
         </ion-card-content>
       </ion-card>
 
       <div class="ion-margin-top">
+        <h1>{{ translate("Subsidiaries") }}</h1>
+        <p class="section-note">{{ translate("The client's companies in NetSuite, and whether each is set up in the OMS.") }}</p>
+        <ion-list lines="full" data-testid="netsuite-subsidiaries">
+          <ion-item v-if="subsidiariesLoadError" data-testid="netsuite-subsidiaries-error">
+            <ion-label class="ion-text-wrap">
+              {{ translate(subsidiaries.length ? "Could not read the subsidiaries from NetSuite. The list below is from the last good read." : "Could not read the subsidiaries from NetSuite.") }}
+              <p>{{ subsidiariesLoadError }}</p>
+            </ion-label>
+          </ion-item>
+          <ion-item v-if="isSubsidiariesLoading">
+            <ion-skeleton-text :animated="true" />
+          </ion-item>
+          <ion-item v-else-if="!subsidiaries.length && !subsidiariesLoadError">
+            <ion-label>{{ translate("NetSuite returned no subsidiaries.") }}</ion-label>
+          </ion-item>
+          <ion-item v-for="subsidiary in subsidiaries" v-else :key="subsidiary.subsidiaryId" button detail :data-testid="`netsuite-subsidiary-${subsidiary.subsidiaryId}`" @click="router.push(`/netsuite/subsidiaries/${subsidiary.subsidiaryId}`)">
+            <ion-label class="ion-text-wrap">
+              <h2>{{ translate("{name} ({subsidiaryId})", { name: subsidiary.name, subsidiaryId: subsidiary.subsidiaryId }) }}</h2>
+              <p v-if="subsidiary.status === 'SET_UP' || subsidiary.locationCount">
+                {{ translate(subsidiary.locationCount === 1 ? "Owns 1 location" : "Owns {count} locations", { count: subsidiary.locationCount }) }}
+              </p>
+              <p v-if="subsidiary.status === 'ROLE_MISSING'"><ion-text color="warning">{{ translate("An organization holds this id, but it has no Subsidiary role.") }}</ion-text></p>
+              <p v-if="subsidiary.status === 'DUPLICATE'"><ion-text color="warning">{{ translate("More than one organization holds this id.") }}</ion-text></p>
+              <p v-if="subsidiary.isInactive === 'Y'">{{ translate("Inactive in NetSuite") }}</p>
+            </ion-label>
+            <ion-badge slot="end" :color="SUBSIDIARY_STATUS_COLORS[subsidiary.status]">{{ translate(SUBSIDIARY_STATUS_LABELS[subsidiary.status]) }}</ion-badge>
+          </ion-item>
+        </ion-list>
+      </div>
+
+      <div class="ion-margin-top">
         <h1>{{ translate("Monitoring") }}</h1>
         <section>
-          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openSyncMonitor()">
-            <ion-label>{{ translate("Order sync monitoring") }}</ion-label>
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button data-testid="netsuite-orders-item" @click="openOrdersFlow()">
+            <ion-label class="ion-text-wrap">
+              {{ translate("Orders") }}
+              <p v-if="!netSuiteProductStore?.productStoreId">{{ translate("Set a NetSuite product store first.") }}</p>
+              <ion-skeleton-text v-else-if="isOrdersSummaryLoading" :animated="true" />
+              <p v-else data-testid="netsuite-orders-summary"><ion-text :color="ordersNeedAttention ? 'warning' : undefined">{{ ordersSummary }}</ion-text></p>
+              <p v-if="flowWarning" data-testid="netsuite-orders-setup-warning"><ion-text color="warning">{{ translate(flowWarning) }}</ion-text></p>
+            </ion-label>
+          </ion-item>
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button data-testid="netsuite-shipments-item" @click="openShipmentsFlow()">
+            <ion-label class="ion-text-wrap">
+              {{ translate("Shipments from NetSuite") }}
+              <p v-if="!netSuiteProductStore?.productStoreId">{{ translate("Set a NetSuite product store first.") }}</p>
+              <ion-skeleton-text v-else-if="isShipmentsSummaryLoading" :animated="true" />
+              <p v-else data-testid="netsuite-shipments-summary"><ion-text :color="shipmentsNeedAttention ? 'warning' : undefined">{{ shipmentsSummary }}</ion-text></p>
+            </ion-label>
           </ion-item>
         </section>
       </div>
@@ -52,20 +98,8 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Configuration") }}</h1>
         <section>
-          <ion-item detail class="item-box" lines="none" button @click="openSftpModal()">
-            <ion-label>{{ translate("SFTP") }}</ion-label>
-          </ion-item>
           <ion-item detail class="item-box" lines="none" button @click="openProductStoreModal()">
             <ion-label>{{ translate("Product Store") }}</ion-label>
-          </ion-item>
-        </section>
-      </div>
-      
-      <div class="ion-margin-top">
-        <h1>{{ translate("Products and Inventory") }}</h1>
-        <section>
-          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
-            <ion-label>{{ translate("Inventory variances") }}</ion-label>
           </ion-item>
         </section>
       </div>
@@ -88,75 +122,9 @@
           <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openDepartments()">
             <ion-label>{{ translate("Departments") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openSalesChannel()">
-            <ion-label>{{ translate("Sales Channel") }}</ion-label>
-          </ion-item>
         </section>
       </div>
       
-      <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
-      <!-- <div class="ion-margin-top">
-        <h1>{{ translate("Transfer orders") }}</h1>
-        <section>
-          <ion-item detail class="item-box" lines="none" button>
-            <ion-label>{{ translate("Transfer order fulfillment") }}</ion-label>
-          </ion-item>
-          <ion-item detail class="item-box" lines="none" button>
-            <ion-label>{{ translate("Transfer order receipt") }}</ion-label>
-          </ion-item>
-        </section>
-      </div> -->
-
-      <ion-modal :is-open="showSftpModal" @didDismiss="closeSftpModal">
-        <ion-header>
-          <ion-toolbar>
-            <ion-buttons slot="start">
-              <ion-button @click="closeSftpModal()">
-                <ion-icon slot="icon-only" :icon="closeOutline" />
-              </ion-button>
-            </ion-buttons>
-            <ion-title>{{ translate("SFTP") }}</ion-title>
-          </ion-toolbar>
-        </ion-header>
-
-        <ion-content>
-          <ion-item class="ion-margin-top">
-            <ion-icon slot="start" :icon="informationCircleOutline" />
-            <ion-label>
-              {{ translate("Learn more about NetSuite SFTP configuration.") }}
-            </ion-label>
-            <ion-button fill="clear" size="default" color="medium" @click="openSftpDoc">
-              <ion-icon :icon="openOutline" slot="icon-only" />
-            </ion-button>
-          </ion-item>
-
-          <ion-item lines="full" class="ion-margin-top">
-            <ion-input v-model="sftpFormData.guid" :label="translate('GUID')" :placeholder="translate('Unique SFTP identifier')" />
-          </ion-item>
-          <ion-item lines="full">
-            <ion-input v-model="sftpFormData.server" :label="translate('SERVER')" :placeholder="translate('Address or domain of the SFTP server')" />
-          </ion-item>
-          <ion-item lines="full">
-            <ion-input v-model="sftpFormData.userId" :label="translate('USER ID')" :placeholder="translate('SFTP username')" />
-          </ion-item>
-          <ion-item lines="full">
-            <ion-input v-model="sftpFormData.port" :label="translate('PORT')" :placeholder="translate('Default is 22')" />
-          </ion-item>
-          <ion-item lines="full">
-            <ion-input v-model="sftpFormData.hostKey" :label="translate('HOST KEY')" :placeholder="translate('Authentication key')" />
-          </ion-item>
-          <ion-item lines="full">
-            <ion-input v-model="sftpFormData.defaultDirectory" :label="translate('DEFAULT DIRECTORY')" placeholder="/home/-sftp/netsuite/" />
-          </ion-item>
-
-          <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-            <ion-fab-button @click="saveSftpConfig" :disabled="isFormInvalid">
-              <ion-icon :icon="saveOutline" />
-            </ion-fab-button>
-          </ion-fab>
-        </ion-content>
-      </ion-modal>
-
       <ion-modal :is-open="showProductStoreModal" @didDismiss="closeProductStoreModal">
         <ion-header>
           <ion-toolbar>
@@ -302,17 +270,17 @@
 <script setup lang="ts">
 import { useNetSuiteProductStore, useProductStoreMutations, useProductStores } from "@/composables/useProductStores";
 import { useIntegrationTypeMappings } from "@/composables/useNetSuite";
-import { IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonModal, IonPage, IonRadio, IonRadioGroup, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter } from "@ionic/vue";
+import { IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonModal, IonPage, IonRadio, IonRadioGroup, IonSelect, IonSelectOption, IonSkeletonText, IonText, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline, search } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from '@common';
 import router from "@/router";
 import { useNetSuite } from "@/composables/useNetSuite";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains } from "@/db/appDbSync";
-import {
-  useNetSuiteOrderPushBacklog,
-  useNetSuiteRecentRuns,
-  useNetSuiteRuleGroups,
-} from "@/composables/useNetSuiteSync";
+import { useNetSuiteConnection, useNetSuiteSubsidiaries } from "@/composables/useNetSuiteSubsidiaries";
+import { useNetSuiteOrdersSummary } from "@/composables/useNetSuiteOrdersFlow";
+import { useNetSuiteShipmentsSummary } from "@/composables/useNetSuiteShipmentsFlow";
+import { reviewRoute, SETUP_STATUS_DOMAINS, useNetSuiteSetupReviewSave, useNetSuiteSetupStatus } from "@/composables/useNetSuiteSetupReview";
+import { NETSUITE_ORDERS_SETUP_DOMAIN, NETSUITE_SENDING_COUNTS_DOMAIN, NETSUITE_SHIPMENT_STEP_COUNTS_DOMAIN, NETSUITE_STEP_COUNTS_DOMAIN, NETSUITE_SUBSIDIARIES_DOMAIN } from "@/config/appSyncConfig";
 import { computed, ref, watch } from "vue";
 
 
@@ -321,34 +289,85 @@ const discountTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE
 const { updateNetSuiteId: updatePriceLevelNetSuiteId, mappings: priceLevelMappings } = useNetSuite(priceLevelTypeId);
 const { addNetSuiteId: addDiscountNetSuiteId, updateNetSuiteId: updateDiscountNetSuiteId } = useNetSuite(discountTypeId);
 
-const { updateSftpConfig } = useNetSuite();
 const { netSuiteProductStore } = useNetSuiteProductStore();
 
-// Sync monitoring — the card reads the cache the `netSuiteOrderPush` worker domain writes, so it
-// costs no main-thread request and refreshes itself while the page is open.
-const { pendingCount, hydrated: backlogHydrated } =
-  useNetSuiteOrderPushBacklog(() => netSuiteProductStore.value?.productStoreId);
-const { groups: netSuiteRuleGroups } =
-  useNetSuiteRuleGroups(() => netSuiteProductStore.value?.productStoreId);
-const { failed: failedRuns } =
-  useNetSuiteRecentRuns(() => netSuiteRuleGroups.value.map((group: any) => group.ruleGroupId));
+const SUBSIDIARY_STATUS_LABELS: Record<string, string> = { SET_UP: "Set up", ROLE_MISSING: "Not set up", DUPLICATE: "Not set up", NOT_SET_UP: "Not set up", SKIPPED: "Skipped (accounting only)" };
+const SUBSIDIARY_STATUS_COLORS: Record<string, string> = { SET_UP: "success", ROLE_MISSING: "warning", DUPLICATE: "danger", NOT_SET_UP: "warning", SKIPPED: "medium" };
+
+const { isLoading: isConnectionLoading, accountId: netSuiteAccountId, isSandbox } = useNetSuiteConnection();
+const { subsidiaries, isLoading: isSubsidiariesLoading, loadError: subsidiariesLoadError } = useNetSuiteSubsidiaries();
+const { isLoading: isOrdersSummaryLoading, summary: ordersSummary, needsAttention: ordersNeedAttention } =
+  useNetSuiteOrdersSummary(() => netSuiteProductStore.value?.productStoreId);
+const { isLoading: isShipmentsSummaryLoading, summary: shipmentsSummary, needsAttention: shipmentsNeedAttention } =
+  useNetSuiteShipmentsSummary(() => netSuiteProductStore.value?.productStoreId);
+const { state: setupState, companiesNotSetUp, actionCounts, tabToFix, flowWarning } = useNetSuiteSetupStatus();
+const { lastSave, loadLastSave } = useNetSuiteSetupReviewSave();
+
+const setupCard = computed(() => {
+  if (setupState.value === "NO_LOGIN") {
+    return { title: translate("Save the NetSuite login first"), note: translate("The setup reads the client's companies from NetSuite with this login.") };
+  }
+  if (setupState.value === "COMPANIES_NOT_SET_UP") {
+    const count = companiesNotSetUp.value.length;
+    return {
+      title: translate(count === 1 ? "1 company is not set up in the OMS" : "{count} companies are not set up in the OMS", { count }),
+      note: translate("Review the companies NetSuite has, and save the ones to set up."),
+      action: translate("Review and fix"),
+    };
+  }
+  if (setupState.value === "NOT_CHECKED") {
+    return {
+      title: translate("Locations and departments are not checked yet"),
+      note: translate("Compare them with NetSuite before you switch on a flow."),
+      action: translate("Review setup"),
+    };
+  }
+  if (setupState.value === "DIFFERS") {
+    const { locations, departments } = actionCounts.value;
+    const title = locations && departments
+      ? translate("{locations} locations and {departments} departments need action", { locations, departments })
+      : locations
+        ? translate(locations === 1 ? "1 location needs action" : "{count} locations need action", { count: locations })
+        : translate(departments === 1 ? "1 department needs action" : "{count} departments need action", { count: departments });
+    return {
+      title,
+      note: translate("Found at the last review. Fix them before you switch on a flow."),
+      action: translate("Review and fix"),
+    };
+  }
+  return undefined;
+});
+
 const SYNC_OWNER = createSyncDomainOwner("netSuiteView");
 
 function netSuiteSyncDomains() {
   const productStoreId = netSuiteProductStore.value?.productStoreId;
-  return productStoreId
-    ? [{ name: "netSuiteOrderPush", args: { productStoreId, runsPerGroup: 25 } }]
+  const storeDomains = productStoreId
+    ? [
+      { name: NETSUITE_SENDING_COUNTS_DOMAIN },
+      { name: NETSUITE_STEP_COUNTS_DOMAIN, args: { productStoreId } },
+      { name: NETSUITE_ORDERS_SETUP_DOMAIN, args: { productStoreId } },
+      { name: NETSUITE_SHIPMENT_STEP_COUNTS_DOMAIN, args: { productStoreId } },
+    ]
     : [];
+  return [{ name: NETSUITE_SUBSIDIARIES_DOMAIN }, ...SETUP_STATUS_DOMAINS, ...storeDomains];
 }
 
-// The store comes from the cache, so it typically resolves after first paint.
 watch(() => netSuiteProductStore.value?.productStoreId, () => { void activateSyncDomains(netSuiteSyncDomains(), SYNC_OWNER); });
-onIonViewWillEnter(() => { void activateSyncDomains(netSuiteSyncDomains(), SYNC_OWNER); });
+onIonViewWillEnter(() => {
+  void activateSyncDomains(netSuiteSyncDomains(), SYNC_OWNER);
+  loadLastSave().catch((error) => logger.error("Could not read the last save of the NetSuite setup review", error));
+});
 onIonViewDidLeave(() => { void deactivateSyncDomains(SYNC_OWNER); });
 
-function openSyncMonitor() {
+function openOrdersFlow() {
   if (!netSuiteProductStore.value?.productStoreId) return;
-  router.push("/netsuite/sync-monitor")
+  router.push(`/netsuite/stores/${netSuiteProductStore.value.productStoreId}/orders`)
+}
+
+function openShipmentsFlow() {
+  if (!netSuiteProductStore.value?.productStoreId) return;
+  router.push(`/netsuite/stores/${netSuiteProductStore.value.productStoreId}/shipments`)
 }
 
 function openShipmentMethod() {
@@ -359,79 +378,8 @@ function openPaymentMethods() {
   router.push("/netsuite/payment-methods")
 }
 
-function openInventoryVariances() {
-  router.push("/netsuite/inventory-variances")
-}
-
-function openSalesChannel() {
-  router.push("/netsuite/sales-channel")
-}
-
 function openDepartments() {
   router.push("/netsuite/departments")
-}
-
-// SFTP modal
-const showSftpModal = ref(false);
-const sftpFormData = ref({
-  guid: "",
-  server: "",
-  userId: "",
-  port: "",
-  hostKey: "",
-  defaultDirectory: ""
-});
-
-const isFormInvalid = computed(() => {
-  return Object.values(sftpFormData.value).some(value => !value);
-});
-
-function openSftpModal() {
-  sftpFormData.value = {
-    guid: "",
-    server: "",
-    userId: "",
-    port: "",
-    hostKey: "",
-    defaultDirectory: ""
-  };
-  showSftpModal.value = true;
-}
-
-function closeSftpModal() {
-  showSftpModal.value = false;
-}
-
-async function saveSftpConfig() {
-  try {
-    const payload = {
-      hostName: sftpFormData.value.server,
-      userName: sftpFormData.value.userId,
-      port: sftpFormData.value.port,
-      hostKey: sftpFormData.value.hostKey,
-      defaultDirectory: sftpFormData.value.defaultDirectory,
-      secretId: sftpFormData.value.guid
-    };
-
-    const resp = await updateSftpConfig(payload);
-
-    if(!commonUtil.hasError(resp)) {
-      commonUtil.showToast(translate("SFTP configurations updated successfully"))
-    } else {
-      throw resp.data;
-    }
-  } catch(error: any) {
-    const serverError = commonUtil.getErrorMessage(error);
-    logger.error(error);
-    commonUtil.showToast(`${translate("Failed to update SFTP configurations")}. ${serverError}`);
-  }
-
-  emitter.emit("dismissLoader")
-  closeSftpModal();
-}
-
-function openSftpDoc() {
-  window.open('https://docs.hotwax.co/documents/v/learn-netsuite/netsuite-deployment/sdfbundle/setupsftp', '_blank', 'noopener, noreferrer');
 }
 
 // Product Store modal
@@ -616,8 +564,13 @@ section {
   gap: var(--spacer-sm);
 }
 
+
 .count-skeleton {
   width: var(--spacer-3xl);
+}
+
+.section-note {
+  color: var(--ion-color-medium);
 }
 
 </style>

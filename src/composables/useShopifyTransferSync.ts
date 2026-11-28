@@ -12,7 +12,7 @@ import {
 /**
  * Shopify transfer sync — order-scoped inventory transfer monitoring.
  *
- * Modeled on `useNetSuiteSync.ts`: reads are cache-backed and reactive (the `shopifyTransferSync`
+ * Reads are cache-backed and reactive (the `shopifyTransferSync`
  * worker domain fills the cache; nothing here issues a request on render), writes go straight to
  * the API and then ask the worker to refetch the affected row, because these endpoints return only
  * a status/PK rather than the updated record.

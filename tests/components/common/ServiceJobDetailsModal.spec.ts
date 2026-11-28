@@ -79,9 +79,10 @@ describe('job modal load identity and dismissal', () => {
 });
 
 describe('job modal content', () => {
-  it('is titled by the job name, states its schedule in the job time zone, and guards identity parameters', async () => {
+  it('names the job in its header card, states its schedule in the job time zone, and guards identity parameters', async () => {
     const wrapper = mountModal(); await flushPromises();
-    expect(wrapper.find('ion-title').text()).toBe('JOB1');
+    expect(wrapper.find('ion-title').text()).toBe('Job details');
+    expect(wrapper.find('[data-testid="service-job-details-header"] ion-card-title').text()).toBe('JOB1');
     expect(wrapper.text().split('JOB1')).toHaveLength(2);
     expect(wrapper.text()).toContain('Purges settled rows');
     expect(wrapper.text()).toContain('Every hour (America/Los_Angeles)');

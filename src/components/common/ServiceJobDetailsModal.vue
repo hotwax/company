@@ -12,7 +12,7 @@
             <ion-icon slot="icon-only" :icon="closeOutline" />
           </ion-button>
         </ion-buttons>
-        <ion-title>{{ modalTitle }}</ion-title>
+        <ion-title>{{ translate("Job details") }}</ion-title>
         <ion-buttons slot="end">
           <ion-button :disabled="isLoading || isSaving || !jobName" :aria-label="translate('Refresh')" @click="requestRefresh">
             <ion-icon slot="icon-only" :icon="refreshOutline" />
@@ -37,13 +37,21 @@
       </ion-list>
 
       <template v-else-if="jobDetails.jobName">
+        <ion-card data-testid="service-job-details-header">
+          <ion-card-header>
+            <ion-card-title class="job-name">{{ jobDetails.jobName }}</ion-card-title>
+          </ion-card-header>
+          <ion-list lines="full">
+            <ion-item lines="none">
+              <ion-label class="ion-text-wrap">
+                {{ jobDetails.description || translate("No description available") }}
+                <p class="job-name">{{ jobDetails.serviceName || translate("Unavailable") }}</p>
+              </ion-label>
+              <ion-badge slot="end" :color="originalActive ? 'success' : 'medium'">{{ originalActive ? translate("Active") : translate("Paused") }}</ion-badge>
+            </ion-item>
+          </ion-list>
+        </ion-card>
         <ion-list lines="full">
-          <ion-item>
-            <ion-label>
-              {{ jobDetails.description || translate('No description') }}
-              <p>{{ jobDetails.serviceName || translate('Unavailable') }}</p>
-            </ion-label>
-          </ion-item>
           <ion-item>
             <ion-label>
               {{ translate('Run now') }}
@@ -65,8 +73,9 @@
             <ion-label>
               {{ translate('Active') }}
               <p>{{ draftActive ? translate('Job runs on configured schedule') : translate('Job is paused and will not run on schedule') }}</p>
+              <p v-if="pauseLockedReason">{{ pauseLockedReason }}</p>
             </ion-label>
-            <ion-toggle slot="end" :checked="draftActive" :disabled="isSaving || !canEdit" @ionChange="draftActive = $event.detail.checked" />
+            <ion-toggle slot="end" :checked="draftActive" :disabled="isSaving || !canEdit || !!pauseLockedReason" @ionChange="draftActive = $event.detail.checked" />
           </ion-item>
         </ion-list>
 
@@ -83,9 +92,9 @@
               <ion-item v-if="!draftActive" lines="none" color="light">
                 <ion-icon slot="start" :icon="warningOutline" color="warning" />
                 <ion-label class="ion-text-wrap">
-                  <p>{{ translate('Job is paused. Activate it so it runs on this schedule.') }}</p>
+                  <p>{{ pauseLockedReason ? translate('Job is paused. {reason}', { reason: pauseLockedReason }) : translate('Job is paused. Activate it so it runs on this schedule.') }}</p>
                 </ion-label>
-                <ion-button slot="end" fill="outline" size="small" @click="draftActive = true">
+                <ion-button v-if="!pauseLockedReason" slot="end" fill="outline" size="small" @click="draftActive = true">
                   {{ translate('Activate') }}
                 </ion-button>
               </ion-item>
@@ -255,7 +264,7 @@
 
 <script setup lang="ts">
 import {
-  IonAccordion, IonAccordionGroup, IonBadge, IonButton, IonButtons, IonContent, IonFab, IonFabButton,
+  IonAccordion, IonAccordionGroup, IonBadge, IonButton, IonButtons, IonCard, IonCardHeader, IonCardTitle, IonContent, IonFab, IonFabButton,
   IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
   IonRadio, IonRadioGroup, IonSelect, IonSelectOption, IonSpinner, IonTitle, IonToggle, IonToolbar,
   alertController,
@@ -283,7 +292,6 @@ const IDENTITY_PARAMETER_NAMES = [
 
 const props = withDefaults(defineProps<{
   isOpen: boolean;
-  /** Also the modal's title, on every screen. */
   jobName: string;
   allowedParameterNames?: string[];
   editableParameterNames?: string[];
@@ -295,6 +303,8 @@ const props = withDefaults(defineProps<{
   parameterDescription?: string;
   canRunNow?: boolean;
   canEdit?: boolean;
+  pauseLockedReason?: string;
+  areParametersReadOnly?: boolean;
   runNowDisabledReason?: string;
   editDisabledReason?: string;
   runHandler?: (() => Promise<unknown>) | null;
@@ -307,6 +317,8 @@ const props = withDefaults(defineProps<{
   parameterDescription: 'Job and service parameters used for this Shopify product sync.',
   canRunNow: true,
   canEdit: true,
+  pauseLockedReason: '',
+  areParametersReadOnly: false,
   runNowDisabledReason: '',
   editDisabledReason: '',
   runHandler: null,
@@ -327,7 +339,6 @@ const draftCronExpression = ref('');
 const draftActive = ref(false);
 const draftParameters = ref<Record<string, string>>({});
 
-const modalTitle = computed(() => props.jobName || translate("Sync job details"));
 const originalCronExpression = computed(() => String(jobDetails.value.cronExpression || ''));
 const originalActive = computed(() => String(jobDetails.value.paused || 'N').toUpperCase() !== 'Y');
 const hasLoadedJob = computed(() => !!props.jobName && jobDetails.value.jobName === props.jobName && !loadError.value);
@@ -370,6 +381,7 @@ const scheduleDescription = computed(() => {
  */
 const nextRunLabel = computed(() => {
   // The server timestamp belongs to the saved schedule, never to an edited draft.
+  if (!originalActive.value) return translate('Paused');
   if (scheduleChanged.value) return translate('Next run recalculated after saving');
   const details = jobDetails.value;
   const nextRun = details.nextExecutionDateTime ?? details.nextRunTime ?? details.nextRunDate;
@@ -441,13 +453,15 @@ const jobParameters = computed(() =>
     .filter((parameter: any) => !!parameter?.parameterName)
     .map((parameter: any) => {
       const name = String(parameter.parameterName);
-      const isProtected = IDENTITY_PARAMETER_NAMES.includes(name) && !props.editableParameterNames.includes(name);
+      const isEditableHere = props.editableParameterNames.includes(name);
+      const isProtected = props.areParametersReadOnly ? !isEditableHere : IDENTITY_PARAMETER_NAMES.includes(name) && !isEditableHere;
 
       return {
         key: `job-${name}`, name, label: name, isProtected,
         helperText: helperTextOf({ name, isProtected }), options: props.parameterOptions[name],
       };
-    }));
+    })
+    .sort((first: { isProtected: boolean }, second: { isProtected: boolean }) => Number(first.isProtected) - Number(second.isProtected)));
 
 /** The field's helper text: the service's signature for it, and why it is disabled when it is. */
 function helperTextOf(parameter: { name: string; isProtected: boolean }) {
@@ -670,6 +684,10 @@ function auditKey(audit: any) { return String(audit.auditLogId || audit.entityAu
 </script>
 
 <style scoped>
+.job-name {
+  overflow-wrap: anywhere;
+}
+
 .overline { color: var(--ion-color-medium); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 
 /* Room under the last row for the save button, which floats over the content (56px, 16px off the edge). */

@@ -25,16 +25,21 @@ const ProductStoreOnboarding = () => import("@/views/ProductStoreOnboarding.vue"
 const ProductStoreDetails = () => import("@/views/ProductStoreDetails.vue")
 const ProductStore = () => import("@/views/ProductStore.vue")
 const NetSuite = () => import("@/views/NetSuite.vue")
-const NetSuiteSyncMonitor = () => import("@/views/NetSuiteSyncMonitor.vue")
+const NetSuiteOrdersFlow = () => import("@/views/NetSuiteOrdersFlow.vue")
+const NetSuiteShipmentsFlow = () => import("@/views/NetSuiteShipmentsFlow.vue")
+const NetSuiteShipmentLists = () => import("@/views/NetSuiteShipmentLists.vue")
+const NetSuiteStepLists = () => import("@/views/NetSuiteStepLists.vue")
+const NetSuiteSendingLists = () => import("@/views/NetSuiteSendingLists.vue")
+const NetSuiteSetupReview = () => import("@/views/NetSuiteSetupReview.vue")
+const NetSuiteSubsidiary = () => import("@/views/NetSuiteSubsidiary.vue")
+const NetSuiteOrdersSetupList = () => import("@/views/NetSuiteOrdersSetupList.vue")
 const Carriers = () => import("@/views/Carriers.vue")
 const CreateCarrier = () => import("@/views/CreateCarrier.vue")
 const CarrierShipmentMethods = () => import("@/views/CarrierShipmentMethods.vue")
 const CarrierDetails = () => import("@/views/CarrierDetails.vue")
 const Settings = () => import("@/views/Settings.vue")
 const ShipmentMethods = () => import("@/views/ShipmentMethods.vue")
-const InventoryVariances = () => import("@/views/InventoryVariances.vue")
 const PaymentMethods = () => import("@/views/PaymentMethods.vue")
-const SalesChannel = () => import("@/views/SalesChannel.vue")
 const Departments = () => import("@/views/Departments.vue")
 const ShopifyConnectionDetails = () => import("@/views/ShopifyConnectionDetails.vue")
 const ShopifyInventorySync = () => import("@/views/ShopifyInventorySync.vue")
@@ -188,11 +193,16 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/carrier-details/:partyId", name: "CarrierDetailsAlias", component: CarrierDetails, props: true, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
   { path: "/carriers/:partyId", name: "CarrierDetails", component: CarrierDetails, props: true, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
   { path: "/netsuite/shipment-methods", name: "ShipmentMethods", component: ShipmentMethods, beforeEnter: authGuard },
-  { path: "/netsuite/inventory-variances", name: "InventoryVariances", component: InventoryVariances, beforeEnter: authGuard },
   { path: "/netsuite/payment-methods", name: "PaymentMethods", component: PaymentMethods, beforeEnter: authGuard },
-  { path: "/netsuite/sales-channel", name: "SalesChannel", component: SalesChannel, beforeEnter: authGuard },
   { path: "/netsuite/departments", name: "Departments", component: Departments, beforeEnter: authGuard },
-  { path: "/netsuite/sync-monitor", name: "NetSuiteSyncMonitor", component: NetSuiteSyncMonitor, beforeEnter: authGuard },
+  { path: "/netsuite/setup-review", name: "NetSuiteSetupReview", component: NetSuiteSetupReview, beforeEnter: authGuard },
+  { path: "/netsuite/subsidiaries/:subsidiaryId", name: "NetSuiteSubsidiary", component: NetSuiteSubsidiary, props: true, beforeEnter: authGuard },
+  { path: "/netsuite/stores/:productStoreId/orders", name: "NetSuiteOrdersFlow", component: NetSuiteOrdersFlow, props: true, beforeEnter: authGuard },
+  { path: "/netsuite/stores/:productStoreId/shipments", name: "NetSuiteShipmentsFlow", component: NetSuiteShipmentsFlow, props: true, beforeEnter: authGuard },
+  { path: "/netsuite/stores/:productStoreId/shipments/:step(harvest|sweep|boxes|shipments|closed-lines)/:list(failed|stuck|waiting)", name: "NetSuiteShipmentLists", component: NetSuiteShipmentLists, props: true, beforeEnter: authGuard },
+  { path: "/netsuite/stores/:productStoreId/orders/:step(customer|sales-order|payment|exchange-payment|store-shipment|refund|line-close|order-change|order-moved)/:list(failed|stuck|pending|not-picked)", name: "NetSuiteStepLists", component: NetSuiteStepLists, props: true, beforeEnter: authGuard },
+  { path: "/netsuite/stores/:productStoreId/orders/setup/:list(products|facilities|location-customers)", name: "NetSuiteOrdersSetupList", component: NetSuiteOrdersSetupList, props: true, beforeEnter: authGuard },
+  { path: "/netsuite/sending/:way(rest-batch|script-task)/:list(waiting-to-send|waiting-for-answer|error)", name: "NetSuiteSendingLists", component: NetSuiteSendingLists, props: true, beforeEnter: authGuard },
   {
     path: "/create-product-store",
     name: "CreateProductStore",
